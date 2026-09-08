@@ -1,6 +1,6 @@
 # rock-esp32
 
-Firmware workspace for RockServer devices based on the JC4880P443C_I_W board (ESP32-P4 with an ESP32-C6 Wi-Fi companion). The initial milestone is deliberately small: an ESP-IDF/C application that prints a heartbeat once per second.
+Firmware workspace for RockServer devices based on the JC4880P443C_I_W board (ESP32-P4 with an ESP32-C6 Wi-Fi companion). The initial milestone is deliberately small: a Rust application hosted by ESP-IDF that prints a heartbeat once per second.
 
 ## Current target
 
@@ -14,27 +14,34 @@ The project explicitly selects ESP32-P4 revisions below v3.0 and a minimum revis
 
 ## Build commands
 
-These commands were used for the first successful ESP32-P4 v1.3 bring-up:
+Install the upstream Rust target once:
+
+The Rust toolchain is pinned by `rust-toolchain.toml` (nightly with `rust-src`); rustup provisions it automatically on the first build. The `riscv32imafc-esp-espidf` target is built from source via `-Zbuild-std`, so no manual target installation is needed.
+
+Then build, flash, and monitor through ESP-IDF:
 
 ```powershell
 $env:PYTHONUTF8='1'
 . 'C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1'
 idf.py set-target esp32p4
-idf.py build
-idf.py -p COM6 flash monitor
+idf.py --no-ccache build
+idf.py --no-ccache -p COM6 flash
+idf.py -p COM6 monitor
 ```
 
 Re-check the port before flashing; Windows can assign a different COM number after reconnecting the board. Exit the serial monitor with `Ctrl+]`.
 
-The initial C firmware was built with ESP-IDF 6.1, flashed on COM6, and verified through USB Serial/JTAG. The monitor prints `Hello from Rock ESP32-P4` once per second.
+The Rust firmware uses the `esp-idf-sys` crate (vendored under `third_party/esp-idf-sys`; see its `PROVENANCE.md` for the pinned revision and local patches). It was built with ESP-IDF 6.1, flashed on COM6, and verified through USB Serial/JTAG on an ESP32-P4 v1.3. The monitor prints `Rust + esp-idf-sys; free heap: ...` once per second.
+
+The application loop lives in `src/lib.rs`. `main/main.c` is the ESP-IDF entry point (`app_main`) and a small FFI bridge for logging and FreeRTOS delays; the Rust library exports `rust_main` instead of defining its own `app_main`.
 
 ## Roadmap
 
-1. Build and flash the C Hello World; verify serial output and reset behavior.
+1. Build and flash the Rust Hello World; verify serial output and reset behavior.
 2. Validate the ESP32-C6 slave image and bring up ESP-Hosted over SDIO.
 3. Connect to a test access point and make one HTTPS request.
 4. Integrate the device with the RockServer DC-016 control-plane milestone.
-5. Evaluate and migrate application code to Rust while retaining a known-good C hardware diagnostic.
+5. Grow the Rust application behind narrow ESP-IDF bindings as each hardware capability is proven.
 
 See [docs/bring-up.md](docs/bring-up.md) for hardware notes and [docs/rust-direction.md](docs/rust-direction.md) for the language strategy.
 

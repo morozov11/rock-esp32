@@ -11,7 +11,7 @@ The connected board was queried without modifying flash:
 
 ESP-IDF 6.1 defaults to ESP32-P4 v3.1 and newer. This board uses v1.3, so `sdkconfig.defaults` selects the mutually exclusive pre-v3 hardware family and minimum revision v1.0. Never bypass this compatibility check with esptool's force option.
 
-The C Hello World was successfully built, flashed, and monitored on the connected v1.3 board. The boot log confirmed the supported range v1.0 through v1.99 and ESP-IDF 6.1. A non-fatal warning reported a Boya flash chip using the generic driver; enable the dedicated Boya driver before flash performance or reliability testing.
+The original C Hello World, its `no_std` Rust replacement, and the current `esp-idf-sys`-based Rust application were each successfully built, flashed, and monitored on the connected v1.3 board. The Rust application is a static library behind a small C/ESP-IDF bridge; see `docs/rust-direction.md` for the current build chain and the vendored `esp-idf-sys` copy. As of 2026-09-08 the monitor prints `Rust + esp-idf-sys; free heap: ...` once per second. The boot log confirmed the supported range v1.0 through v1.99 and ESP-IDF 6.1. A non-fatal warning reported a Boya flash chip using the generic driver; enable the dedicated Boya driver before flash performance or reliability testing.
 
 The vendor documentation and recovery files are stored locally at `D:\work\JC4880P443C_I_W`. Keep that directory outside this repository because it contains large vendor archives and binary images.
 
@@ -33,13 +33,13 @@ The vendor recovery directory contains `JC-C6-slave_v2.3.2.bin` for the C6 and `
 
 ## Bring-up checkpoints
 
-### 1. Serial Hello World
+### 1. Serial Hello World (complete)
 
 1. Activate the Espressif Installation Manager PowerShell profile.
 2. Re-detect the board and confirm that the target is ESP32-P4.
-3. Set the project target and build.
+3. Build with `idf.py build`; it drives cargo for the Rust static library (nightly toolchain, `riscv32imafc-esp-espidf` target).
 4. Flash only the P4 application.
-5. Confirm `Hello from Rock ESP32-P4` appears once per second in the monitor.
+5. Confirm `Rust + esp-idf-sys; free heap: ...` appears once per second in the monitor.
 
 ### 2. Wi-Fi and internet test
 

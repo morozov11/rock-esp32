@@ -1,6 +1,7 @@
 /.idea/
 /.vscode/
 /build/
+/target/
 /managed_components/
 /sdkconfig
 /sdkconfig.old

@@ -1,0 +1,26 @@
+[package]
+name = "rock-esp32"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# Vendored at upstream rev 0ffca86 plus local fixes; see
+# third_party/esp-idf-sys/PROVENANCE.md. ESP-IDF 6 support is pending the
+# next crates.io release.
+# binstart is off because app_main lives in the C bridge (main/main.c), not in
+# the Rust static library.
+esp-idf-sys = { path = "third_party/esp-idf-sys", default-features = false, features = ["std", "native"] }
+
+[build-dependencies]
+embuild = "0.33"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+opt-level = "s"
+panic = "abort"
+strip = "debuginfo"
