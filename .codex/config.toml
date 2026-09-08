@@ -1,0 +1,10 @@
+# Project-scoped MCP servers. Codex loads this file after the project is trusted.
+
+[mcp_servers.espressif-documentation]
+url = "https://mcp.espressif.com/docs"
+
+[mcp_servers.esp-component-registry]
+url = "https://components.espressif.com/mcp"
+
+[mcp_servers.espressif-engineering]
+url = "https://ts-mcp.espressif.com/mcp"
