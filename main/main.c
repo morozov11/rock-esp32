@@ -2,7 +2,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include <stdbool.h>
 #include <stddef.h>
+
+#include "display_bsp.h"
 
 static const char *TAG = "rock-esp32";
 
@@ -20,5 +23,8 @@ void rock_delay_ms(uint32_t milliseconds)
 
 void app_main(void)
 {
+    if (rock_display_init() != 0 || rock_ui_clock_init() != 0) {
+        ESP_LOGE(TAG, "Display bring-up failed; continuing without UI");
+    }
     rust_main();
 }

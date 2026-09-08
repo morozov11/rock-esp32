@@ -37,11 +37,18 @@ The application loop lives in `src/lib.rs`. `main/main.c` is the ESP-IDF entry p
 
 ## Roadmap
 
-1. Build and flash the Rust Hello World; verify serial output and reset behavior.
+1. Build and flash the Rust Hello World; verify serial output and reset behavior. (complete)
 2. Validate the ESP32-C6 slave image and bring up ESP-Hosted over SDIO.
 3. Connect to a test access point and make one HTTPS request.
 4. Integrate the device with the RockServer DC-016 control-plane milestone.
 5. Grow the Rust application behind narrow ESP-IDF bindings as each hardware capability is proven.
+
+Display bring-up (2026-09-08, out of the original checkpoint order): the 4.3-inch
+ST7701 panel runs through LVGL 9.5.0 + `esp_lvgl_port` 2.9.0 with an uptime clock
+(`HH:MM:SS`) rendered on the physical display; the Rust side drives the label through
+the `main/display_bsp.c` facade. See [docs/bring-up.md](docs/bring-up.md) for the
+verified pin/timing map and the ESP-IDF 6.x API migrations the vendor ST7701
+component needed.
 
 See [docs/bring-up.md](docs/bring-up.md) for hardware notes and [docs/rust-direction.md](docs/rust-direction.md) for the language strategy.
 

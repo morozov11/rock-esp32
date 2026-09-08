@@ -52,6 +52,53 @@ The vendor recovery directory contains `JC-C6-slave_v2.3.2.bin` for the C6 and `
 
 Keep display, touch, audio, RockServer authentication, and OTA outside this checkpoint so network failures remain easy to isolate.
 
+### 3. Display and LVGL clock (complete, 2026-09-08)
+
+Brought up ahead of the Wi-Fi checkpoint at the owner's request. The 4.3-inch panel
+(ST7701 over MIPI-DSI) renders a dark-themed uptime clock `HH:MM:SS` driven from
+Rust; this proves the display pipeline chosen by the RockServer DC-018 decision
+(LVGL v9 + `esp_lvgl_port`) on the real board.
+
+Verified configuration (from the working vendor LVGL v9 demo, adapted):
+
+- MIPI-DSI: 2 data lanes, 750 Mbps lane rate; DSI PHY powered by LDO channel 3
+  at 2.5 V (`esp_ldo_acquire_channel`).
+- Panel: vendor-preset timings 480x800 portrait @ 28 MHz DPI clock, RGB565,
+  one frame buffer; LVGL software-rotates to landscape 800x480
+  (`rotation.swap_xy = true`).
+- Pins: RST on GPIO5, backlight PWM on GPIO23 (LEDC, 5 kHz, 10-bit, ~70% duty).
+- Components: `lvgl/lvgl` 9.5.0 and `espressif/esp_lvgl_port` 2.9.0 from the
+  ESP Component Registry; the vendor `esp_lcd_st7701` 1.1.3 component is copied
+  to `components/esp_lcd_st7701` because its DPI preset carries this board's
+  specific timings.
+- Rust drives the clock label through the `main/display_bsp.c` facade
+  (`rock_ui_clock_set_text`), taking the LVGL port lock inside C. The loop uses
+  `esp_timer_get_time` and a fixed buffer: pulling `std::time`/`CString` dragged
+  `std::fs` into the link and failed on missing `realpath` under
+  `-Zbuild-std` for this target.
+
+ESP-IDF 6.x API migrations applied to the vendor ST7701 component (the vendor
+tree targets 5.5.4):
+
+- `esp_lcd_panel_dev_config_t.color_space` → `rgb_ele_order` (enum values
+  unchanged).
+- `esp_lcd_dpi_panel_config_t.pixel_format` → `in_color_format` +
+  `out_color_format` of type `lcd_color_format_t` (`LCD_COLOR_FMT_RGB565`).
+- `flags.use_dma2d` removed → explicit `esp_lcd_dpi_panel_enable_dma2d(panel)`
+  after panel init.
+- `esp_driver_pmu` does not exist in 6.x; the LDO API lives in `esp_hw_support`
+  (always linked).
+- `CONFIG_LV_MEM_CUSTOM` is an LVGL v8 symbol and is silently ignored by v9.
+
+First flash showed `00` instead of `:` separators: the clock buffer was
+zero-initialized and the separator positions were never written. The unit test
+covering this never ran because the crate only builds for the firmware target;
+`cargo test` on the host does not execute it. The formatter now starts from the
+literal `00:00:00` template so separators cannot be dropped.
+
+Touch (GT911 over I2C) is not initialized yet; it stays in the DC-018 display
+surface scope together with the real presentation views.
+
 ## Recovery and power
 
 - Prefer the USB2 connector for native USB Serial/JTAG.

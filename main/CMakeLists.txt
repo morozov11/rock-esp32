@@ -2,9 +2,11 @@
 # ESP-IDF API, and its build script parses those headers with the include
 # directories of THIS component. Every component named here exists so that
 # bindgen can resolve the driver/adc/wifi/nvs headers the bindings pull in;
-# the Rust static library is the actual consumer.
+# the Rust static library is the actual consumer. esp_lcd/esp_lvgl_port are
+# also genuinely linked: display_bsp.c owns the display bring-up, while the
+# Rust side drives the clock UI through the display_bsp facade.
 idf_component_register(
-    SRCS "main.c"
+    SRCS "main.c" "display_bsp.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         "heap"
@@ -38,6 +40,10 @@ idf_component_register(
         "esp_driver_twai"
         "esp_driver_uart"
         "esp_driver_usb_serial_jtag"
+        "esp_lcd"
+        "esp_lcd_st7701"
+        "esp_lvgl_port"
+        "esp_timer"
 )
 
 include(ExternalProject)

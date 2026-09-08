@@ -1,0 +1,5 @@
+## IDF Component Manager manifest for the rock-esp32 application component.
+dependencies:
+  # LVGL v9 UI stack confirmed in the RockServer DC-018 decision record.
+  espressif/esp_lvgl_port: "^2.0"
+  lvgl/lvgl: "9.5.0"
