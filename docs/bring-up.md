@@ -94,7 +94,8 @@ First flash showed `00` instead of `:` separators: the clock buffer was
 zero-initialized and the separator positions were never written. The unit test
 covering this never ran because the crate only builds for the firmware target;
 `cargo test` on the host does not execute it. The formatter now starts from the
-literal `00:00:00` template so separators cannot be dropped.
+literal `00:00:00` template so separators cannot be dropped. The corrected
+clock was physically verified on the board after reflash (2026-09-08).
 
 Touch (GT911 over I2C) is not initialized yet; it stays in the DC-018 display
 surface scope together with the real presentation views.
