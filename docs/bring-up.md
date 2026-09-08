@@ -9,6 +9,10 @@ The connected board was queried without modifying flash:
 - 16 MB flash
 - 40 MHz crystal
 
+ESP-IDF 6.1 defaults to ESP32-P4 v3.1 and newer. This board uses v1.3, so `sdkconfig.defaults` selects the mutually exclusive pre-v3 hardware family and minimum revision v1.0. Never bypass this compatibility check with esptool's force option.
+
+The C Hello World was successfully built, flashed, and monitored on the connected v1.3 board. The boot log confirmed the supported range v1.0 through v1.99 and ESP-IDF 6.1. A non-fatal warning reported a Boya flash chip using the generic driver; enable the dedicated Boya driver before flash performance or reliability testing.
+
 The vendor documentation and recovery files are stored locally at `D:\work\JC4880P443C_I_W`. Keep that directory outside this repository because it contains large vendor archives and binary images.
 
 ## Wi-Fi architecture

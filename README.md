@@ -10,9 +10,11 @@ Firmware workspace for RockServer devices based on the JC4880P443C_I_W board (ES
 - Development port observed during initial detection: COM6 via USB Serial/JTAG
 - ESP-IDF: 6.1
 
+The project explicitly selects ESP32-P4 revisions below v3.0 and a minimum revision of v1.0. ESP32-P4 v1.x and v3.x require mutually exclusive ESP-IDF builds.
+
 ## Build commands
 
-These commands are documented but have not yet been run for this repository:
+These commands were used for the first successful ESP32-P4 v1.3 bring-up:
 
 ```powershell
 $env:PYTHONUTF8='1'
@@ -23,6 +25,8 @@ idf.py -p COM6 flash monitor
 ```
 
 Re-check the port before flashing; Windows can assign a different COM number after reconnecting the board. Exit the serial monitor with `Ctrl+]`.
+
+The initial C firmware was built with ESP-IDF 6.1, flashed on COM6, and verified through USB Serial/JTAG. The monitor prints `Hello from Rock ESP32-P4` once per second.
 
 ## Roadmap
 

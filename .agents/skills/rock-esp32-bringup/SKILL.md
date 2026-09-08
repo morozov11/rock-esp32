@@ -13,11 +13,13 @@ Read `docs/bring-up.md` before changing hardware configuration or flashing firmw
 - Use target `esp32p4` and ESP-IDF 6.1 unless the user explicitly chooses the vendor 5.5.4 baseline.
 - Re-detect the serial port before flashing. COM6 was observed during initial bring-up, but is not a permanent assumption.
 - Never overlap builds, compilation-based tests, or dependency installations. Wait for each command to finish and inspect its result.
+- This board is ESP32-P4 v1.3. Keep `CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y` and `CONFIG_ESP32P4_REV_MIN_100=y`; P4 v1.x and v3.x builds are mutually exclusive.
 
 ## Hardware safety
 
 - Use the board's USB2 connector for native USB Serial/JTAG and provide stable 5 V power with at least 600 mA available.
 - Do not erase flash, restore the vendor image, or flash the companion ESP32-C6 unless the user explicitly requests that exact operation.
+- Never bypass an image/chip revision mismatch with esptool's force option.
 - Preserve the vendor recovery binaries under `D:\work\JC4880P443C_I_W\8-Burn operation\Burn files`.
 - The P4 has no native Wi-Fi. Network work must use the on-board ESP32-C6 through ESP-Hosted over SDIO.
 
