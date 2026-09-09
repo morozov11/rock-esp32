@@ -13,6 +13,11 @@ pub extern "C" fn rust_main() -> ! {
             platform::delay(5_000)
         }
     }
+    if platform::server_base_url().is_empty() {
+        loop {
+            platform::delay(10_000)
+        }
+    }
     let mut failures = 0u32;
     loop {
         if let Ok(credentials) = pairing::credentials() {

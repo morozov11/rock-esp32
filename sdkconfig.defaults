@@ -37,3 +37,7 @@ CONFIG_ESP_TASK_WDT_EN=y
 # selected, so AFE and WakeNet link into the image. Multinet stays at its
 # NONE default. Model data deployment (model partition vs embedded) is RE-8.
 CONFIG_SR_WN_WN9_HIESP=y
+
+# RE-9 OTA Application Rollback
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+

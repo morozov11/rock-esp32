@@ -1,5 +1,8 @@
 #include "control_platform.h"
 #include "display_bsp.h"
+#include "rock_ota.h"
+#include "rock_wifi_storage.h"
+#include "rock_onboarding.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_event.h"
@@ -62,8 +65,15 @@ int rock_wifi_scan_and_show(void)
         .ssid = NULL,
         .bssid = NULL,
         .channel = 0,
-        .show_hidden = false,
+        .show_hidden = true,
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time = {
+            .active = {
+                .min = 120,
+                .max = 350,
+            },
+            .passive = 350,
+        },
     };
     esp_err_t err = esp_wifi_scan_start(&scan_cfg, true);
     if (err != ESP_OK) {
@@ -195,33 +205,84 @@ int rock_platform_init(void)
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event, NULL);
     if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK || esp_wifi_start() != ESP_OK) return -1;
 
-    // Perform Wi-Fi scan and display available networks on the screen
+    // Perform initial Wi-Fi scan and display available networks
     rock_wifi_scan_and_show();
 
-    if (CONFIG_ROCK_WIFI_SSID[0] == '\0' || CONFIG_ROCKSERVER_BASE_URL[0] == '\0') {
-        ESP_LOGW(TAG, "CONFIG_ROCK_WIFI_SSID or CONFIG_ROCKSERVER_BASE_URL not configured in sdkconfig.");
-        ESP_LOGI(TAG, "Running interactive Wi-Fi scanner (rescanning every 10 seconds)...");
-        while (1) {
-            vTaskDelay(pdMS_TO_TICKS(10000));
-            rock_wifi_scan_and_show();
-        }
+    // Check credentials hierarchy
+    char active_ssid[33] = {0};
+    char active_password[65] = {0};
+    bool has_creds = false;
+    bool creds_from_sdkconfig = false;
+
+    if (CONFIG_ROCK_WIFI_SSID[0] != '\0') {
+        ESP_LOGI(TAG, "Using Wi-Fi credentials from sdkconfig");
+        strlcpy(active_ssid, CONFIG_ROCK_WIFI_SSID, sizeof(active_ssid));
+        strlcpy(active_password, CONFIG_ROCK_WIFI_PASSWORD, sizeof(active_password));
+        has_creds = true;
+        creds_from_sdkconfig = true;
+    } else if (rock_wifi_storage_load(active_ssid, sizeof(active_ssid), active_password, sizeof(active_password))) {
+        ESP_LOGI(TAG, "Using Wi-Fi credentials from NVS rock_wifi");
+        has_creds = true;
+    }
+
+    if (!has_creds) {
+        ESP_LOGI(TAG, "No Wi-Fi credentials in sdkconfig or NVS. Launching onboarding...");
+        rock_onboarding_run();
         return -1;
     }
 
     wifi_config_t wifi = {0};
-    strlcpy((char *)wifi.sta.ssid, CONFIG_ROCK_WIFI_SSID, sizeof(wifi.sta.ssid));
-    strlcpy((char *)wifi.sta.password, CONFIG_ROCK_WIFI_PASSWORD, sizeof(wifi.sta.password));
+    strlcpy((char *)wifi.sta.ssid, active_ssid, sizeof(wifi.sta.ssid));
+    strlcpy((char *)wifi.sta.password, active_password, sizeof(wifi.sta.password));
+    wifi.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    wifi.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    wifi.sta.threshold.authmode = WIFI_AUTH_OPEN;
+    wifi.sta.pmf_cfg.capable = true;
+    wifi.sta.pmf_cfg.required = false;
+    wifi.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
+    wifi.sta.failure_retry_cnt = 5;
     if (esp_wifi_set_config(WIFI_IF_STA, &wifi) != ESP_OK) return -1;
-    vTaskDelay(pdMS_TO_TICKS(4000));
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
     // Connect to configured Wi-Fi AP
     esp_wifi_connect();
     EventBits_t bits = xEventGroupWaitBits(s_wifi_events, WIFI_READY | WIFI_FAILED, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
-    if (!(bits & WIFI_READY)) return -1;
+    if (!(bits & WIFI_READY)) {
+        ESP_LOGE(TAG, "Wi-Fi connection failed");
+        if (!creds_from_sdkconfig) {
+            ESP_LOGW(TAG, "Clearing invalid NVS credentials and restarting onboarding...");
+            rock_wifi_storage_clear();
+            rock_onboarding_run();
+        }
+        return -1;
+    }
+
+    ESP_LOGI(TAG, "Wi-Fi connection established");
+    if (creds_from_sdkconfig) {
+        rock_wifi_storage_save(active_ssid, active_password);
+    }
     esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-    if (esp_netif_sntp_init(&sntp) != ESP_OK || esp_netif_sntp_sync_wait(pdMS_TO_TICKS(30000)) != ESP_OK) return -1;
-    char response[128]; int status;
-    if (http_request("GET", "/health/ready", NULL, NULL, response, sizeof(response), &status) < 0 || status / 100 != 2) return -1;
+    if (esp_netif_sntp_init(&sntp) != ESP_OK || esp_netif_sntp_sync_wait(pdMS_TO_TICKS(30000)) != ESP_OK) {
+        ESP_LOGW(TAG, "SNTP sync failed or timed out; continuing");
+    }
+
+    // OTA validation: cancel rollback now that network is functional
+    rock_ota_mark_valid();
+
+    // Check for OTA update if enabled
+#if CONFIG_ROCK_OTA_CHECK_ON_BOOT
+    if (CONFIG_ROCK_OTA_URL[0] != '\0') {
+        rock_ota_check_start(CONFIG_ROCK_OTA_URL, false);
+    }
+#endif
+
+    if (CONFIG_ROCKSERVER_BASE_URL[0] != '\0') {
+        char response[128]; int status;
+        if (http_request("GET", "/health/ready", NULL, NULL, response, sizeof(response), &status) < 0 || status / 100 != 2) return -1;
+    } else {
+        ESP_LOGI(TAG, "CONFIG_ROCKSERVER_BASE_URL not configured; skipping RockServer health check");
+    }
+
     s_ws_queue = xQueueCreate(1, sizeof(int));
     s_ws_events = xEventGroupCreate();
     return s_ws_queue && s_ws_events ? 0 : -1;

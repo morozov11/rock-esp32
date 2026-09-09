@@ -7,6 +7,7 @@
 # Rust side drives the clock UI through the display_bsp facade.
 idf_component_register(
     SRCS "main.c" "display_bsp.c" "control_platform.c" "board_bus.c" "audio_bsp.c" "player_bsp.c"
+         "rock_wifi_storage.c" "rock_ota.c" "rock_onboarding.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         "heap"
@@ -49,6 +50,9 @@ idf_component_register(
         "esp_hosted"
         "esp_timer"
         "esp_websocket_client"
+        "esp_https_ota"
+        "app_update"
+        "esp_http_server"
         # RE-3 pinned audio/SR components. esp_codec_dev is genuinely used
         # by audio_bsp.c (ES8311 + I2S); esp_audio_codec and esp-sr are
         # consumed by the later player (RE-5) and wake-word (RE-8) steps.

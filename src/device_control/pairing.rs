@@ -62,3 +62,34 @@ pub fn qr_matrix(link: &str) -> Result<(u16, Vec<u8>), qrcode::types::QrError> {
         .collect();
     Ok((width, modules))
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rock_qr_encode(
+    text: *const core::ffi::c_char,
+    out_buf: *mut u8,
+    out_cap: usize,
+    out_width: *mut u16,
+) -> core::ffi::c_int {
+    if text.is_null() || out_buf.is_null() || out_width.is_null() {
+        return -1;
+    }
+    let cstr = unsafe { core::ffi::CStr::from_ptr(text) };
+    let text_str = match cstr.to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    match qr_matrix(text_str) {
+        Ok((width, modules)) => {
+            if modules.len() > out_cap {
+                return -2;
+            }
+            unsafe {
+                core::ptr::copy_nonoverlapping(modules.as_ptr(), out_buf, modules.len());
+                *out_width = width;
+            }
+            0
+        }
+        Err(_) => -3,
+    }
+}
+

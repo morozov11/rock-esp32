@@ -23,4 +23,66 @@ config ROCK_DEVICE_DISPLAY_NAME
     string "Device display name"
     default "Rock ESP32"
 
+menu "Rock OTA Update"
+
+config ROCK_OTA_URL
+    string "Firmware update URL"
+    default ""
+    help
+        HTTPS URL for checking and downloading firmware binary updates.
+        Local build configuration only; sdkconfig is ignored by Git.
+
+config ROCK_OTA_CHECK_ON_BOOT
+    bool "Check for OTA updates on boot"
+    default y
+    help
+        If set and ROCK_OTA_URL is non-empty, checks for firmware updates
+        shortly after Wi-Fi and SNTP readiness.
+
+config ROCK_OTA_CHECK_INTERVAL_SEC
+    int "Periodic OTA check interval in seconds"
+    default 0
+    help
+        Periodic check interval (0 disables periodic checks and runs on boot only).
+
+config ROCK_OTA_TEST_CERT_PEM
+    string "Custom test CA certificate (PEM format)"
+    default ""
+    help
+        If non-empty, uses this PEM certificate as the trusted CA for local
+        HTTPS lab testing. If empty, the official ESP certificate bundle is used.
+
 endmenu
+
+menu "Rock Wi-Fi Onboarding"
+
+config ROCK_AP_SSID
+    string "SoftAP SSID for onboarding"
+    default "RockCast-Setup"
+    help
+        SSID broadcast by the device when entering onboarding mode.
+
+config ROCK_AP_PASSWORD
+    string "SoftAP Password (empty for open network)"
+    default ""
+    help
+        Password for the onboarding SoftAP. Leave empty for open/captcha-free setup.
+
+config ROCK_AP_CHANNEL
+    int "SoftAP Channel"
+    range 1 13
+    default 1
+    help
+        Wi-Fi channel for SoftAP.
+
+config ROCK_AP_MAX_CONN
+    int "SoftAP Max Connections"
+    range 1 10
+    default 4
+    help
+        Maximum simultaneous stations connected to the SoftAP.
+
+endmenu
+
+endmenu
+

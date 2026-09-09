@@ -471,3 +471,147 @@ bool rock_ui_wifi_scan_show(const rock_wifi_scan_item_t *items, uint16_t count)
     lvgl_port_unlock();
     return true;
 }
+
+static lv_obj_t *s_onboarding_status_lbl = NULL;
+static lv_obj_t *s_ota_bar = NULL;
+static lv_obj_t *s_ota_pct_lbl = NULL;
+
+bool rock_ui_onboarding_show(const char *ap_ssid, const char *pin, const char *url,
+                             const uint8_t *modules, uint16_t width)
+{
+    if (!ap_ssid || !url || !modules || width == 0 || width > 177 || !lvgl_port_lock(1000)) return false;
+    const int canvas_size = 320, quiet = 4;
+    const int scale = canvas_size / (width + quiet * 2);
+    const int used = scale * (width + quiet * 2);
+    if (scale < 1) { lvgl_port_unlock(); return false; }
+    if (!s_qr_buffer) {
+        s_qr_buffer = heap_caps_calloc((size_t)canvas_size * canvas_size, sizeof(lv_color16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (!s_qr_buffer) { lvgl_port_unlock(); return false; }
+    lv_obj_t *screen = lv_screen_active();
+    lv_obj_clean(screen);
+    s_ota_bar = NULL;
+    s_ota_pct_lbl = NULL;
+    lv_obj_set_style_bg_color(screen, lv_color_hex(0x0F1115), 0);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "WI-FI SETUP");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xF5F7FA), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_48, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 42, 25);
+
+    lv_obj_t *step1 = lv_label_create(screen);
+    lv_label_set_text_fmt(step1, "1. Connect phone to Wi-Fi:\n   SSID: %s", ap_ssid);
+    lv_obj_set_style_text_color(step1, lv_color_hex(0x38BDF8), 0);
+    lv_obj_set_style_text_font(step1, &lv_font_montserrat_16, 0);
+    lv_obj_align(step1, LV_ALIGN_TOP_LEFT, 45, 95);
+
+    lv_obj_t *step2 = lv_label_create(screen);
+    lv_label_set_text_fmt(step2, "2. Scan QR code or open in browser:\n   %s", url);
+    lv_obj_set_style_text_color(step2, lv_color_hex(0x94A3B8), 0);
+    lv_obj_set_style_text_font(step2, &lv_font_montserrat_16, 0);
+    lv_obj_align(step2, LV_ALIGN_TOP_LEFT, 45, 155);
+
+    if (pin && pin[0] != '\0') {
+        lv_obj_t *pin_card = lv_obj_create(screen);
+        lv_obj_set_size(pin_card, 360, 48);
+        lv_obj_align(pin_card, LV_ALIGN_TOP_LEFT, 45, 215);
+        lv_obj_set_style_bg_color(pin_card, lv_color_hex(0x1E293B), 0);
+        lv_obj_set_style_border_color(pin_card, lv_color_hex(0x38BDF8), 0);
+        lv_obj_set_style_border_width(pin_card, 1, 0);
+        lv_obj_set_style_radius(pin_card, 8, 0);
+        lv_obj_set_style_pad_all(pin_card, 6, 0);
+
+        lv_obj_t *pin_lbl = lv_label_create(pin_card);
+        lv_label_set_text_fmt(pin_lbl, "SETUP PIN:  %.3s %.3s", pin, pin + (strlen(pin) >= 3 ? 3 : 0));
+        lv_obj_set_style_text_color(pin_lbl, lv_color_hex(0x38BDF8), 0);
+        lv_obj_set_style_text_font(pin_lbl, &lv_font_montserrat_16, 0);
+        lv_obj_center(pin_lbl);
+    }
+
+    s_onboarding_status_lbl = lv_label_create(screen);
+    lv_label_set_text(s_onboarding_status_lbl, "Waiting for phone connection...");
+    lv_obj_set_style_text_color(s_onboarding_status_lbl, lv_color_hex(0x7C8598), 0);
+    lv_obj_set_style_text_font(s_onboarding_status_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_align(s_onboarding_status_lbl, LV_ALIGN_TOP_LEFT, 45, 280);
+
+    lv_obj_t *canvas = lv_canvas_create(screen);
+    lv_canvas_set_buffer(canvas, s_qr_buffer, canvas_size, canvas_size, LV_COLOR_FORMAT_RGB565);
+    lv_canvas_fill_bg(canvas, lv_color_white(), LV_OPA_COVER);
+    int origin = (canvas_size - used) / 2 + quiet * scale;
+    for (uint16_t y = 0; y < width; ++y) for (uint16_t x = 0; x < width; ++x) {
+        if (!modules[(size_t)y * width + x]) continue;
+        for (int py = 0; py < scale; ++py) for (int px = 0; px < scale; ++px)
+            lv_canvas_set_px(canvas, origin + x * scale + px, origin + y * scale + py, lv_color_black(), LV_OPA_COVER);
+    }
+    lv_obj_align(canvas, LV_ALIGN_RIGHT_MID, -35, 0);
+    lvgl_port_unlock();
+    return true;
+}
+
+bool rock_ui_onboarding_status(const char *status_text)
+{
+    if (!status_text || !lvgl_port_lock(1000)) return false;
+    if (s_onboarding_status_lbl) {
+        lv_label_set_text(s_onboarding_status_lbl, status_text);
+    }
+    lvgl_port_unlock();
+    return true;
+}
+
+bool rock_ui_ota_progress_show(const char *version, int percent)
+{
+    if (!lvgl_port_lock(1000)) return false;
+    lv_obj_t *screen = lv_screen_active();
+
+    if (!s_ota_bar) {
+        lv_obj_clean(screen);
+        s_onboarding_status_lbl = NULL;
+        lv_obj_set_style_bg_color(screen, lv_color_hex(0x0F1115), 0);
+        lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+
+        lv_obj_t *title = lv_label_create(screen);
+        lv_label_set_text(title, "FIRMWARE UPDATE");
+        lv_obj_set_style_text_color(title, lv_color_hex(0xF5F7FA), 0);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_48, 0);
+        lv_obj_align(title, LV_ALIGN_CENTER, 0, -80);
+
+        lv_obj_t *ver_lbl = lv_label_create(screen);
+        lv_label_set_text_fmt(ver_lbl, "Downloading version: %s", version ? version : "candidate");
+        lv_obj_set_style_text_color(ver_lbl, lv_color_hex(0x94A3B8), 0);
+        lv_obj_set_style_text_font(ver_lbl, &lv_font_montserrat_16, 0);
+        lv_obj_align(ver_lbl, LV_ALIGN_CENTER, 0, -20);
+
+        s_ota_bar = lv_bar_create(screen);
+        lv_obj_set_size(s_ota_bar, 500, 24);
+        lv_obj_align(s_ota_bar, LV_ALIGN_CENTER, 0, 30);
+        lv_bar_set_range(s_ota_bar, 0, 100);
+        lv_obj_set_style_bg_color(s_ota_bar, lv_color_hex(0x1E293B), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s_ota_bar, lv_color_hex(0x38BDF8), LV_PART_INDICATOR);
+        lv_obj_set_style_radius(s_ota_bar, 6, 0);
+
+        s_ota_pct_lbl = lv_label_create(screen);
+        lv_obj_set_style_text_color(s_ota_pct_lbl, lv_color_hex(0xF5F7FA), 0);
+        lv_obj_set_style_text_font(s_ota_pct_lbl, &lv_font_montserrat_16, 0);
+        lv_obj_align(s_ota_pct_lbl, LV_ALIGN_CENTER, 0, 75);
+    }
+
+    if (s_ota_bar) {
+        lv_bar_set_value(s_ota_bar, percent, LV_ANIM_OFF);
+    }
+    if (s_ota_pct_lbl) {
+        if (percent >= 100) {
+            lv_label_set_text(s_ota_pct_lbl, "100% - Verifying and Rebooting...");
+        } else {
+            lv_label_set_text_fmt(s_ota_pct_lbl, "%d%% completed", percent);
+        }
+    }
+    if (percent >= 100) {
+        s_ota_bar = NULL;
+        s_ota_pct_lbl = NULL;
+    }
+    lvgl_port_unlock();
+    return true;
+}
+

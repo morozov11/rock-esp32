@@ -8,6 +8,7 @@
 #include "board_bus.h"
 #include "display_bsp.h"
 #include "player_bsp.h"
+#include "rock_ota.h"
 
 static const char *TAG = "rock-esp32";
 
@@ -25,6 +26,9 @@ void rock_delay_ms(uint32_t milliseconds)
 
 void app_main(void)
 {
+    // Initialize OTA state tracking early (checks if running image is PENDING_VERIFY)
+    rock_ota_init();
+
     // Create the shared I2C1 bus (GT911 + ES8311) once, before any consumer.
     if (rock_i2c1_bus_acquire() == NULL) {
         ESP_LOGE(TAG, "Shared I2C1 bus init failed; display/audio may fail");
