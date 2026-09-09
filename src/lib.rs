@@ -1,4 +1,6 @@
 pub mod device_control;
+#[cfg(target_os = "espidf")]
+pub mod presentation;
 
 #[cfg(target_os = "espidf")]
 mod firmware;

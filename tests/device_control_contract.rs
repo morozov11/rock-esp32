@@ -25,7 +25,7 @@ fn consumes_canonical_hello_and_welcome() {
 }
 
 #[test]
-fn canonical_esp32_manifest_is_parsed_but_not_advertised_by_dc017() {
+fn dc018_advertises_only_the_local_display_surface() {
     let fixture = device_control::parse_frame(&fixture("esp32-register-client.json")).unwrap();
     assert_eq!(fixture.kind, "device.register");
     let ours = device_control::registration(
@@ -33,10 +33,17 @@ fn canonical_esp32_manifest_is_parsed_but_not_advertised_by_dc017() {
         "2026-09-02T12:00:00Z",
         "0.1.0",
     );
-    assert_eq!(ours["payload"]["manifest"]["roles"], json!([]));
+    assert_eq!(
+        ours["payload"]["manifest"]["roles"],
+        json!(["display_surface"])
+    );
     assert_eq!(
         ours["payload"]["manifest"]["capabilities"]["items"],
-        json!([])
+        json!([{"name":"display.presentation","version":1,"views":["text","now_playing","sensor_grid"],"max_items":8,"max_text_length":128}])
+    );
+    assert_eq!(
+        ours["payload"]["manifest"]["surfaces"][0]["surface_id"],
+        "display.main"
     );
 }
 

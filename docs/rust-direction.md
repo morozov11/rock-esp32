@@ -11,5 +11,9 @@ Notes for this ESP32-P4 v1.3 board:
 - current bare-metal `esp-hal` support for ESP32-P4 targets chip revisions v3.x and newer, so ESP-IDF remains the foundation;
 - `binstart` is disabled in the `esp-idf-sys` dependency: `app_main` is the C bridge's, and the Rust library exports `rust_main` instead;
 - bindgen parses headers with the include directories of the `main` component, so `main/CMakeLists.txt` lists in `PRIV_REQUIRES` every component whose headers the bindings cover;
-- at the ESP-Hosted milestone, add its components to `PRIV_REQUIRES` the same way and revisit the high-level `esp-idf-svc` crate if its ESP-IDF 6.1 support has landed by then;
-- the display GUI stack is confirmed (owner decision, 2026-09-08): LVGL v9 through the C `esp_lvgl_port` component from the ESP Component Registry. Rust owns protocol, state and presentation mapping; the thin LVGL binding layer is written in this repository rather than depending on the immature third-party v9 binding crates. `esp_lcd` (RGB panel) and the GT911 touch driver are initialized on the C side, consistent with the existing FFI bridge; Slint (paid embedded license) and embedded-graphics (too low-level, provisioning-screen only) were evaluated and excluded.
+- ESP-Hosted 3.0.7 and `esp_websocket_client` are now integrated through the C
+  platform facade and listed in `PRIV_REQUIRES`; keep protocol/state ownership in
+  Rust and do not introduce a second Rust TLS stack. Revisit the high-level
+  `esp-idf-svc` crate only when its ESP-IDF 6.1 support makes this boundary
+  materially simpler;
+- the display GUI stack is confirmed (owner decision, 2026-09-08): LVGL v9 through the C `esp_lvgl_port` component from the ESP Component Registry. Rust owns protocol, state and presentation mapping; the thin LVGL binding layer is written in this repository rather than depending on the immature third-party v9 binding crates. `esp_lcd` (RGB panel) is initialized on the C side; GT911 touch initialization is DC-018 work and will use the same narrow C facade. Slint (paid embedded license) and embedded-graphics (too low-level, provisioning-screen only) were evaluated and excluded.

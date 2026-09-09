@@ -1,0 +1,17 @@
+---
+description: Keep the firmware modular and prevent god objects
+alwaysApply: true
+---
+
+# Architecture boundaries
+
+- Do not let a single type, module, or source file accumulate unrelated
+  responsibilities. Keep transport/protocol validation, application state,
+  hardware access, and UI rendering separate.
+- Refactor before a component becomes a god object: extract a cohesive layer
+  or focused type when it owns more than one domain concern or when its public
+  API starts mixing them.
+- Prefer small explicit interfaces at layer boundaries. The Rust/C FFI facade
+  remains narrow: Rust owns protocol and state; C owns ESP-IDF and LVGL.
+- Do not introduce speculative layers. Split only around real responsibilities
+  and keep each extracted unit independently testable where practical.

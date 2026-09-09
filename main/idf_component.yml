@@ -8,4 +8,5 @@ dependencies:
   espressif/esp_websocket_client: "1.8.0"
   # LVGL v9 UI stack confirmed in the RockServer DC-018 decision record.
   espressif/esp_lvgl_port: "^2.0"
+  espressif/esp_lcd_touch_gt911: "^1"
   lvgl/lvgl: "9.5.0"

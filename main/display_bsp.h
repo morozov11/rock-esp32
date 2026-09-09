@@ -29,6 +29,12 @@ int rock_ui_clock_init(void);
  */
 bool rock_ui_clock_set_text(const char *text);
 
+/** Render one bounded protocol-v1 presentation on the local LVGL display. */
+bool rock_ui_show_text(const char *text);
+bool rock_ui_show_now_playing(const char *station_id, const char *title,
+                              const char *subtitle);
+bool rock_ui_show_sensor_grid(const char *title, const char *items);
+
 /** Render the DC-017 short code, verification phrase and pure-Rust QR matrix. */
 bool rock_ui_pairing_show(const char *short_code, const char *phrase,
                           const uint8_t *modules, uint16_t width);

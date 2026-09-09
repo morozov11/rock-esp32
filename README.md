@@ -37,13 +37,33 @@ The application loop lives in `src/lib.rs`. `main/main.c` is the ESP-IDF entry p
 
 ## Roadmap
 
-1. Build and flash the Rust Hello World; verify serial output and reset behavior. (complete)
-2. Validate the ESP32-C6 slave image and bring up ESP-Hosted over SDIO.
-3. Connect to a test access point and make one HTTPS request.
-4. Integrate the device with the RockServer DC-016 control-plane milestone.
-5. Grow the Rust application behind narrow ESP-IDF bindings as each hardware capability is proven.
+The Rust bootstrap, display pipeline, and **DC-017 — provisioning and transport
+core** are complete and verified on the target board (2026-09-09).  This includes
+the ESP-Hosted 3.0.7 C6 companion over SDIO, Wi-Fi scanning, persistent pairing
+identity, device-session renewal, bounded WSS transport, reconnect/heartbeat,
+and generic manifest/state/command dispatch.  See
+[docs/dc-017-progress.md](docs/dc-017-progress.md) for the verification record.
 
-Display bring-up (2026-09-08, out of the original checkpoint order): the 4.3-inch
+The next executable milestone is **DC-018 — ESP32 display surface**:
+
+1. Initialize and validate the GT911 touch controller on the existing LVGL v9
+   display stack.
+2. Register `display.main`, map the protocol presentations `text`, `now_playing`,
+   and `sensor_grid` to native views, and report the displayed view state.
+3. Make `display.show_view` handling bounded and idempotent; verify golden
+   presentations and offline/reconnect transitions on the physical board.
+
+DC-019 then adds sensor modules and telemetry, and DC-020 verifies the full
+`show_sensors` → `sensor_grid` path through RockServer.  Interactive station
+browsing and local audio output remain explicitly out of protocol-v1 scope
+(DC-039 and DC-040, respectively) until a separate product decision.
+
+The DC-018 implementation record is maintained in
+[docs/dc-018-progress.md](docs/dc-018-progress.md).  Physical golden-view and
+touch verification remains a separate board-session record; no flash operation
+is implied by a firmware build.
+
+Display bring-up (2026-09-08, completed ahead of the original checkpoint order): the 4.3-inch
 ST7701 panel runs through LVGL 9.5.0 + `esp_lvgl_port` 2.9.0 with an uptime clock
 (`HH:MM:SS`) rendered on the physical display; the Rust side drives the label through
 the `main/display_bsp.c` facade. See [docs/bring-up.md](docs/bring-up.md) for the

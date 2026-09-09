@@ -16,9 +16,13 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_st7701.h"
+#include "esp_lcd_touch.h"
+#include "esp_lcd_touch_gt911.h"
 #include "esp_ldo_regulator.h"
 #include "esp_lvgl_port.h"
+#include "esp_lvgl_port_touch.h"
 #include "driver/gpio.h"
+#include "driver/i2c_master.h"
 #include "driver/ledc.h"
 #include "esp_heap_caps.h"
 #include "lvgl.h"
@@ -37,9 +41,39 @@ static const char *TAG = "rock-display";
 #define ROCK_BACKLIGHT_GPIO GPIO_NUM_23
 #define ROCK_BACKLIGHT_DUTY (716) // ~70% of 1023
 
+#define ROCK_TOUCH_I2C_PORT I2C_NUM_1
+#define ROCK_TOUCH_SDA_GPIO GPIO_NUM_7
+#define ROCK_TOUCH_SCL_GPIO GPIO_NUM_8
+
 static esp_ldo_channel_handle_t s_phy_ldo;
+static lv_display_t *s_display;
+static i2c_master_bus_handle_t s_touch_bus;
+static esp_lcd_panel_io_handle_t s_touch_io;
+static esp_lcd_touch_handle_t s_touch;
 static lv_obj_t *s_clock_label;
 static void *s_qr_buffer;
+
+static int display_touch_init(void)
+{
+    const i2c_master_bus_config_t bus_cfg = {
+        .i2c_port = ROCK_TOUCH_I2C_PORT,
+        .sda_io_num = ROCK_TOUCH_SDA_GPIO,
+        .scl_io_num = ROCK_TOUCH_SCL_GPIO,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+    };
+    if (i2c_new_master_bus(&bus_cfg, &s_touch_bus) != ESP_OK) return -1;
+    esp_lcd_panel_io_i2c_config_t io_cfg = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
+    io_cfg.scl_speed_hz = 400000;
+    if (esp_lcd_new_panel_io_i2c(s_touch_bus, &io_cfg, &s_touch_io) != ESP_OK) return -1;
+    // The controller is portrait; match the panel's software landscape rotation.
+    const esp_lcd_touch_config_t touch_cfg = {
+        .x_max = 480, .y_max = 800, .rst_gpio_num = GPIO_NUM_NC,
+        .int_gpio_num = GPIO_NUM_NC, .flags = {.swap_xy = true},
+    };
+    if (esp_lcd_touch_new_i2c_gt911(s_touch_io, &touch_cfg, &s_touch) != ESP_OK) return -1;
+    const lvgl_port_touch_cfg_t lvgl_cfg = {.disp = s_display, .handle = s_touch};
+    return lvgl_port_add_touch(&lvgl_cfg) ? 0 : -1;
+}
 
 static int display_brightness_init(void)
 {
@@ -179,8 +213,14 @@ int rock_display_init(void)
             .avoid_tearing = false,
         },
     };
-    if (lvgl_port_add_disp_dsi(&disp_cfg, &dsi_disp_cfg) == NULL) {
+    s_display = lvgl_port_add_disp_dsi(&disp_cfg, &dsi_disp_cfg);
+    if (s_display == NULL) {
         ESP_LOGE(TAG, "LVGL display registration failed");
+        return -1;
+    }
+
+    if (display_touch_init() != 0) {
+        ESP_LOGE(TAG, "GT911 touch init failed");
         return -1;
     }
 
@@ -223,6 +263,71 @@ bool rock_ui_clock_set_text(const char *text)
         return false;
     }
     lv_label_set_text(s_clock_label, text);
+    lvgl_port_unlock();
+    return true;
+}
+
+static bool ui_lock(void)
+{
+    if (!lvgl_port_lock(1000)) return false;
+    lv_obj_t *screen = lv_screen_active();
+    lv_obj_clean(screen);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(0x0F1115), 0);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+    return true;
+}
+
+static void ui_label(lv_obj_t *parent, const char *text, uint32_t color,
+                     const lv_font_t *font, lv_align_t align, int x, int y)
+{
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, text ? text : "");
+    lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
+    lv_obj_set_style_text_font(label, font, 0);
+    lv_obj_align(label, align, x, y);
+}
+
+bool rock_ui_show_text(const char *text)
+{
+    if (!text || !ui_lock()) return false;
+    ui_label(lv_screen_active(), "ROCK", 0x7C8598, &lv_font_montserrat_16,
+             LV_ALIGN_TOP_MID, 0, 24);
+    ui_label(lv_screen_active(), text, 0xF5F7FA, &lv_font_montserrat_48,
+             LV_ALIGN_CENTER, 0, 0);
+    lvgl_port_unlock();
+    return true;
+}
+
+bool rock_ui_show_now_playing(const char *station_id, const char *title,
+                              const char *subtitle)
+{
+    if (!station_id || !title || !ui_lock()) return false;
+    lv_obj_t *screen = lv_screen_active();
+    ui_label(screen, "NOW PLAYING", 0x7C8598, &lv_font_montserrat_16,
+             LV_ALIGN_TOP_LEFT, 42, 42);
+    ui_label(screen, title, 0xF5F7FA, &lv_font_montserrat_48,
+             LV_ALIGN_LEFT_MID, 42, -42);
+    ui_label(screen, subtitle, 0x9CA3AF, &lv_font_montserrat_16,
+             LV_ALIGN_LEFT_MID, 42, 24);
+    ui_label(screen, station_id, 0x60A5FA, &lv_font_montserrat_16,
+             LV_ALIGN_BOTTOM_LEFT, 42, -42);
+    lvgl_port_unlock();
+    return true;
+}
+
+bool rock_ui_show_sensor_grid(const char *title, const char *items)
+{
+    if (!title || !items || !ui_lock()) return false;
+    lv_obj_t *screen = lv_screen_active();
+    ui_label(screen, title, 0xF5F7FA, &lv_font_montserrat_16,
+             LV_ALIGN_TOP_LEFT, 30, 25);
+    lv_obj_t *grid = lv_label_create(screen);
+    lv_label_set_text(grid, items);
+    lv_label_set_long_mode(grid, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(grid, 740);
+    lv_obj_set_style_text_color(grid, lv_color_hex(0xD1D5DB), 0);
+    lv_obj_set_style_text_font(grid, &lv_font_montserrat_16, 0);
+    lv_obj_align(grid, LV_ALIGN_TOP_LEFT, 30, 75);
     lvgl_port_unlock();
     return true;
 }

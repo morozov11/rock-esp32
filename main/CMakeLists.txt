@@ -41,6 +41,8 @@ idf_component_register(
         "esp_driver_uart"
         "esp_driver_usb_serial_jtag"
         "esp_lcd"
+        "esp_lcd_touch"
+        "esp_lcd_touch_gt911"
         "esp_lcd_st7701"
         "esp_lvgl_port"
         "esp_http_client"
