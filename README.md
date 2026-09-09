@@ -44,19 +44,18 @@ identity, device-session renewal, bounded WSS transport, reconnect/heartbeat,
 and generic manifest/state/command dispatch.  See
 [docs/dc-017-progress.md](docs/dc-017-progress.md) for the verification record.
 
-The next executable milestone is **DC-018 — ESP32 display surface**:
+DC-018 now provides the LVGL v9 display surface and GT911 touch seam. The owner
+decided on 2026-09-09 that this board will become a standalone RockCast-class
+radio: local station playback, touch browse/search, Rockmobile control, and an
+always-listening `ESP` wake word followed by the existing RockServer voice and
+typed-command path. The contract-first delivery plan is maintained in
+[docs/rockcast-device-plan.md](docs/rockcast-device-plan.md); execution is
+coordinated from [docs/plan-control.md](docs/plan-control.md), which also
+tracks the cross-repository tasks for RockServer, Rockmobile, and RockCast.
 
-1. Initialize and validate the GT911 touch controller on the existing LVGL v9
-   display stack.
-2. Register `display.main`, map the protocol presentations `text`, `now_playing`,
-   and `sensor_grid` to native views, and report the displayed view state.
-3. Make `display.show_view` handling bounded and idempotent; verify golden
-   presentations and offline/reconnect transitions on the physical board.
-
-DC-019 then adds sensor modules and telemetry, and DC-020 verifies the full
-`show_sensors` → `sensor_grid` path through RockServer.  Interactive station
-browsing and local audio output remain explicitly out of protocol-v1 scope
-(DC-039 and DC-040, respectively) until a separate product decision.
+DC-019 and DC-020 remain deferred because sensor hardware is not currently
+available; they do not block the radio, GUI, playback, or radio-only voice
+milestones.
 
 The DC-018 implementation record is maintained in
 [docs/dc-018-progress.md](docs/dc-018-progress.md).  Physical golden-view and
