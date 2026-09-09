@@ -59,9 +59,46 @@ variable, credential, or arbitrary Git metadata.
 and display name. Pairing identity is never supplied through source code, build arguments, or
 environment variables.
 
-The tracked partition table reserves 24 KiB for ordinary NVS and 3 MiB for the factory app. A
-normal `flash` updates the bootloader, partition table, and application without erasing NVS, so an
-already paired identity survives firmware updates.
+The tracked partition table (migrated for OTA under task RE-2, 2026-09-09) keeps NVS pinned at
+0x9000 so the paired identity survives the migration, and replaces the former 3 MiB factory app
+with two equal OTA slots that use the full 16 MB flash:
+
+| Partition | Offset  | Size              | Purpose |
+| --------- | ------: | ----------------- | ------- |
+| nvs       | 0x9000  | 0x6000 (24 KiB)   | `rock_auth` pairing identity; offset frozen |
+| phy_init  | 0xf000  | 0x1000 (4 KiB)    | RF calibration data |
+| otadata   | 0x10000 | 0x2000 (8 KiB)    | OTA boot selection, two 4 KiB sectors |
+| ota_0     | 0x20000 | 0x7F0000 (8128 KiB) | OTA application slot A |
+| ota_1     | 0x810000 | 0x7F0000 (8128 KiB) | OTA application slot B |
+
+Slot sizing, worst case before the player and voice milestones land:
+
+- current application image (LVGL 9.5, esp_lvgl_port, GT911, ESP-Hosted host, WSS transport,
+  pairing): 0x1C9840 ≈ 1.79 MiB;
+- `esp_audio_codec` with `esp_codec_dev` (MP3 and AAC decoders): bounded at 0.5 MiB;
+- `esp-sr` AFE plus one WakeNet model: bounded at 1.5 MiB;
+- worst-case image ≈ 3.8 MiB, and the required headroom is at least 2x the current image
+  (2 × 1.79 ≈ 3.6 MiB), so a slot must hold ≈ 7.4 MiB.
+
+Each slot provides 0x7F0000 = 7.94 MiB ≥ 7.4 MiB — about 4.4x the current image; the build's own
+partition check reports 77% of the slot free today. All offsets and sizes are multiples of 0x1000,
+and the app slots are additionally 64 KiB-aligned; the 56 KiB between otadata and ota_0
+(0x12000–0x20000) stays unused. A normal `flash` writes the bootloader, partition table, initial
+otadata, and the application into ota_0 without erasing NVS, so an already paired identity
+survives firmware updates. Until RE-9 delivers `esp_https_ota`, only ota_0 is written; the empty
+otadata makes the bootloader fall back to ota_0 because no factory partition exists.
+
+Board verification after the migration flash (2026-09-09): the bootloader prints the new table
+(nvs 0x9000, phy_init 0xf000, otadata 0x10000, ota_0/ota_1 0x7f0000) and loads the application
+from ota_0 ("Loaded app from partition at offset 0x20000"); the ESP-Hosted 3.0.7 C6 link
+renegotiates cleanly and Wi-Fi scanning works. The flash targeted only the bootloader, partition
+table, initial otadata, and the ota_0 application, and the factory-era vendor NVS entries
+(namespace `storage`) are still intact after the reflash, proving NVS was preserved. Two
+environment findings for the control center: no `rock_auth` pairing identity exists on this
+board (the namespace is absent from NVS both before and after the reflash, and no progress
+document records a physical pairing), and the local sdkconfig currently carries no Wi-Fi
+credentials, so the device runs its interactive scanner mode and the WSS path could not be
+exercised in this session.
 
 The browser handoff uses the existing RockServer/RockCast form
 `/?code=<SHORT>#secret=<APPROVAL_SECRET>`. The approval proof stays in the URL fragment and is not
