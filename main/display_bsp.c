@@ -20,6 +20,7 @@
 #include "esp_lvgl_port.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "esp_heap_caps.h"
 #include "lvgl.h"
 
 #include <stddef.h>
@@ -38,6 +39,7 @@ static const char *TAG = "rock-display";
 
 static esp_ldo_channel_handle_t s_phy_ldo;
 static lv_obj_t *s_clock_label;
+static void *s_qr_buffer;
 
 static int display_brightness_init(void)
 {
@@ -221,6 +223,151 @@ bool rock_ui_clock_set_text(const char *text)
         return false;
     }
     lv_label_set_text(s_clock_label, text);
+    lvgl_port_unlock();
+    return true;
+}
+
+bool rock_ui_pairing_show(const char *short_code, const char *phrase,
+                          const uint8_t *modules, uint16_t width)
+{
+    if (!short_code || !phrase || !modules || width == 0 || width > 177 || !lvgl_port_lock(1000)) return false;
+    const int canvas_size = 320, quiet = 4;
+    const int scale = canvas_size / (width + quiet * 2);
+    const int used = scale * (width + quiet * 2);
+    if (scale < 1) { lvgl_port_unlock(); return false; }
+    if (!s_qr_buffer) {
+        s_qr_buffer = heap_caps_calloc((size_t)canvas_size * canvas_size, sizeof(lv_color16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (!s_qr_buffer) { lvgl_port_unlock(); return false; }
+    lv_obj_t *screen = lv_screen_active();
+    lv_obj_clean(screen);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(0x0F1115), 0);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text_fmt(title, "PAIR  %s", short_code);
+    lv_obj_set_style_text_color(title, lv_color_hex(0xF5F7FA), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_48, 0);
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 42, -45);
+    lv_obj_t *verification = lv_label_create(screen);
+    lv_label_set_text(verification, phrase);
+    lv_obj_set_style_text_color(verification, lv_color_hex(0x7C8598), 0);
+    lv_obj_set_style_text_font(verification, &lv_font_montserrat_16, 0);
+    lv_obj_align(verification, LV_ALIGN_LEFT_MID, 45, 25);
+    lv_obj_t *canvas = lv_canvas_create(screen);
+    lv_canvas_set_buffer(canvas, s_qr_buffer, canvas_size, canvas_size, LV_COLOR_FORMAT_RGB565);
+    lv_canvas_fill_bg(canvas, lv_color_white(), LV_OPA_COVER);
+    int origin = (canvas_size - used) / 2 + quiet * scale;
+    for (uint16_t y = 0; y < width; ++y) for (uint16_t x = 0; x < width; ++x) {
+        if (!modules[(size_t)y * width + x]) continue;
+        for (int py = 0; py < scale; ++py) for (int px = 0; px < scale; ++px)
+            lv_canvas_set_px(canvas, origin + x * scale + px, origin + y * scale + py, lv_color_black(), LV_OPA_COVER);
+    }
+    lv_obj_align(canvas, LV_ALIGN_RIGHT_MID, -35, 0);
+    lvgl_port_unlock();
+    return true;
+}
+
+static const char *get_auth_mode_str(uint8_t authmode)
+{
+    switch (authmode) {
+        case 0: return "OPEN";
+        case 1: return "WEP";
+        case 2: return "WPA-PSK";
+        case 3: return "WPA2-PSK";
+        case 4: return "WPA/WPA2";
+        case 5: return "WPA2-ENT";
+        case 6: return "WPA3-PSK";
+        case 7: return "WPA2/WPA3";
+        case 8: return "WAPI";
+        case 9: return "OWE";
+        default: return "SECURED";
+    }
+}
+
+bool rock_ui_wifi_scan_show(const rock_wifi_scan_item_t *items, uint16_t count)
+{
+    if (!lvgl_port_lock(1000)) return false;
+
+    lv_obj_t *screen = lv_screen_active();
+    lv_obj_clean(screen);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(0x0F1115), 0);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "AVAILABLE WI-FI NETWORKS");
+    lv_obj_set_style_text_color(title, lv_color_hex(0xF5F7FA), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 30, 20);
+
+    lv_obj_t *subtitle = lv_label_create(screen);
+    lv_label_set_text_fmt(subtitle, "Found %u access point(s)", count);
+    lv_obj_set_style_text_color(subtitle, lv_color_hex(0x7C8598), 0);
+    lv_obj_set_style_text_font(subtitle, &lv_font_montserrat_16, 0);
+    lv_obj_align(subtitle, LV_ALIGN_TOP_LEFT, 30, 45);
+
+    if (count == 0 || !items) {
+        lv_obj_t *empty = lv_label_create(screen);
+        lv_label_set_text(empty, "No Wi-Fi networks found");
+        lv_obj_set_style_text_color(empty, lv_color_hex(0x7C8598), 0);
+        lv_obj_set_style_text_font(empty, &lv_font_montserrat_16, 0);
+        lv_obj_center(empty);
+        lvgl_port_unlock();
+        return true;
+    }
+
+    lv_obj_t *cont = lv_obj_create(screen);
+    lv_obj_set_size(cont, 740, 390);
+    lv_obj_align(cont, LV_ALIGN_TOP_MID, 0, 75);
+    lv_obj_set_style_bg_color(cont, lv_color_hex(0x14171F), 0);
+    lv_obj_set_style_border_color(cont, lv_color_hex(0x262C38), 0);
+    lv_obj_set_style_border_width(cont, 1, 0);
+    lv_obj_set_style_radius(cont, 8, 0);
+    lv_obj_set_style_pad_all(cont, 8, 0);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_AUTO);
+
+    uint16_t show_count = count > 30 ? 30 : count;
+    for (uint16_t i = 0; i < show_count; i++) {
+        lv_obj_t *row = lv_obj_create(cont);
+        lv_obj_set_width(row, lv_pct(100));
+        lv_obj_set_height(row, 44);
+        lv_obj_set_style_bg_color(row, lv_color_hex(0x1B202B), 0);
+        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_style_radius(row, 6, 0);
+        lv_obj_set_style_pad_all(row, 6, 0);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+        // RSSI badge
+        lv_obj_t *rssi_lbl = lv_label_create(row);
+        lv_label_set_text_fmt(rssi_lbl, "%3d dBm", items[i].rssi);
+        uint32_t rssi_color = items[i].rssi >= -60 ? 0x4ADE80 : (items[i].rssi >= -75 ? 0xFACC15 : 0xF87171);
+        lv_obj_set_style_text_color(rssi_lbl, lv_color_hex(rssi_color), 0);
+        lv_obj_set_style_text_font(rssi_lbl, &lv_font_montserrat_16, 0);
+        lv_obj_set_width(rssi_lbl, 80);
+
+        // SSID
+        lv_obj_t *ssid_lbl = lv_label_create(row);
+        lv_label_set_text(ssid_lbl, items[i].ssid[0] ? items[i].ssid : "<Hidden Network>");
+        lv_obj_set_style_text_color(ssid_lbl, lv_color_hex(0xF5F7FA), 0);
+        lv_obj_set_style_text_font(ssid_lbl, &lv_font_montserrat_16, 0);
+        lv_obj_set_flex_grow(ssid_lbl, 1);
+
+        // Channel
+        lv_obj_t *ch_lbl = lv_label_create(row);
+        lv_label_set_text_fmt(ch_lbl, "CH %u", items[i].channel);
+        lv_obj_set_style_text_color(ch_lbl, lv_color_hex(0x7C8598), 0);
+        lv_obj_set_style_text_font(ch_lbl, &lv_font_montserrat_16, 0);
+        lv_obj_set_width(ch_lbl, 60);
+
+        // Auth
+        lv_obj_t *auth_lbl = lv_label_create(row);
+        lv_label_set_text(auth_lbl, get_auth_mode_str(items[i].authmode));
+        lv_obj_set_style_text_color(auth_lbl, lv_color_hex(items[i].authmode == 0 ? 0x94A3B8 : 0x60A5FA), 0);
+        lv_obj_set_style_text_font(auth_lbl, &lv_font_montserrat_16, 0);
+        lv_obj_set_width(auth_lbl, 110);
+    }
+
     lvgl_port_unlock();
     return true;
 }

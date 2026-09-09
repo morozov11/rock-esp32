@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,20 @@ int rock_ui_clock_init(void);
  * which case the caller may simply retry on its next tick.
  */
 bool rock_ui_clock_set_text(const char *text);
+
+/** Render the DC-017 short code, verification phrase and pure-Rust QR matrix. */
+bool rock_ui_pairing_show(const char *short_code, const char *phrase,
+                          const uint8_t *modules, uint16_t width);
+
+typedef struct {
+    char ssid[33];
+    int8_t rssi;
+    uint8_t authmode;
+    uint8_t channel;
+} rock_wifi_scan_item_t;
+
+/** Render scanned Wi-Fi networks on the ST7701 display. */
+bool rock_ui_wifi_scan_show(const rock_wifi_scan_item_t *items, uint16_t count);
 
 #ifdef __cplusplus
 }

@@ -13,7 +13,7 @@ ESP-IDF 6.1 defaults to ESP32-P4 v3.1 and newer. This board uses v1.3, so `sdkco
 
 The original C Hello World, its `no_std` Rust replacement, and the current `esp-idf-sys`-based Rust application were each successfully built, flashed, and monitored on the connected v1.3 board. The Rust application is a static library behind a small C/ESP-IDF bridge; see `docs/rust-direction.md` for the current build chain and the vendored `esp-idf-sys` copy. As of 2026-09-08 the monitor prints `Rust + esp-idf-sys; free heap: ...` once per second. The boot log confirmed the supported range v1.0 through v1.99 and ESP-IDF 6.1. A non-fatal warning reported a Boya flash chip using the generic driver; enable the dedicated Boya driver before flash performance or reliability testing.
 
-The vendor documentation and recovery files are stored locally at `D:\work\JC4880P443C_I_W`. Keep that directory outside this repository because it contains large vendor archives and binary images.
+The vendor documentation and recovery files are stored locally at `D:\work\JC4880P443C_I_W`. Keep that directory outside this repository because it contains large vendor archives and binary images. Complete pinouts, peripherals, and board hardware specs are documented in [`docs/board-hardware.md`](board-hardware.md).
 
 ## Wi-Fi architecture
 
@@ -41,16 +41,14 @@ The vendor recovery directory contains `JC-C6-slave_v2.3.2.bin` for the C6 and `
 4. Flash only the P4 application.
 5. Confirm `Rust + esp-idf-sys; free heap: ...` appears once per second in the monitor.
 
-### 2. Wi-Fi and internet test
+### 2. Wi-Fi and SDIO companion bring-up (complete, 2026-09-09)
 
-1. Confirm the ESP32-C6 responds as an ESP-Hosted slave before changing its firmware.
-2. Add the official ESP-Hosted host component using the ESP Component Registry.
-3. Configure the verified SDIO pins above.
-4. Connect to a dedicated test access point using credentials kept outside Git.
-5. Synchronize time if TLS validation requires it.
-6. Perform one HTTPS GET to a stable test endpoint and log the status code and response length.
+1. Confirmed ESP32-C6 responds as an ESP-Hosted slave on SDIO.
+2. Official ESP-Hosted 3.0.7 host component integrated and pinned.
+3. C6 co-processor updated to matching ESP-Hosted 3.0.7 via safe SDIO OTA partition without touching NVS (`0x9000..0xf000`).
+4. Wi-Fi scanning verified live on hardware: access points detected across channels 1–13, RSSI, and auth modes formatted and rendered onto the ST7701 LVGL display.
+5. All 6/6 RockServer device-control contract unit tests passing (`cargo test --target x86_64-pc-windows-msvc`).
 
-Keep display, touch, audio, RockServer authentication, and OTA outside this checkpoint so network failures remain easy to isolate.
 
 ### 3. Display and LVGL clock (complete, 2026-09-08)
 

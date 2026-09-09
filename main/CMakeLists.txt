@@ -6,7 +6,7 @@
 # also genuinely linked: display_bsp.c owns the display bring-up, while the
 # Rust side drives the clock UI through the display_bsp facade.
 idf_component_register(
-    SRCS "main.c" "display_bsp.c"
+    SRCS "main.c" "display_bsp.c" "control_platform.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         "heap"
@@ -43,7 +43,11 @@ idf_component_register(
         "esp_lcd"
         "esp_lcd_st7701"
         "esp_lvgl_port"
+        "esp_http_client"
+        "esp_hosted"
         "esp_timer"
+        "esp_websocket_client"
+    WHOLE_ARCHIVE
 )
 
 include(ExternalProject)
@@ -57,6 +61,7 @@ set(RUST_LIBRARY "${RUST_TARGET_DIR}/${RUST_TARGET}/release/librock_esp32.a")
 idf_build_get_property(RUST_SDKCONFIG SDKCONFIG)
 idf_build_get_property(RUST_IDF_PATH IDF_PATH)
 get_filename_component(RUST_LIBCLANG_PATH "$ENV{ESP_CLANG_LIBS_PATH}/../bin" ABSOLUTE)
+find_program(RUST_CARGO_BIN cargo HINTS "$ENV{USERPROFILE}/.cargo/bin" REQUIRED)
 
 # libclang.dll only ships in the esp-clang-libs package, which the IDF
 # activation profile does not put on PATH. cargo runs through the
@@ -82,6 +87,7 @@ ExternalProject_Add(
         RUSTFLAGS=--cfg\ espidf_time64
         MCU=${CONFIG_IDF_TARGET}
         RUST_CLANG_BIN=${RUST_LIBCLANG_PATH}
+        RUST_CARGO_BIN=${RUST_CARGO_BIN}
         "RUST_CARGO_ARGS=${RUST_CARGO_ARGS}"
         cmd /c "${RUST_PROJECT_DIR}/main/rust-build.bat"
     INSTALL_COMMAND ""
@@ -95,3 +101,4 @@ ExternalProject_Add(
 add_prebuilt_library(rock_rust "${RUST_LIBRARY}")
 add_dependencies(rock_rust rock_rust_build)
 target_link_libraries(${COMPONENT_LIB} PRIVATE rock_rust)
+target_link_options(${COMPONENT_LIB} INTERFACE "LINKER:-u,realpath")

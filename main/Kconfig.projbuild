@@ -1,0 +1,26 @@
+menu "Rock firmware"
+
+config ROCK_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+    help
+        Local build configuration only. sdkconfig is ignored by Git.
+
+config ROCK_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+    help
+        Local build configuration only. Never print this value.
+
+config ROCKSERVER_BASE_URL
+    string "RockServer HTTPS base URL"
+    default ""
+    help
+        For example https://rockserver.example. Plain HTTP is accepted only
+        for localhost development by RockServer and is not used on hardware.
+
+config ROCK_DEVICE_DISPLAY_NAME
+    string "Device display name"
+    default "Rock ESP32"
+
+endmenu

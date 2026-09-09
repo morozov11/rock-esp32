@@ -1,5 +1,11 @@
 ## IDF Component Manager manifest for the rock-esp32 application component.
 dependencies:
+  # Host and companion use the same RPC-v2 generation. 3.0.3+ carries the
+  # ESP-IDF 6.1 host fixes; the owner approved updating the C6 on 2026-09-08.
+  espressif/esp_hosted: "3.0.7"
+  # Native ESP-IDF transport keeps TLS roots, socket ownership and the worker
+  # task outside the Rust allocator while exposing a bounded text-frame API.
+  espressif/esp_websocket_client: "1.8.0"
   # LVGL v9 UI stack confirmed in the RockServer DC-018 decision record.
   espressif/esp_lvgl_port: "^2.0"
   lvgl/lvgl: "9.5.0"

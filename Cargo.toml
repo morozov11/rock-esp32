@@ -4,9 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+qrcode = { version = "0.14", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "espidf")'.dependencies]
 # Vendored at upstream rev 0ffca86 plus local fixes; see
 # third_party/esp-idf-sys/PROVENANCE.md. ESP-IDF 6 support is pending the
 # next crates.io release.
@@ -15,7 +20,7 @@ crate-type = ["staticlib"]
 esp-idf-sys = { path = "third_party/esp-idf-sys", default-features = false, features = ["std", "native"] }
 
 [build-dependencies]
-embuild = "0.33"
+embuild = { version = "0.33", features = ["espidf"] }
 
 [profile.dev]
 panic = "abort"

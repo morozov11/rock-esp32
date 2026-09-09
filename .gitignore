@@ -6,3 +6,8 @@
 /sdkconfig
 /sdkconfig.old
 *.log
+/cmake-build-*/
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
