@@ -10,3 +10,11 @@ dependencies:
   espressif/esp_lvgl_port: "^2.0"
   espressif/esp_lcd_touch_gt911: "^1"
   lvgl/lvgl: "9.5.0"
+  # RE-3 board spikes (2026-09-09), exact pins with justifications in
+  # docs/component-spikes.md. esp_audio_codec stays below 2.6 because this
+  # board is an ESP32-P4 chip below revision 3.0; esp-dsp is pinned to the
+  # exact version esp-sr 2.5.3 requires.
+  espressif/esp_codec_dev: "1.6.2"
+  espressif/esp_audio_codec: "2.5.0"
+  espressif/esp-sr: "2.5.3"
+  espressif/esp-dsp: "1.8.0"
