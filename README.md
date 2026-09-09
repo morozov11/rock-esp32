@@ -38,10 +38,12 @@ The application loop lives in `src/lib.rs`. `main/main.c` is the ESP-IDF entry p
 ## Roadmap
 
 The Rust bootstrap, display pipeline, and **DC-017 — provisioning and transport
-core** are complete and verified on the target board (2026-09-09).  This includes
-the ESP-Hosted 3.0.7 C6 companion over SDIO, Wi-Fi scanning, persistent pairing
-identity, device-session renewal, bounded WSS transport, reconnect/heartbeat,
-and generic manifest/state/command dispatch.  See
+core** are complete (2026-09-09).  On the target board this is verified for the
+ESP-Hosted 3.0.7 C6 companion over SDIO, Wi-Fi scanning, and generic
+manifest/state/command dispatch; pairing identity, device-session renewal, and
+the bounded WSS transport are implemented and covered by host contract tests,
+while a live paired session on the board is still pending (task RE-11 in
+[docs/plan-control.md](docs/plan-control.md)).  See
 [docs/dc-017-progress.md](docs/dc-017-progress.md) for the verification record.
 
 DC-018 now provides the LVGL v9 display surface and GT911 touch seam. The owner

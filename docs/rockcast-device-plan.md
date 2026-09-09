@@ -121,7 +121,9 @@ microphone data GPIO48, and amplifier enable GPIO11.
 Acceptance:
 
 - microphone and speaker work on the real board without corrupting touch or
-  network operation;
+  network operation (the speaker path is proven electrically; the audible
+  acoustic confirmation is tracked as task RE-12 in
+  [`plan-control.md`](plan-control.md) until a speaker is attached);
 - concurrent capture/playback is stable and bounded;
 - pinned component versions are recorded in `main/idf_component.yml`, the new
   partition table is committed, and spike results are recorded in docs;
