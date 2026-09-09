@@ -177,6 +177,14 @@
   — зарегистрирована RE-13; до RE-12 тон при буте сохраняется намеренно.
   Расхождение ядров: аудио на Core 1, UI/touch/Wi-Fi на Core 0 —
   соответствует замерам RE-4.
+- **2026-09-09, центр управления.** RM-1 принята (fb8e3a7; юнит-тесты
+  9/9 и 11/11, полная сборка — прогнаны центром). Поздний Succeeded после
+  клиентского Expired трактуется как успех с пояснением — соответствует
+  семантике «accepted/result асинхронно» из RS-1. Физическая приёмка
+  (реальный ESP32 через RockServer с телефона) — после RE-11. Шаг 5 плана
+  закрыт в коде; остаются шаги 6–10. Следующие диспатчи без блокеров:
+  RE-9 (OTA, зависит только от RE-2), RC-1 (design tokens), RE-13
+  (selftest-гейт).
 
 ## Доска задач
 
@@ -196,7 +204,7 @@
 | RE-3 | rock-esp32 | 1.2–1.3 | Спайки: esp_audio_codec на P4 v1.3, esp-sr на IDF 6.1; запинить версии | — | done (2026-09-09) | e868b24: codec_dev 1.6.2, esp_audio_codec 2.5.0 (2.6.x не собирается на чипе <3.0), esp-sr 2.5.3 + esp-dsp 1.8.0; образ 3.90 МиБ (51% слота); детали — docs/component-spikes.md |
 | RE-4 | rock-esp32 | 1.4–1.9 | Аудио-путь: общий I2C1, ES8311 через esp_codec_dev, тон, захват MIC, конкурентность, ресурсы | RE-3 | done (2026-09-09, электрический путь; акустика → RE-12) | 00070d9+2183e7e: mic 16-bit int16 подтверждён (10.0 с, пик −32.2 dBFS, пол −56, клиппинг 0); TX без underrun, конкурентность 60 с (RX overrun 8 — наблюдать в RE-5/soak), RAM/стеки/CPU в docs/audio-bringup.md |
 | RE-5 | rock-esp32 | 4 | Player MVP: stream-клиент, MP3/AAC, команда/состояние, манифест | RS-2, RS-3, RE-4 | done (2026-09-09; живой E2E отложен на RE-11) | f5ed186: SSRF-шлюз в Rust + FFI, стрим/декод/вывод на Core 1, PSRAM-ring 256 КиБ, heap Δ 0 Б за 30 с, dec_errors 0, underruns 52 только при переключении частоты; host 10/10 (прогнано центром); остаток: self-test стартует при каждом буте без гейта → RE-13 |
-| RM-1 | rockmobile | 5 | «Играть на устройстве»: station.play_station на выбранный target через существующую модель lifecycle | RE-5 | pending | |
+| RM-1 | rockmobile | 5 | «Играть на устройстве»: station.play_station на выбранный target через существующую модель lifecycle | RE-5 | done (2026-09-09; физическая приёмка отложена на RE-11) | fb8e3a7: действие в каталоге и плеере, buildPlayStationCommand с проверками таргета, поздний Succeeded после Expired как успех, ручной retry; тесты PlayStationCommand 9/9 + TargetDirectoryRepository 11/11, полная сборка зелёная (прогнано центром) |
 | RE-6 | rock-esp32 | 6 | Нативный GUI: browse, поиск с клавиатурой, now-playing, локальные состояния | RE-1, RE-5, RS-2, RC-1 | pending | |
 | RE-7 | rock-esp32 | 7 | Push-to-talk voice: bounded utterance, второй WSS, состояния | RS-4, RE-6 | pending | |
 | RE-8 | rock-esp32 | 8 | Wake word `ESP`: AFE + WakeNet, AEC, mute, пороги FAR/FRR; заранее принять решение F12 по размещению моделей (партиция model vs встроить vs внешний путь) | RE-7, RE-3, RE-12 (замер связи для AEC) | pending | |
