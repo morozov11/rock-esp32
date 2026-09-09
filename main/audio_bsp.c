@@ -391,8 +391,11 @@ static bool IRAM_ATTR rx_overflow_cb(i2s_chan_handle_t chan, i2s_event_data_t *e
     return false;
 }
 
-static int rock_audio_init(void)
+static bool s_audio_initialized = false;
+
+int rock_audio_init(void)
 {
+    if (s_audio_initialized) return 0;
     i2c_master_bus_handle_t bus = rock_i2c1_bus_acquire();
     if (!bus) return -1;
 
@@ -497,9 +500,38 @@ static int rock_audio_init(void)
     esp_codec_dev_set_in_gain(s_codec, ROCK_IN_GAIN_DB);
 
     pa_init();
+    s_audio_initialized = true;
     ESP_LOGI(TAG, "ES8311+I2S up: fs=%d Hz, ch=1, bits=16, vol=%d, in_gain=%.0f dB, MCLK=%d Hz, PA=GPIO%d (off)",
              ROCK_SAMPLE_RATE, ROCK_OUT_VOL, ROCK_IN_GAIN_DB,
              ROCK_SAMPLE_RATE * 256, ROCK_PA_GPIO);
+    return 0;
+}
+
+void *rock_audio_codec_handle(void)
+{
+    return (void *)s_codec;
+}
+
+void rock_audio_pa_set(bool on)
+{
+    pa_set(on);
+}
+
+int rock_audio_reconfig(uint32_t sample_rate, uint8_t channels)
+{
+    if (!s_codec) return -1;
+    esp_codec_dev_sample_info_t fs = {
+        .bits_per_sample = 16,
+        .channel = channels,
+        .channel_mask = 0,
+        .sample_rate = sample_rate,
+        .mclk_multiple = 0,
+    };
+    esp_codec_dev_close(s_codec);
+    if (esp_codec_dev_open(s_codec, &fs) != ESP_CODEC_DEV_OK) {
+        ESP_LOGE(TAG, "esp_codec_dev_open failed during reconfig (%lu Hz, %u ch)", (unsigned long)sample_rate, channels);
+        return -1;
+    }
     return 0;
 }
 

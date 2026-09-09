@@ -6,7 +6,7 @@
 # also genuinely linked: display_bsp.c owns the display bring-up, while the
 # Rust side drives the clock UI through the display_bsp facade.
 idf_component_register(
-    SRCS "main.c" "display_bsp.c" "control_platform.c" "board_bus.c" "audio_bsp.c"
+    SRCS "main.c" "display_bsp.c" "control_platform.c" "board_bus.c" "audio_bsp.c" "player_bsp.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         "heap"

@@ -5,9 +5,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "audio_bsp.h"
 #include "board_bus.h"
 #include "display_bsp.h"
+#include "player_bsp.h"
 
 static const char *TAG = "rock-esp32";
 
@@ -32,11 +32,12 @@ void app_main(void)
     if (rock_display_init() != 0 || rock_ui_clock_init() != 0) {
         ESP_LOGE(TAG, "Display bring-up failed; continuing without UI");
     }
-    // RE-4 audio proof runs as an isolated task next to the normal firmware
-    // (LVGL, GT911, ESP-Hosted); it is removed again when the RE-5 player
-    // takes over the audio path.
-    if (rock_audio_bringup_start() != 0) {
-        ESP_LOGE(TAG, "Audio bring-up task start failed");
+    // RE-5 streaming player takes over the audio path (I2S, ES8311, decoders, TX worker).
+    if (rock_player_init() != 0) {
+        ESP_LOGE(TAG, "Player subsystem init failed");
+    }
+    if (rock_player_bringup_start() != 0) {
+        ESP_LOGE(TAG, "Player bring-up task start failed");
     }
     rust_main();
 }

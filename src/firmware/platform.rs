@@ -39,6 +39,20 @@ unsafe extern "C" {
         width: u16,
     ) -> bool;
     fn rock_delay_ms(milliseconds: u32);
+    fn rock_player_play_stream(stream_uri: *const c_char, station_id: *const c_char) -> c_int;
+    fn rock_player_play() -> c_int;
+    fn rock_player_pause() -> c_int;
+    fn rock_player_stop() -> c_int;
+    fn rock_player_set_volume(volume: u8) -> c_int;
+    fn rock_player_set_mute(muted: bool) -> c_int;
+    fn rock_player_get_state(
+        status_buf: *mut c_char,
+        status_cap: usize,
+        station_buf: *mut c_char,
+        station_cap: usize,
+        vol: *mut u8,
+        muted: *mut bool,
+    ) -> c_int;
 }
 
 pub(crate) fn cstring(value: &str) -> Result<CString, ()> {
@@ -155,4 +169,75 @@ pub(crate) fn ws_send(text: &str) -> Result<(), ()> {
 }
 pub(crate) fn ws_receive(frame: &mut [c_char], timeout_ms: u32) -> i32 {
     unsafe { rock_ws_receive(frame.as_mut_ptr(), frame.len(), timeout_ms) }
+}
+
+pub(crate) fn player_play_stream(stream_uri: &str, station_id: &str) -> Result<(), ()> {
+    let stream_uri = cstring(stream_uri)?;
+    let station_id = cstring(station_id)?;
+    if unsafe { rock_player_play_stream(stream_uri.as_ptr(), station_id.as_ptr()) } == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
+pub(crate) fn player_play() -> Result<(), ()> {
+    if unsafe { rock_player_play() } == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
+pub(crate) fn player_pause() -> Result<(), ()> {
+    if unsafe { rock_player_pause() } == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
+pub(crate) fn player_stop() -> Result<(), ()> {
+    if unsafe { rock_player_stop() } == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
+pub(crate) fn player_set_volume(volume: u8) -> Result<(), ()> {
+    if unsafe { rock_player_set_volume(volume) } == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
+pub(crate) fn player_set_mute(muted: bool) -> Result<(), ()> {
+    if unsafe { rock_player_set_mute(muted) } == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
+pub(crate) fn player_get_status() -> Option<String> {
+    let mut status_buf = [0 as c_char; 32];
+    let mut station_buf = [0 as c_char; 128];
+    let mut vol = 0u8;
+    let mut muted = false;
+    if unsafe {
+        rock_player_get_state(
+            status_buf.as_mut_ptr(),
+            status_buf.len(),
+            station_buf.as_mut_ptr(),
+            station_buf.len(),
+            &mut vol,
+            &mut muted,
+        )
+    } == 0 {
+        Some(unsafe { CStr::from_ptr(status_buf.as_ptr()) }.to_string_lossy().into_owned())
+    } else {
+        None
+    }
 }
