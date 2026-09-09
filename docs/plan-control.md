@@ -169,6 +169,14 @@
   ignoreUnknownKeys=true). Серверная ветка (шаги 2–3 плана) закрыта
   полностью: RS-1..RS-5 done. Разблокирован RE-5 (player MVP); его живая
   end-to-end приёмка ожидает RE-11 (pairing + Wi-Fi) со стороны владельца.
+- **2026-09-09, центр управления.** Отчёт RE-5 принят (f5ed186; host-тесты
+  10/10 запущены центром). Замечания центра: (а) underruns 52 — только
+  пачкой при переключении частоты I2S в первые секунды, в установившемся
+  режиме счётчик неподвижен — принято; (б) обнаружен безусловный запуск
+  player self-test из main.c при каждой загрузке (assert в продакшн-пути)
+  — зарегистрирована RE-13; до RE-12 тон при буте сохраняется намеренно.
+  Расхождение ядров: аудио на Core 1, UI/touch/Wi-Fi на Core 0 —
+  соответствует замерам RE-4.
 
 ## Доска задач
 
@@ -187,7 +195,7 @@
 | RE-2 | rock-esp32 | 1.1 | Мигрировать партиции: otadata + два OTA-слота под 16 МБ, NVS остаётся на 0x9000 | — | done (2026-09-09) | f4cdb16: otadata 0x10000 + 2×0x7F0000; загрузка из ota_0 и целостность NVS подтверждены на плате |
 | RE-3 | rock-esp32 | 1.2–1.3 | Спайки: esp_audio_codec на P4 v1.3, esp-sr на IDF 6.1; запинить версии | — | done (2026-09-09) | e868b24: codec_dev 1.6.2, esp_audio_codec 2.5.0 (2.6.x не собирается на чипе <3.0), esp-sr 2.5.3 + esp-dsp 1.8.0; образ 3.90 МиБ (51% слота); детали — docs/component-spikes.md |
 | RE-4 | rock-esp32 | 1.4–1.9 | Аудио-путь: общий I2C1, ES8311 через esp_codec_dev, тон, захват MIC, конкурентность, ресурсы | RE-3 | done (2026-09-09, электрический путь; акустика → RE-12) | 00070d9+2183e7e: mic 16-bit int16 подтверждён (10.0 с, пик −32.2 dBFS, пол −56, клиппинг 0); TX без underrun, конкурентность 60 с (RX overrun 8 — наблюдать в RE-5/soak), RAM/стеки/CPU в docs/audio-bringup.md |
-| RE-5 | rock-esp32 | 4 | Player MVP: stream-клиент, MP3/AAC, команда/состояние, манифест | RS-2, RS-3, RE-4 | pending | |
+| RE-5 | rock-esp32 | 4 | Player MVP: stream-клиент, MP3/AAC, команда/состояние, манифест | RS-2, RS-3, RE-4 | done (2026-09-09; живой E2E отложен на RE-11) | f5ed186: SSRF-шлюз в Rust + FFI, стрим/декод/вывод на Core 1, PSRAM-ring 256 КиБ, heap Δ 0 Б за 30 с, dec_errors 0, underruns 52 только при переключении частоты; host 10/10 (прогнано центром); остаток: self-test стартует при каждом буте без гейта → RE-13 |
 | RM-1 | rockmobile | 5 | «Играть на устройстве»: station.play_station на выбранный target через существующую модель lifecycle | RE-5 | pending | |
 | RE-6 | rock-esp32 | 6 | Нативный GUI: browse, поиск с клавиатурой, now-playing, локальные состояния | RE-1, RE-5, RS-2, RC-1 | pending | |
 | RE-7 | rock-esp32 | 7 | Push-to-talk voice: bounded utterance, второй WSS, состояния | RS-4, RE-6 | pending | |
@@ -195,6 +203,7 @@
 | RE-9 | rock-esp32 | 9 | OTA (esp_https_ota + rollback) и Wi-Fi онбординг (SoftAP/captive portal на LVGL) | RE-2 (OTA тянется позже) | pending | |
 | RE-10 | rock-esp32 | 10 | Интеграционный soak: 12 сценариев, 24 ч, метрики | все | pending | |
 | RE-12 | rock-esp32 | 1 (остаток) | Акустическая приёмка: подключить динамик, подтверждить слышимый тон (стартует при буте автоматически), снять замер связи mic↔динамик для AEC | физическое подключение динамика владельцем | pending | |
+| RE-13 | rock-esp32 | гигиена | Закрыть player self-test за Kconfig (CONFIG_ROCK_PLAYER_SELFTEST): убрать безусловный запуск из main.c:39 и assert() из продакшн-пути; default y до прохождения RE-12, после — n | после RE-12 | pending | |
 | RE-11 | rock-esp32 | предусловие RE-1, RE-5 | Физический provisioning: внести Wi-Fi и `CONFIG_ROCKSERVER_BASE_URL` в локальный sdkconfig, завершить pairing, подтвердить живой WSS | участие владельца (учётки в sdkconfig, не в git) | pending | |
 
 ## Правила выполнения и приёмки
