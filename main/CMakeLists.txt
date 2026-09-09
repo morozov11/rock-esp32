@@ -6,7 +6,7 @@
 # also genuinely linked: display_bsp.c owns the display bring-up, while the
 # Rust side drives the clock UI through the display_bsp facade.
 idf_component_register(
-    SRCS "main.c" "display_bsp.c" "control_platform.c" "audio_spike.c"
+    SRCS "main.c" "display_bsp.c" "control_platform.c" "board_bus.c" "audio_bsp.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         "heap"
@@ -49,8 +49,9 @@ idf_component_register(
         "esp_hosted"
         "esp_timer"
         "esp_websocket_client"
-        # RE-3 audio/SR spike components; audio_spike.c includes their
-        # headers and roots their prebuilt archives in the final link.
+        # RE-3 pinned audio/SR components. esp_codec_dev is genuinely used
+        # by audio_bsp.c (ES8311 + I2S); esp_audio_codec and esp-sr are
+        # consumed by the later player (RE-5) and wake-word (RE-8) steps.
         "esp_codec_dev"
         "esp_audio_codec"
         "esp-sr"
@@ -108,7 +109,4 @@ ExternalProject_Add(
 add_prebuilt_library(rock_rust "${RUST_LIBRARY}")
 add_dependencies(rock_rust rock_rust_build)
 target_link_libraries(${COMPONENT_LIB} PRIVATE rock_rust)
-# Pull the RE-3 spike root table out of libmain.a so the linker keeps the
-# audio/SR component code it references (same mechanism as realpath below).
-target_link_options(${COMPONENT_LIB} INTERFACE "LINKER:-u,rock_re3_component_roots")
 target_link_options(${COMPONENT_LIB} INTERFACE "LINKER:-u,realpath")

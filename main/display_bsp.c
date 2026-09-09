@@ -10,6 +10,8 @@
 
 #include "display_bsp.h"
 
+#include "board_bus.h"
+
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_lcd_mipi_dsi.h"
@@ -41,10 +43,6 @@ static const char *TAG = "rock-display";
 #define ROCK_BACKLIGHT_GPIO GPIO_NUM_23
 #define ROCK_BACKLIGHT_DUTY (716) // ~70% of 1023
 
-#define ROCK_TOUCH_I2C_PORT I2C_NUM_1
-#define ROCK_TOUCH_SDA_GPIO GPIO_NUM_7
-#define ROCK_TOUCH_SCL_GPIO GPIO_NUM_8
-
 static esp_ldo_channel_handle_t s_phy_ldo;
 static lv_display_t *s_display;
 static i2c_master_bus_handle_t s_touch_bus;
@@ -55,13 +53,10 @@ static void *s_qr_buffer;
 
 static int display_touch_init(void)
 {
-    const i2c_master_bus_config_t bus_cfg = {
-        .i2c_port = ROCK_TOUCH_I2C_PORT,
-        .sda_io_num = ROCK_TOUCH_SDA_GPIO,
-        .scl_io_num = ROCK_TOUCH_SCL_GPIO,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-    };
-    if (i2c_new_master_bus(&bus_cfg, &s_touch_bus) != ESP_OK) return -1;
+    // The GT911 shares I2C1 with the ES8311 codec; the bus itself is owned
+    // and created by board_bus.c.
+    s_touch_bus = rock_i2c1_bus_acquire();
+    if (s_touch_bus == NULL) return -1;
     esp_lcd_panel_io_i2c_config_t io_cfg = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
     io_cfg.scl_speed_hz = 400000;
     if (esp_lcd_new_panel_io_i2c(s_touch_bus, &io_cfg, &s_touch_io) != ESP_OK) return -1;
