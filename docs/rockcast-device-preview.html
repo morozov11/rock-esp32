@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RockCast ESP32-P4 UI Preview (800x480 Landscape)</title>
+  <style>
+    :root {
+      --color-bg: #1A1410;
+      --color-panel: #241C16;
+      --color-panel-2: #2E241C;
+      --color-fg: #E8DCC8;
+      --color-accent: #C45C26;
+      --color-accent-soft: rgba(196, 92, 38, 0.25);
+      --color-muted: #9A8B78;
+      --color-bar-dim: #5A4030;
+      --color-stroke: #3A2E24;
+      --color-row-alt: #201814;
+      --color-white: #FFFFFF;
+      --color-warn: #FFAA00;
+      --color-error: #E05353;
+      --font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background-color: #0b0908;
+      color: var(--color-fg);
+      font-family: var(--font-family);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+    }
+
+    header.meta-bar {
+      width: 860px;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .meta-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--color-accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .meta-badge {
+      font-size: 11px;
+      background: var(--color-panel-2);
+      color: var(--color-muted);
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--color-stroke);
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 6px;
+    }
+
+    .tab-btn {
+      background: var(--color-panel);
+      color: var(--color-muted);
+      border: 1px solid var(--color-stroke);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn:hover {
+      background: var(--color-panel-2);
+      color: var(--color-fg);
+    }
+
+    .tab-btn.active {
+      background: var(--color-accent);
+      color: var(--color-white);
+      border-color: var(--color-accent);
+    }
+
+    /* Device Enclosure Simulation */
+    .device-bezel {
+      width: 848px;
+      height: 528px;
+      background: #120e0b;
+      border: 3px solid #2e241c;
+      border-radius: 20px;
+      padding: 21px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.8), 0 2px 8px rgba(0,0,0,0.6);
+      position: relative;
+    }
+
+    .device-screen {
+      width: 800px;
+      height: 480px;
+      background: var(--color-bg);
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    }
+
+    /* Screen Views */
+    .view-screen {
+      display: none;
+      width: 100%;
+      height: 100%;
+      flex-direction: column;
+    }
+
+    .view-screen.active {
+      display: flex;
+    }
+
+    /* Top Bar (40px) */
+    .screen-header {
+      height: 40px;
+      min-height: 40px;
+      background: var(--color-panel);
+      border-bottom: 1px solid var(--color-stroke);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 13px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--color-accent);
+      letter-spacing: 0.5px;
+    }
+
+    .header-source {
+      color: var(--color-muted);
+      font-size: 13px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      color: var(--color-muted);
+      font-size: 12px;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--color-muted);
+    }
+
+    .dot.green { background: #27ae60; }
+    .dot.orange { background: var(--color-accent); }
+    .dot.red { background: var(--color-error); }
+
+    /* Bottom Ticker (36px) */
+    .screen-footer {
+      height: 36px;
+      min-height: 36px;
+      background: var(--color-panel-2);
+      border-top: 1px solid var(--color-stroke);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      font-size: 13px;
+      color: var(--color-muted);
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    /* ------------------------------------------------------------- */
+    /* VIEW 1: NOW PLAYING                                           */
+    /* ------------------------------------------------------------- */
+    .now-playing-content {
+      flex: 1;
+      display: flex;
+      padding: 16px;
+      gap: 16px;
+      background: var(--color-bg);
+    }
+
+    .meta-zone {
+      flex: 1.8;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .np-badge {
+      display: inline-block;
+      color: var(--color-accent);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .np-station-name {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--color-fg);
+      line-height: 1.15;
+      margin-bottom: 4px;
+    }
+
+    .np-station-sub {
+      font-size: 15px;
+      color: var(--color-muted);
+      margin-bottom: 14px;
+    }
+
+    .np-track-title {
+      font-size: 19px;
+      font-weight: 600;
+      color: var(--color-fg);
+      background: var(--color-panel);
+      border: 1px solid var(--color-stroke);
+      border-radius: 8px;
+      padding: 12px 14px;
+      line-height: 1.3;
+      margin-bottom: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .np-tags-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge-pill {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-muted);
+      background: var(--color-panel-2);
+      border: 1px solid var(--color-stroke);
+      padding: 4px 10px;
+      border-radius: 12px;
+    }
+
+    .btn-fav {
+      background: var(--color-panel-2);
+      border: 1px solid var(--color-stroke);
+      color: var(--color-accent);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    /* Right visualizer zone */
+    .vis-zone {
+      flex: 1.1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-panel);
+      border: 1px solid var(--color-stroke);
+      border-radius: 12px;
+      padding: 16px;
+      gap: 14px;
+    }
+
+    .station-cover-art {
+      width: 88px;
+      height: 88px;
+      background: var(--color-panel-2);
+      border: 1px solid var(--color-stroke);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 34px;
+      font-weight: 800;
+      color: var(--color-accent);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    /* Spectrum Bars (16 bands) */
+    .eq-container {
+      width: 210px;
+      height: 70px;
+      background: var(--color-panel-2);
+      border-radius: 6px;
+      padding: 6px 8px;
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .eq-bar-wrap {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      position: relative;
+    }
+
+    .eq-peak {
+      position: absolute;
+      width: 100%;
+      height: 2px;
+      background: var(--color-white);
+      top: 15%;
+      border-radius: 1px;
+    }
+
+    .eq-bar {
+      width: 100%;
+      background: var(--color-accent);
+      border-radius: 2px;
+      animation: pulse 1.2s infinite alternate ease-in-out;
+    }
+
+    @keyframes pulse {
+      0% { height: 25%; }
+      50% { height: 90%; }
+      100% { height: 45%; }
+    }
+
+    .eq-bar-wrap:nth-child(2) .eq-bar { animation-delay: 0.15s; }
+    .eq-bar-wrap:nth-child(3) .eq-bar { animation-delay: 0.4s; }
+    .eq-bar-wrap:nth-child(4) .eq-bar { animation-delay: 0.25s; }
+    .eq-bar-wrap:nth-child(5) .eq-bar { animation-delay: 0.7s; }
+    .eq-bar-wrap:nth-child(6) .eq-bar { animation-delay: 0.1s; }
+    .eq-bar-wrap:nth-child(7) .eq-bar { animation-delay: 0.5s; }
+    .eq-bar-wrap:nth-child(8) .eq-bar { animation-delay: 0.35s; }
+    .eq-bar-wrap:nth-child(9) .eq-bar { animation-delay: 0.65s; }
+    .eq-bar-wrap:nth-child(10) .eq-bar { animation-delay: 0.2s; }
+    .eq-bar-wrap:nth-child(11) .eq-bar { animation-delay: 0.55s; }
+    .eq-bar-wrap:nth-child(12) .eq-bar { animation-delay: 0.3s; }
+    .eq-bar-wrap:nth-child(13) .eq-bar { animation-delay: 0.75s; }
+    .eq-bar-wrap:nth-child(14) .eq-bar { animation-delay: 0.18s; }
+    .eq-bar-wrap:nth-child(15) .eq-bar { animation-delay: 0.45s; }
+    .eq-bar-wrap:nth-child(16) .eq-bar { animation-delay: 0.6s; }
+
+    /* Transport Bar (64px) */
+    .np-transport {
+      height: 64px;
+      min-height: 64px;
+      background: var(--color-panel);
+      border-top: 1px solid var(--color-stroke);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      gap: 12px;
+    }
+
+    .transport-left, .transport-mid, .transport-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-touch {
+      min-height: 48px;
+      height: 48px;
+      padding: 0 16px;
+      border-radius: 6px;
+      border: 1px solid var(--color-stroke);
+      font-family: var(--font-family);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--color-fg);
+      background: var(--color-panel-2);
+      transition: filter 0.1s ease;
+    }
+
+    .btn-touch:active {
+      filter: brightness(1.2);
+    }
+
+    .btn-play-hero {
+      background: var(--color-accent);
+      color: var(--color-white);
+      border-color: var(--color-accent);
+      width: 76px;
+      font-size: 18px;
+    }
+
+    .btn-stop {
+      width: 68px;
+    }
+
+    .btn-voice {
+      background: var(--color-panel-2);
+      border: 2px solid var(--color-accent);
+      color: var(--color-white);
+      width: 90px;
+    }
+
+    .volume-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--color-panel-2);
+      border: 1px solid var(--color-stroke);
+      border-radius: 6px;
+      padding: 0 8px;
+      height: 48px;
+    }
+
+    .vol-btn {
+      width: 36px;
+      height: 36px;
+      background: var(--color-panel);
+      border: 1px solid var(--color-stroke);
+      border-radius: 4px;
+      color: var(--color-fg);
+      font-size: 18px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .vol-val {
+      font-family: monospace;
+      font-size: 16px;
+      font-weight: 700;
+      width: 44px;
+      text-align: center;
+      color: var(--color-fg);
+    }
+
+    /* ------------------------------------------------------------- */
+    /* VIEW 2: BROWSE / LIST                                         */
+    /* ------------------------------------------------------------- */
+    .browse-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 16px;
+      background: var(--color-bg);
+      overflow: hidden;
+    }
+
+    .browse-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .browse-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--color-fg);
+    }
+
+    .station-list-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      overflow-y: auto;
+    }
+
+    .station-row {
+      height: 56px;
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 12px;
+      border-radius: 6px;
+      background: var(--color-panel);
+      border: 1px solid var(--color-stroke);
+      cursor: pointer;
+    }
+
+    .station-row.alt {
+      background: var(--color-row-alt);
+    }
+
+    .station-row.playing {
+      border-left: 5px solid var(--color-accent);
+      background: var(--color-panel-2);
+    }
+
+    .st-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--color-panel-2);
+      border: 1px solid var(--color-stroke);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 18px;
+      color: var(--color-accent);
+    }
+
+    .st-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+      overflow: hidden;
+    }
+
+    .st-name {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--color-fg);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .st-tags {
+      font-size: 13px;
+      color: var(--color-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .st-codec {
+      font-size: 12px;
+      color: var(--color-muted);
+      background: var(--color-bg);
+      border: 1px solid var(--color-stroke);
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .st-fav-icon {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-accent);
+      font-size: 20px;
+    }
+
+    /* ------------------------------------------------------------- */
+    /* VIEW 3: SEARCH & KEYBOARD                                     */
+    /* ------------------------------------------------------------- */
+    .search-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 10px 16px;
+      background: var(--color-bg);
+      gap: 8px;
+    }
+
+    .search-input-box {
+      height: 48px;
+      background: var(--color-panel);
+      border: 2px solid var(--color-accent);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      font-size: 18px;
+      color: var(--color-fg);
+      justify-content: space-between;
+    }
+
+    .search-cursor {
+      display: inline-block;
+      width: 2px;
+      height: 20px;
+      background: var(--color-accent);
+      vertical-align: middle;
+      animation: blink 0.9s infinite;
+    }
+
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    .genres-strip {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .genre-chip {
+      height: 34px;
+      background: var(--color-panel-2);
+      border: 1px solid var(--color-stroke);
+      border-radius: 17px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-muted);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .genre-chip.active {
+      background: var(--color-accent);
+      color: var(--color-white);
+      border-color: var(--color-accent);
+    }
+
+    /* Virtual Touch Keyboard */
+    .keyboard-box {
+      background: var(--color-panel);
+      border: 1px solid var(--color-stroke);
+      border-radius: 8px;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-top: auto;
+    }
+
+    .kb-row {
+      display: flex;
+      gap: 5px;
+      justify-content: center;
+    }
+
+    .kb-key {
+      flex: 1;
+      height: 44px;
+      background: var(--color-panel-2);
+      border: 1px solid var(--color-stroke);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--color-fg);
+      cursor: pointer;
+    }
+
+    .kb-key.action {
+      background: var(--color-accent);
+      color: var(--color-white);
+      border-color: var(--color-accent);
+      font-size: 14px;
+      flex: 1.5;
+    }
+
+    .kb-key.space {
+      flex: 4;
+    }
+
+    /* ------------------------------------------------------------- */
+    /* VIEW 4: LOCAL STATES DEMO (Offline, Loading, Error)           */
+    /* ------------------------------------------------------------- */
+    .state-demo-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+      background: var(--color-bg);
+      gap: 16px;
+    }
+
+    .state-icon-large {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: var(--color-panel);
+      border: 2px solid var(--color-stroke);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+    }
+
+    .state-icon-large.offline { border-color: var(--color-warn); color: var(--color-warn); }
+    .state-icon-large.error { border-color: var(--color-error); color: var(--color-error); }
+    .state-icon-large.loading { border-color: var(--color-accent); color: var(--color-accent); }
+
+    .state-heading {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--color-fg);
+    }
+
+    .state-sub {
+      font-size: 15px;
+      color: var(--color-muted);
+      max-width: 480px;
+      line-height: 1.4;
+    }
+
+    .state-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid var(--color-panel-2);
+      border-top-color: var(--color-accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="meta-bar">
+    <div class="meta-title">
+      RockCast ESP32-P4
+      <span class="meta-badge">LVGL v9 · 800×480 Landscape · Touch UI</span>
+    </div>
+    <nav class="nav-tabs">
+      <button class="tab-btn active" onclick="switchView('now-playing')">1. Now Playing</button>
+      <button class="tab-btn" onclick="switchView('browse')">2. Каталог (Browse)</button>
+      <button class="tab-btn" onclick="switchView('search')">3. Поиск & Клавиатура</button>
+      <button class="tab-btn" onclick="switchView('state-offline')">4. Офлайн</button>
+      <button class="tab-btn" onclick="switchView('state-error')">5. Ошибка</button>
+    </nav>
+  </header>
+
+  <!-- Physical Display Bezel Simulation -->
+  <div class="device-bezel">
+    <div class="device-screen">
+
+      <!-- Common Top Bar (40px) -->
+      <header class="screen-header">
+        <div class="header-left">
+          <span class="brand-title">RockCast</span>
+          <span class="header-source">· Каталог станций</span>
+        </div>
+        <div class="header-right">
+          <div class="status-indicator">
+            <div class="dot green" id="header-dot"></div>
+            <span id="header-net">Wi-Fi: 84%</span>
+          </div>
+          <div class="status-indicator">
+            <span id="header-server">RockServer: OK</span>
+          </div>
+          <span style="font-weight: 700; color: var(--color-fg);">14:35</span>
+        </div>
+      </header>
+
+      <!-- 1. NOW PLAYING VIEW -->
+      <section class="view-screen active" id="view-now-playing">
+        <div class="now-playing-content">
+          <div class="meta-zone">
+            <div>
+              <span class="np-badge">СЕЙЧАС ИГРАЕТ</span>
+              <h1 class="np-station-name">Радио MAXIMUM</h1>
+              <div class="np-station-sub">103.7 FM · Rock & Alternative · Россия</div>
+              
+              <div class="np-track-title">
+                Linkin Park — In The End
+              </div>
+            </div>
+
+            <div class="np-tags-row">
+              <span class="badge-pill">128 kbps MP3</span>
+              <span class="badge-pill">Буфер: 100%</span>
+              <button class="btn-fav">★ В избранном</button>
+            </div>
+          </div>
+
+          <div class="vis-zone">
+            <div class="station-cover-art">M</div>
+            <!-- 16-band animated spectrum EQ -->
+            <div class="eq-container">
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+              <div class="eq-bar-wrap"><div class="eq-peak"></div><div class="eq-bar"></div></div>
+            </div>
+            <div style="font-size: 11px; color: var(--color-muted);">Аудиопоток I2S / ES8311 OK</div>
+          </div>
+        </div>
+
+        <!-- Now Playing Transport Bar -->
+        <div class="np-transport">
+          <div class="transport-left">
+            <button class="btn-touch" onclick="switchView('browse')">Каталог</button>
+            <button class="btn-touch" onclick="switchView('search')">Поиск</button>
+          </div>
+
+          <div class="transport-mid">
+            <button class="btn-touch btn-play-hero">❚❚</button>
+            <button class="btn-touch btn-stop">Stop</button>
+            <div class="volume-box">
+              <button class="vol-btn" onclick="adjustVol(-5)">-</button>
+              <span class="vol-val" id="vol-display">65%</span>
+              <button class="vol-btn" onclick="adjustVol(5)">+</button>
+            </div>
+          </div>
+
+          <div class="transport-right">
+            <button class="btn-touch btn-voice">🎙 Голос</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. BROWSE / LIST VIEW -->
+      <section class="view-screen" id="view-browse">
+        <div class="browse-content">
+          <div class="browse-header-row">
+            <span class="browse-title">Станции (Rock & Metal)</span>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn-touch" style="min-height: 40px; height: 40px; font-size: 13px;" onclick="switchView('now-playing')">← На экран плеера</button>
+            </div>
+          </div>
+
+          <div class="station-list-container">
+            <div class="station-row playing" onclick="switchView('now-playing')">
+              <div class="st-icon">M</div>
+              <div class="st-info">
+                <div class="st-name">Радио MAXIMUM (Сейчас играет)</div>
+                <div class="st-tags">Rock / Alternative · Россия · 103.7 FM</div>
+              </div>
+              <div class="st-codec">128k MP3</div>
+              <div class="st-fav-icon">★</div>
+            </div>
+
+            <div class="station-row alt" onclick="switchView('now-playing')">
+              <div class="st-icon">R</div>
+              <div class="st-info">
+                <div class="st-name">Rock FM</div>
+                <div class="st-tags">Classic Rock / Hard Rock · Россия · 95.2 FM</div>
+              </div>
+              <div class="st-codec">192k MP3</div>
+              <div class="st-fav-icon">☆</div>
+            </div>
+
+            <div class="station-row" onclick="switchView('now-playing')">
+              <div class="st-icon">N</div>
+              <div class="st-info">
+                <div class="st-name">Наше Радио</div>
+                <div class="st-tags">Russian Rock · Россия · 101.7 FM</div>
+              </div>
+              <div class="st-codec">128k AAC</div>
+              <div class="st-fav-icon">☆</div>
+            </div>
+
+            <div class="station-row alt" onclick="switchView('now-playing')">
+              <div class="st-icon">U</div>
+              <div class="st-info">
+                <div class="st-name">Radio Ultra</div>
+                <div class="st-tags">Alternative / Nu Metal / Industrial</div>
+              </div>
+              <div class="st-codec">128k MP3</div>
+              <div class="st-fav-icon">★</div>
+            </div>
+
+            <div class="station-row" onclick="switchView('now-playing')">
+              <div class="st-icon">P</div>
+              <div class="st-info">
+                <div class="st-name">Planet Rock UK</div>
+                <div class="st-tags">Classic Rock / Blues · Великобритания</div>
+              </div>
+              <div class="st-codec">112k AAC</div>
+              <div class="st-fav-icon">☆</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. SEARCH & KEYBOARD VIEW -->
+      <section class="view-screen" id="view-search">
+        <div class="search-content">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="search-input-box" style="flex: 1; margin-right: 12px;">
+              <span>Rock<span class="search-cursor"></span></span>
+              <span style="color: var(--color-muted); font-size: 14px;">Очистить ✕</span>
+            </div>
+            <button class="btn-touch" onclick="switchView('browse')" style="min-height: 48px;">Назад</button>
+          </div>
+
+          <div class="genres-strip">
+            <div class="genre-chip active">Rock</div>
+            <div class="genre-chip">Metal</div>
+            <div class="genre-chip">Classic Rock</div>
+            <div class="genre-chip">Alternative</div>
+            <div class="genre-chip">Hard Rock</div>
+            <div class="genre-chip">Punk</div>
+            <div class="genre-chip">Indie</div>
+          </div>
+
+          <!-- On-screen Keyboard (Touch target >= 44px) -->
+          <div class="keyboard-box">
+            <div class="kb-row">
+              <div class="kb-key">Q</div><div class="kb-key">W</div><div class="kb-key">E</div><div class="kb-key">R</div>
+              <div class="kb-key">T</div><div class="kb-key">Y</div><div class="kb-key">U</div><div class="kb-key">I</div>
+              <div class="kb-key">O</div><div class="kb-key">P</div>
+            </div>
+            <div class="kb-row">
+              <div class="kb-key">A</div><div class="kb-key">S</div><div class="kb-key">D</div><div class="kb-key">F</div>
+              <div class="kb-key">G</div><div class="kb-key">H</div><div class="kb-key">J</div><div class="kb-key">K</div>
+              <div class="kb-key">L</div>
+            </div>
+            <div class="kb-row">
+              <div class="kb-key action">123</div>
+              <div class="kb-key">Z</div><div class="kb-key">X</div><div class="kb-key">C</div><div class="kb-key">V</div>
+              <div class="kb-key">B</div><div class="kb-key">N</div><div class="kb-key">M</div>
+              <div class="kb-key action">⌫</div>
+            </div>
+            <div class="kb-row">
+              <div class="kb-key action">РУС</div>
+              <div class="kb-key space">ПРОБЕЛ</div>
+              <div class="kb-key action" onclick="switchView('browse')">ИСКАТЬ</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. STATE: OFFLINE VIEW -->
+      <section class="view-screen" id="view-state-offline">
+        <div class="state-demo-content">
+          <div class="state-icon-large offline">⚡</div>
+          <h2 class="state-heading">Сеть или сервер недоступен</h2>
+          <p class="state-sub">
+            Связь с RockServer потеряна. Локальное радио приостановлено. Проверьте подключение к Wi-Fi роутеру или статус сервера.
+          </p>
+          <div class="state-actions">
+            <button class="btn-touch btn-play-hero" style="width: auto; padding: 0 24px;" onclick="switchView('now-playing')">Повторить попытку</button>
+            <button class="btn-touch" onclick="switchView('browse')">Локальный список</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. STATE: ERROR VIEW -->
+      <section class="view-screen" id="view-state-error">
+        <div class="state-demo-content">
+          <div class="state-icon-large error">✕</div>
+          <h2 class="state-heading">Ошибка воспроизведения</h2>
+          <p class="state-sub">
+            Поток станции временно недоступен или вернул неподдерживаемый формат аудио.
+          </p>
+          <div class="state-actions">
+            <button class="btn-touch btn-play-hero" style="width: auto; padding: 0 24px;" onclick="switchView('browse')">Выбрать другую станцию</button>
+            <button class="btn-touch" onclick="switchView('now-playing')">Назад</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Common Bottom Ticker (36px) -->
+      <footer class="screen-footer" id="screen-footer">
+        Статус: Воспроизведение потока активно · Буфер 100% · Ошибок: 0
+      </footer>
+
+    </div>
+  </div>
+
+  <script>
+    let volume = 65;
+
+    function switchView(viewId) {
+      document.querySelectorAll('.view-screen').forEach(v => v.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+
+      const target = document.getElementById('view-' + viewId);
+      if (target) target.classList.add('active');
+
+      const footer = document.getElementById('screen-footer');
+      const headerDot = document.getElementById('header-dot');
+      const headerNet = document.getElementById('header-net');
+      const headerServer = document.getElementById('header-server');
+
+      // Update header/footer depending on view
+      if (viewId === 'now-playing') {
+        footer.innerText = "Статус: Воспроизведение потока активно · Буфер 100% · Ошибок: 0";
+        headerDot.className = "dot green";
+        headerNet.innerText = "Wi-Fi: 84%";
+        headerServer.innerText = "RockServer: OK";
+      } else if (viewId === 'browse') {
+        footer.innerText = "Статус: Каталог загружен · Найдено 142 станции · Страница 1/8";
+        headerDot.className = "dot green";
+      } else if (viewId === 'search') {
+        footer.innerText = "Статус: Введите запрос или выберите жанр на клавиатуре";
+        headerDot.className = "dot green";
+      } else if (viewId === 'state-offline') {
+        footer.innerText = "Статус: Ошибка сети: WSS connection closed (code 1006)";
+        headerDot.className = "dot orange";
+        headerNet.innerText = "Wi-Fi: Отключено";
+        headerServer.innerText = "RockServer: Офлайн";
+      } else if (viewId === 'state-error') {
+        footer.innerText = "Статус: Ошибка плеера: HTTP 404 stream unavailable";
+        headerDot.className = "dot red";
+      }
+
+      // Mark tab active
+      const tabs = document.querySelectorAll('.tab-btn');
+      tabs.forEach(tab => {
+        if (tab.getAttribute('onclick').includes(viewId)) {
+          tab.classList.add('active');
+        }
+      });
+    }
+
+    function adjustVol(delta) {
+      volume = Math.max(0, Math.min(100, volume + delta));
+      document.getElementById('vol-display').innerText = volume + "%";
+    }
+  </script>
+</body>
+</html>
