@@ -208,6 +208,13 @@
   (2) онбординг-флоу с телефона не имеет следов прогона. Остатки → RE-14.
   Мелочь: PIN печатается в serial-лог при генерации — приемлемо (владелец
   с UART-доступом видит и экран), но убрать при случае.
+- **2026-09-09, центр управления.** RC-1 принята (0c62c14; аннотирование
+  файл:строка проверено, rockcast чист). Бонус-артефакт
+  rockcast-device-preview.html — владелец может утвердить вид экранов до
+  RE-6. Теперь RE-6 блокирована только RE-1 (физическая приёмка DC-018);
+  после RE-1 — диспатч RE-6 на топ-класс модели (GUI-интеграция), RE-13
+  включить в его промпт. Владельцу на сеанс у платы: RE-1, RE-12 (динамик),
+  RE-11+RE-14 (онбординг-флоу с телефона = provisioning, откат OTA).
 
 ## Доска задач
 
@@ -221,7 +228,7 @@
 | RS-3 | rockserver | 3 | Реализовать резолюцию play_station → play_stream под тем же command_id | RS-1 | done (2026-09-09) | e24d00f: CommandBody::PlayStream + validate_stream_uri (42 кейса), резолв в роутере после fingerprint (идемпотентность сохранена), URI не попадает в persistence/lifecycle/логи; DNS-уровень SSRF — задокументированное ограничение; lib 152 + контракты 8/8 + каталог 12/12 |
 | RS-4 | rockserver | 3 | Реализовать voice: device-auth, cancel, UserIntent → командный роутер | RS-1, RS-3 | done (2026-09-09) | a9dd9cf: device-voice-флоу (surface_id=voice.main, source_device_id, cancel → один error(cancelled)), интенты play_radio/stop/volume через CommandRouter.submit (play_station → play_stream внутри роутера), анонимный путь сохранён; схема дополнена VoiceDeviceCommandResult (утверждено центром); voice 9/9, контракты 8/8, cargo test 206 |
 | RS-5 | rockserver | выравнивание | Привести терминальные command.result-ошибки к канонической схеме v1 (добавить request_id + details на wire) — расхождение с DC-003; проверить толерантность парсера rockmobile | до RE-5; прошивка толерантна (проверено центром: нет deny_unknown_fields в rock-esp32/src) | done (2026-09-09) | 987967d: request_id + details:{} на wire, ID сохранён для timeout/disconnect/replay; rockmobile толерантен (DirectoryDtos.kt:9 ignoreUnknownKeys); regression-тест добавлен; cargo test 206/0 |
-| RC-1 | rockcast | 6 | Извлечь design tokens (палитра, типографика, отступы, композиция now_playing) в справочный документ для rock-esp32 | — | pending | |
+| RC-1 | rockcast | 6 | Извлечь design tokens (палитра, типографика, отступы, композиция now_playing) в справочный документ для rock-esp32 | — | done (2026-09-09) | 0c62c14: docs/rockcast-design-tokens.md — 54 токена с привязкой файл:строка (23 цвета, 11 типографических ролей, 20 геометрий), egui-defaults со значениями, раздел «не переносить» (9 паттернов), готовые C-дефайны + бонус HTML-превью экранов 800x480; rockcast не тронут |
 | RE-1 | rock-esp32 | 6.0 | Закрыть физическую приёмку DC-018: golden views, тач после power cycle, offline-переходы | — | pending (реализация есть, физика открыта) | |
 | RE-2 | rock-esp32 | 1.1 | Мигрировать партиции: otadata + два OTA-слота под 16 МБ, NVS остаётся на 0x9000 | — | done (2026-09-09) | f4cdb16: otadata 0x10000 + 2×0x7F0000; загрузка из ota_0 и целостность NVS подтверждены на плате |
 | RE-3 | rock-esp32 | 1.2–1.3 | Спайки: esp_audio_codec на P4 v1.3, esp-sr на IDF 6.1; запинить версии | — | done (2026-09-09) | e868b24: codec_dev 1.6.2, esp_audio_codec 2.5.0 (2.6.x не собирается на чипе <3.0), esp-sr 2.5.3 + esp-dsp 1.8.0; образ 3.90 МиБ (51% слота); детали — docs/component-spikes.md |
