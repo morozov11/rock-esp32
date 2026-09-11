@@ -225,6 +225,13 @@
   Kconfig-гейт (обновлённый RE-13) или через play; RE-13 сужена до гейта
   для верификации. Пейзажная ориентация совпадает с токенами RC-1
   (800x480) — противоречий с RE-6 нет.
+- **2026-09-11, центр управления.** Владелец прошёл фазу A чек-листа на
+  плате: закрыты RE-11 (provisioning живой: QR, PIN, скан, STA, pairing,
+  WSS) и RE-14(б,в); RE-14(а) — тест отката — остаётся. Решение центра:
+  RE-1 поглощается RE-6 — устаревшие DC-018-виды заменяются продуктовым
+  GUI по токенам RC-1, физические проверки (тач после power cycle,
+  offline-переходы) входят в приёмку RE-6. RE-6 разблокирована и объявлена
+  следующей — самая крупная оставшаяся задача прошивки.
 
 ## Доска задач
 
@@ -239,21 +246,21 @@
 | RS-4 | rockserver | 3 | Реализовать voice: device-auth, cancel, UserIntent → командный роутер | RS-1, RS-3 | done (2026-09-09) | a9dd9cf: device-voice-флоу (surface_id=voice.main, source_device_id, cancel → один error(cancelled)), интенты play_radio/stop/volume через CommandRouter.submit (play_station → play_stream внутри роутера), анонимный путь сохранён; схема дополнена VoiceDeviceCommandResult (утверждено центром); voice 9/9, контракты 8/8, cargo test 206 |
 | RS-5 | rockserver | выравнивание | Привести терминальные command.result-ошибки к канонической схеме v1 (добавить request_id + details на wire) — расхождение с DC-003; проверить толерантность парсера rockmobile | до RE-5; прошивка толерантна (проверено центром: нет deny_unknown_fields в rock-esp32/src) | done (2026-09-09) | 987967d: request_id + details:{} на wire, ID сохранён для timeout/disconnect/replay; rockmobile толерантен (DirectoryDtos.kt:9 ignoreUnknownKeys); regression-тест добавлен; cargo test 206/0 |
 | RC-1 | rockcast | 6 | Извлечь design tokens (палитра, типографика, отступы, композиция now_playing) в справочный документ для rock-esp32 | — | done (2026-09-09) | 0c62c14: docs/rockcast-design-tokens.md — 54 токена с привязкой файл:строка (23 цвета, 11 типографических ролей, 20 геометрий), egui-defaults со значениями, раздел «не переносить» (9 паттернов), готовые C-дефайны + бонус HTML-превью экранов 800x480; rockcast не тронут |
-| RE-1 | rock-esp32 | 6.0 | Закрыть физическую приёмку DC-018: golden views, тач после power cycle, offline-переходы | — | pending (реализация есть, физика открыта) | |
+| RE-1 | rock-esp32 | 6.0 | Закрыть физическую приёмку DC-018: golden views, тач после power cycle, offline-переходы | — | absorbed (2026-09-11) | Поглощена RE-6: landscape+тач физически проверены владельцем (15cd93f и фаза A — ребут/авто-переподключение/живой тач); golden-views и offline-переходы войдут в приёмку RE-6 на новых экранах по токенам RC-1 |
 | RE-2 | rock-esp32 | 1.1 | Мигрировать партиции: otadata + два OTA-слота под 16 МБ, NVS остаётся на 0x9000 | — | done (2026-09-09) | f4cdb16: otadata 0x10000 + 2×0x7F0000; загрузка из ota_0 и целостность NVS подтверждены на плате |
 | RE-3 | rock-esp32 | 1.2–1.3 | Спайки: esp_audio_codec на P4 v1.3, esp-sr на IDF 6.1; запинить версии | — | done (2026-09-09) | e868b24: codec_dev 1.6.2, esp_audio_codec 2.5.0 (2.6.x не собирается на чипе <3.0), esp-sr 2.5.3 + esp-dsp 1.8.0; образ 3.90 МиБ (51% слота); детали — docs/component-spikes.md |
 | RE-4 | rock-esp32 | 1.4–1.9 | Аудио-путь: общий I2C1, ES8311 через esp_codec_dev, тон, захват MIC, конкурентность, ресурсы | RE-3 | done (2026-09-09, электрический путь; акустика → RE-12) | 00070d9+2183e7e: mic 16-bit int16 подтверждён (10.0 с, пик −32.2 dBFS, пол −56, клиппинг 0); TX без underrun, конкурентность 60 с (RX overrun 8 — наблюдать в RE-5/soak), RAM/стеки/CPU в docs/audio-bringup.md |
 | RE-5 | rock-esp32 | 4 | Player MVP: stream-клиент, MP3/AAC, команда/состояние, манифест | RS-2, RS-3, RE-4 | done (2026-09-09; живой E2E отложен на RE-11) | f5ed186: SSRF-шлюз в Rust + FFI, стрим/декод/вывод на Core 1, PSRAM-ring 256 КиБ, heap Δ 0 Б за 30 с, dec_errors 0, underruns 52 только при переключении частоты; host 10/10 (прогнано центром); остаток: self-test стартует при каждом буте без гейта → RE-13 |
 | RM-1 | rockmobile | 5 | «Играть на устройстве»: station.play_station на выбранный target через существующую модель lifecycle | RE-5 | done (2026-09-09; физическая приёмка отложена на RE-11) | fb8e3a7: действие в каталоге и плеере, buildPlayStationCommand с проверками таргета, поздний Succeeded после Expired как успех, ручной retry; тесты PlayStationCommand 9/9 + TargetDirectoryRepository 11/11, полная сборка зелёная (прогнано центром) |
-| RE-6 | rock-esp32 | 6 | Нативный GUI: browse, поиск с клавиатурой, now-playing, локальные состояния | RE-1, RE-5, RS-2, RC-1 | pending | |
+| RE-6 | rock-esp32 | 6 | Нативный GUI: browse, поиск с клавиатурой, now-playing, локальные состояния; + поглощённые проверки RE-1 (golden-виды на новых экранах, тач после power cycle, offline-переходы) + гигиена RE-13 (selftest-гейт) | RE-5, RS-2, RC-1 (все сняты) | ready (2026-09-11) | |
 | RE-7 | rock-esp32 | 7 | Push-to-talk voice: bounded utterance, второй WSS, состояния | RS-4, RE-6 | pending | |
 | RE-8 | rock-esp32 | 8 | Wake word `ESP`: AFE + WakeNet, AEC, mute, пороги FAR/FRR; заранее принять решение F12 по размещению моделей (партиция model vs встроить vs внешний путь) | RE-7, RE-3, RE-12 (замер связи для AEC) | pending | |
 | RE-9 | rock-esp32 | 9 | OTA (esp_https_ota + rollback) и Wi-Fi онбординг (SoftAP/captive portal на LVGL) | RE-2 (OTA тянется позже) | done (2026-09-09; остатки верификации → RE-14) | e653e17: обе правки центра реализованы (skip-verify удалён — 0 упоминаний; PIN 6 цифр с экрана, валидация на сервере, PIN в QR); OTA E2E на плате 8/8 (загрузка в ota_1, mark_valid, abort при совпадении версий, аудио без доп. underrun), host 10/10; НЕ продемонстрированы: реальный откат плохого образа, онбординг-флоу с телефона |
 | RE-10 | rock-esp32 | 10 | Интеграционный soak: 12 сценариев, 24 ч, метрики | все | pending | |
 | RE-12 | rock-esp32 | 1 (остаток) | Акустическая приёмка: подключить динамик, подтверждить слышимый тон (стартует при буте автоматически), снять замер связи mic↔динамик для AEC | физическое подключение динамика владельцем | pending | |
 | RE-13 | rock-esp32 | гигиена | Судьба player self-test: безусловный запуск уже удалён из main.c (15cd93f). Остаток: Kconfig-гейт CONFIG_ROCK_PLAYER_SELFTEST (default n) для управляемого запуска тона — понадобится RE-12; иначе тон RE-12 запускать через RM-1/локальный play | к RE-12 | pending | |
-| RE-14 | rock-esp32 | 9 (остаток) | Демонстрация на плате: (а) реальный откат — прошить заведомо невалидный/падающий образ, убедиться в автоперезагрузке в ota_0 без ручного вмешательства; (б) полный онбординг-флоу с телефона: SoftAP → PIN с экрана → портал → подключение к сети; (в) RE-11 можно пройти этим же флоу | телефон владельца для (б) | pending | |
-| RE-11 | rock-esp32 | предусловие RE-1, RE-5 | Физический provisioning: внести Wi-Fi и `CONFIG_ROCKSERVER_BASE_URL` в локальный sdkconfig, завершить pairing, подтвердить живой WSS | участие владельца (учётки в sdkconfig, не в git) | pending | |
+| RE-14 | rock-esp32 | 9 (остаток) | Остаток: (а) реальный откат — прошить заведомо невалидный/падающий образ, убедиться в автоперезагрузке в ota_0 без вмешательства. Пункты (б) онбординг-флоу и (в) RE-11 закрыты фазой A (2026-09-11) | — | pending (только а) | |
+| RE-11 | rock-esp32 | предусловие RE-1, RE-5 | Физический provisioning: внести Wi-Fi и `CONFIG_ROCKSERVER_BASE_URL` в локальный sdkconfig, завершить pairing, подтвердить живой WSS | участие владельца (учётки в sdkconfig, не в git) | done (2026-09-11) | Фаза A чек-листа: SoftAP+QR WIFI:S: в 1 касание, PIN (вкл. отказ неверного), /api/scan, STA+IP на экране, pairing сохранился, WSS живой — подтверждено владельцем на плате |
 
 ## Правила выполнения и приёмки
 
