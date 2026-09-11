@@ -556,7 +556,6 @@ int rock_player_stop(void)
     pcm_ring_clear(&s_pcm_ring);
     rock_audio_pa_set(false);
     set_player_status(ROCK_PLAYER_STATUS_STOPPED);
-    rock_ui_show_text("STOPPED");
     return 0;
 }
 

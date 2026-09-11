@@ -55,6 +55,12 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         s_wifi_retries = 0;
         xEventGroupSetBits(s_wifi_events, WIFI_READY);
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)data;
+        if (event) {
+            char ip_buf[48];
+            snprintf(ip_buf, sizeof(ip_buf), "Connected! IP: " IPSTR, IP2STR(&event->ip_info.ip));
+            rock_ui_splash_status(ip_buf);
+        }
     }
 }
 
@@ -205,8 +211,7 @@ int rock_platform_init(void)
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event, NULL);
     if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK || esp_wifi_start() != ESP_OK) return -1;
 
-    // Perform initial Wi-Fi scan and display available networks
-    rock_wifi_scan_and_show();
+    rock_ui_splash_status("Checking network...");
 
     // Check credentials hierarchy
     char active_ssid[33] = {0};
@@ -227,6 +232,7 @@ int rock_platform_init(void)
 
     if (!has_creds) {
         ESP_LOGI(TAG, "No Wi-Fi credentials in sdkconfig or NVS. Launching onboarding...");
+        rock_ui_splash_status("Starting Wi-Fi setup...");
         rock_onboarding_run();
         return -1;
     }
@@ -242,9 +248,10 @@ int rock_platform_init(void)
     wifi.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
     wifi.sta.failure_retry_cnt = 5;
     if (esp_wifi_set_config(WIFI_IF_STA, &wifi) != ESP_OK) return -1;
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     // Connect to configured Wi-Fi AP
+    rock_ui_splash_status("Connecting to Wi-Fi...");
     esp_wifi_connect();
     EventBits_t bits = xEventGroupWaitBits(s_wifi_events, WIFI_READY | WIFI_FAILED, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
     if (!(bits & WIFI_READY)) {

@@ -33,15 +33,12 @@ void app_main(void)
     if (rock_i2c1_bus_acquire() == NULL) {
         ESP_LOGE(TAG, "Shared I2C1 bus init failed; display/audio may fail");
     }
-    if (rock_display_init() != 0 || rock_ui_clock_init() != 0) {
+    if (rock_display_init() != 0 || rock_ui_splash_show() != 0) {
         ESP_LOGE(TAG, "Display bring-up failed; continuing without UI");
     }
     // RE-5 streaming player takes over the audio path (I2S, ES8311, decoders, TX worker).
     if (rock_player_init() != 0) {
         ESP_LOGE(TAG, "Player subsystem init failed");
-    }
-    if (rock_player_bringup_start() != 0) {
-        ESP_LOGE(TAG, "Player bring-up task start failed");
     }
     rust_main();
 }

@@ -18,15 +18,17 @@ This document describes the firmware Over-The-Air (OTA) update mechanism and the
 [esp_https_ota]         [Rollback &]     [SoftAP Mode]             [HTTP Server]
 - HTTPS client          Validation       - SSID: RockCast-Setup    - Port 80
 - Cert bundle / test CA - otadata        - IP: 192.168.4.1         - PIN verification
-- Paced 4KB chunks      - PENDING_VERIFY - Captive DNS (UDP 53)    - /connect
-- Core 0, Priority 3    - Mark valid /                             - Auto reboot to STA
-                          rollback                                        |
+- Paced 4KB chunks      - PENDING_VERIFY - Captive DNS (UDP 53)    - GET /api/scan
+- Core 0, Priority 3    - Mark valid /   - Wi-Fi Quick Connect QR  - POST /connect
+                          rollback                                 - Auto reboot to STA
+                                                                          |
                                                                    [NVS rock_wifi]
                                                                           |
                                                                    [LVGL ST7701 UI]
-                                                                   - Setup instructions
-                                                                   - 6-digit PIN
-                                                                   - QR code handoff
+                                                                   - Landscape 800x480
+                                                                   - RockCast Brand Logo
+                                                                   - 6-digit PIN Card
+                                                                   - Wi-Fi Quick Connect QR
 ```
 
 ---
@@ -40,13 +42,17 @@ This document describes the firmware Over-The-Air (OTA) update mechanism and the
 2. **Setup PIN Anti-Hijacking Protection**:
    - To prevent unauthorized Wi-Fi configuration over the open SoftAP, each onboarding session generates a cryptographically random 6-digit PIN (`esp_random() % 1000000`).
    - The PIN is prominently rendered on the 800x480 LVGL display in a highlighted card (`SETUP PIN: XXX XXX`).
-   - The web form requires entering this PIN. Submissions to `POST /connect` without the exact matching PIN are rejected with HTTP 403 Forbidden.
-   - For convenience, the QR code encodes `http://192.168.4.1/?pin=XXXXXX`, automatically pre-filling the PIN when scanned by a camera directly from the screen.
-3. **No Insecure TLS**:
+   - The web form requires entering this PIN (`inputmode="numeric"` for mobile numpad). Submissions to `POST /connect` without the exact matching PIN are rejected with HTTP 403 Forbidden.
+3. **Wi-Fi Quick Connect QR Format**:
+   - The QR code on the ST7701 display encodes standard Wi-Fi configuration (`WIFI:S:RockCast-Setup;T:nopass;;`).
+   - Pointing any iOS or Android camera at the screen displays a native 1-tap "Join Network" prompt without searching for the network manually.
+4. **Interactive Network Scanner (`GET /api/scan`)**:
+   - The captive portal page queries `/api/scan` to automatically list nearby Wi-Fi networks in a `<select>` dropdown with RSSI signal bars and encryption status (🔒/🔓). Users only need to pick their network and enter the password.
+5. **No Insecure TLS**:
    - OTA updates strictly enforce TLS certificate verification.
    - Production builds use the ESP certificate bundle (`CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y`).
    - For isolated lab testing, `CONFIG_ROCK_OTA_TEST_CERT_PEM` allows specifying an explicit test CA certificate. Disabling TLS verification is prohibited.
-4. **Credential Privacy**:
+6. **Credential Privacy**:
    - Passwords, Wi-Fi keys, stream URIs, and authentication tokens are never output to serial logs or error messages.
 
 ---

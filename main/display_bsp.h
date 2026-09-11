@@ -16,10 +16,17 @@ extern "C" {
 int rock_display_init(void);
 
 /**
- * Create the clock UI inside the LVGL port: dark RockCast-like background,
- * a large uptime label and a small caption. Must be called after
- * rock_display_init(); the LVGL port lock is taken internally.
+ * Show the RockCast splash screen / boot logo on the LVGL display.
+ * Must be called after rock_display_init(); takes the LVGL port lock internally.
  */
+int rock_ui_splash_show(void);
+
+/**
+ * Update the status text at the bottom of the RockCast splash screen.
+ */
+bool rock_ui_splash_status(const char *status_text);
+
+/** Legacy clock init (redirected to splash screen) */
 int rock_ui_clock_init(void);
 
 /**

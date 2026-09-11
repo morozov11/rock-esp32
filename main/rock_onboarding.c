@@ -34,38 +34,129 @@ static const char ONBOARDING_HTML[] =
 "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
 "<title>RockCast Wi-Fi Setup</title>\n"
 "<style>\n"
-"body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0F1115; color: #F5F7FA; margin: 0; padding: 24px 16px; display: flex; justify-content: center; }\n"
-".card { background: #14171F; border: 1px solid #262C38; border-radius: 12px; padding: 24px; max-width: 400px; width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }\n"
-"h1 { font-size: 22px; font-weight: 700; margin-top: 0; margin-bottom: 8px; color: #F5F7FA; }\n"
-"p { font-size: 14px; color: #94A3B8; margin-top: 0; margin-bottom: 20px; line-height: 1.4; }\n"
-"label { display: block; font-size: 13px; font-weight: 600; color: #CBD5E1; margin-bottom: 6px; }\n"
-"input[type=\"text\"], input[type=\"password\"] { width: 100%; box-sizing: border-box; padding: 12px; font-size: 15px; border-radius: 8px; border: 1px solid #334155; background: #1E293B; color: #F8FAFC; margin-bottom: 16px; outline: none; }\n"
-"input:focus { border-color: #38BDF8; }\n"
-"button { width: 100%; padding: 14px; font-size: 16px; font-weight: 600; color: #0F1115; background: #38BDF8; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s; }\n"
-"button:hover { background: #0EA5E9; }\n"
-".badge { display: inline-block; padding: 4px 8px; font-size: 11px; font-weight: 700; border-radius: 4px; background: rgba(56, 189, 248, 0.15); color: #38BDF8; margin-bottom: 12px; }\n"
-".pin-notice { font-size: 12px; color: #38BDF8; margin-top: -12px; margin-bottom: 16px; }\n"
+"* { box-sizing: border-box; margin: 0; padding: 0; }\n"
+"body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1A1410; color: #E8DCC8; min-height: 100vh; padding: 20px 16px; display: flex; justify-content: center; }\n"
+".card { background: #241C16; border: 1px solid #3A2E24; border-radius: 14px; padding: 24px; max-width: 420px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.6); margin-top: 8px; }\n"
+".brand { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }\n"
+".badge { background: rgba(196,92,38,0.18); color: #C45C26; border: 1px solid rgba(196,92,38,0.35); font-size: 11px; font-weight: 700; letter-spacing: 1px; padding: 4px 8px; border-radius: 6px; }\n"
+"h1 { font-size: 22px; font-weight: 700; color: #E8DCC8; margin-bottom: 6px; }\n"
+"p { font-size: 13px; color: #9A8B78; line-height: 1.45; margin-bottom: 18px; }\n"
+"label { display: block; font-size: 13px; font-weight: 600; color: #CBD5E1; margin-bottom: 6px; margin-top: 14px; }\n"
+".field-hdr { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; margin-bottom: 6px; }\n"
+".field-hdr label { margin: 0; }\n"
+".scan-btn { background: none; border: none; color: #C45C26; font-size: 12px; font-weight: 600; cursor: pointer; padding: 2px 4px; }\n"
+".scan-btn:hover { text-decoration: underline; }\n"
+"select, input[type=\"text\"], input[type=\"password\"] { width: 100%; padding: 12px 14px; font-size: 15px; border-radius: 8px; border: 1px solid #3A2E24; background: #2E241C; color: #E8DCC8; outline: none; transition: border-color 0.2s; }\n"
+"select:focus, input:focus { border-color: #C45C26; }\n"
+"select { cursor: pointer; }\n"
+".pwd-wrap { position: relative; }\n"
+".pwd-wrap input { padding-right: 44px; }\n"
+".eye-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #9A8B78; font-size: 16px; cursor: pointer; padding: 6px; }\n"
+".pin-card { background: #2E241C; border: 1px dashed #C45C26; border-radius: 8px; padding: 12px; margin-bottom: 14px; }\n"
+".pin-card label { margin-top: 0; color: #C45C26; }\n"
+".pin-input { font-size: 20px !important; letter-spacing: 4px; text-align: center; font-weight: 700; color: #E8DCC8 !important; }\n"
+".btn-submit { width: 100%; margin-top: 22px; padding: 14px; font-size: 16px; font-weight: 700; color: #FFFFFF; background: #C45C26; border: none; border-radius: 8px; cursor: pointer; transition: background 0.2s; }\n"
+".btn-submit:hover { background: #D96B30; }\n"
+".hint { font-size: 11px; color: #9A8B78; margin-top: 4px; }\n"
+"#custom-ssid-wrap { display: none; margin-top: 8px; }\n"
 "</style>\n"
 "</head>\n"
 "<body>\n"
 "<div class=\"card\">\n"
-"<div class=\"badge\">ROCKCAST RADIO</div>\n"
+"<div class=\"brand\"><span class=\"badge\">ROCKCAST RADIO</span></div>\n"
 "<h1>Wi-Fi Setup</h1>\n"
-"<p>Connect RockCast to your local network by providing the SSID, password, and setup PIN shown on the device screen.</p>\n"
-"<form method=\"POST\" action=\"/connect\">\n"
-"<label for=\"pin\">Setup PIN (shown on device)</label>\n"
-"<input type=\"text\" id=\"pin\" name=\"pin\" required placeholder=\"6-digit PIN\" maxlength=\"6\" pattern=\"[0-9]{6}\" autocomplete=\"off\">\n"
-"<div class=\"pin-notice\">Required for device security. Check the 6 digits on the screen.</div>\n"
-"<label for=\"ssid\">Network Name (SSID)</label>\n"
-"<input type=\"text\" id=\"ssid\" name=\"ssid\" required placeholder=\"Network SSID\" maxlength=\"32\">\n"
+"<p>Select your home Wi-Fi network and enter its password.</p>\n"
+"<form method=\"POST\" action=\"/connect\" onsubmit=\"return validateForm()\">\n"
+"<div class=\"pin-card\">\n"
+"<label for=\"pin\">Setup PIN (from radio screen)</label>\n"
+"<input type=\"text\" id=\"pin\" name=\"pin\" class=\"pin-input\" required placeholder=\"● ● ● ● ● ●\" maxlength=\"6\" pattern=\"[0-9]{6}\" inputmode=\"numeric\" autocomplete=\"off\">\n"
+"<div class=\"hint\">Required for security. Enter the 6 digits from the display.</div>\n"
+"</div>\n"
+"<div class=\"field-hdr\">\n"
+"<label for=\"net-select\">Wi-Fi Network</label>\n"
+"<button type=\"button\" class=\"scan-btn\" onclick=\"loadNetworks()\">🔄 Refresh list</button>\n"
+"</div>\n"
+"<select id=\"net-select\" onchange=\"onNetworkChange(this.value)\">\n"
+"<option value=\"\" disabled selected>🔄 Scanning available networks...</option>\n"
+"</select>\n"
+"<div id=\"custom-ssid-wrap\">\n"
+"<input type=\"text\" id=\"custom-ssid\" placeholder=\"Enter network name (SSID)\" maxlength=\"32\" oninput=\"onCustomInput(this.value)\">\n"
+"</div>\n"
+"<input type=\"hidden\" id=\"ssid\" name=\"ssid\">\n"
 "<label for=\"password\">Wi-Fi Password</label>\n"
-"<input type=\"password\" id=\"password\" name=\"password\" placeholder=\"Password (empty for open network)\" maxlength=\"64\">\n"
-"<button type=\"submit\">Save and Connect</button>\n"
+"<div class=\"pwd-wrap\">\n"
+"<input type=\"password\" id=\"password\" name=\"password\" placeholder=\"Password (empty if open)\" maxlength=\"64\">\n"
+"<button type=\"button\" class=\"eye-btn\" onclick=\"togglePwd()\">👁️</button>\n"
+"</div>\n"
+"<button type=\"submit\" id=\"sub-btn\" class=\"btn-submit\">Save and Connect</button>\n"
 "</form>\n"
 "</div>\n"
 "<script>\n"
-"const p = new URLSearchParams(window.location.search).get('pin');\n"
-"if (p) document.getElementById('pin').value = p;\n"
+"function loadNetworks() {\n"
+"  const sel = document.getElementById('net-select');\n"
+"  sel.innerHTML = '<option value=\"\" disabled selected>🔄 Scanning available networks...</option>';\n"
+"  fetch('/api/scan')\n"
+"    .then(r => r.json())\n"
+"    .then(nets => {\n"
+"      sel.innerHTML = '<option value=\"\" disabled selected>— Select your Wi-Fi network —</option>';\n"
+"      if (nets && nets.length > 0) {\n"
+"        nets.forEach(n => {\n"
+"          const opt = document.createElement('option');\n"
+"          opt.value = n.ssid;\n"
+"          const bars = n.rssi >= -60 ? '●●●●' : (n.rssi >= -75 ? '●●●○' : '●●○○');\n"
+"          const lock = n.auth === 0 ? '🔓' : '🔒';\n"
+"          opt.textContent = n.ssid + ' (' + bars + ' ' + lock + ')';\n"
+"          sel.appendChild(opt);\n"
+"        });\n"
+"      }\n"
+"      const optManual = document.createElement('option');\n"
+"      optManual.value = '__custom__';\n"
+"      optManual.textContent = '✏️ Enter other network manually...';\n"
+"      sel.appendChild(optManual);\n"
+"    })\n"
+"    .catch(() => {\n"
+"      sel.innerHTML = '<option value=\"__custom__\">Scan unavailable — enter manually</option>';\n"
+"      onNetworkChange('__custom__');\n"
+"    });\n"
+"}\n"
+"function onNetworkChange(val) {\n"
+"  const wrap = document.getElementById('custom-ssid-wrap');\n"
+"  const ssid = document.getElementById('ssid');\n"
+"  const custom = document.getElementById('custom-ssid');\n"
+"  if (val === '__custom__') {\n"
+"    wrap.style.display = 'block';\n"
+"    ssid.value = custom.value;\n"
+"    custom.focus();\n"
+"  } else {\n"
+"    wrap.style.display = 'none';\n"
+"    ssid.value = val;\n"
+"  }\n"
+"}\n"
+"function onCustomInput(val) {\n"
+"  document.getElementById('ssid').value = val;\n"
+"}\n"
+"function togglePwd() {\n"
+"  const p = document.getElementById('password');\n"
+"  p.type = p.type === 'password' ? 'text' : 'password';\n"
+"}\n"
+"function validateForm() {\n"
+"  const pin = document.getElementById('pin').value;\n"
+"  if (!pin || pin.length !== 6) {\n"
+"    alert('Please enter the 6-digit Setup PIN from the radio screen.');\n"
+"    return false;\n"
+"  }\n"
+"  const ssid = document.getElementById('ssid').value;\n"
+"  if (!ssid || ssid.trim() === '') {\n"
+"    alert('Please select a Wi-Fi network.');\n"
+"    return false;\n"
+"  }\n"
+"  return true;\n"
+"}\n"
+"window.onload = function() {\n"
+"  const p = new URLSearchParams(window.location.search).get('pin');\n"
+"  if (p) document.getElementById('pin').value = p;\n"
+"  loadNetworks();\n"
+"};\n"
 "</script>\n"
 "</body>\n"
 "</html>\n";
@@ -73,18 +164,18 @@ static const char ONBOARDING_HTML[] =
 static const char CONNECTED_HTML[] =
 "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
 "<title>Saved</title>\n"
-"<style>body{font-family:sans-serif;background:#0F1115;color:#F5F7FA;padding:32px;text-align:center;}\n"
-".card{background:#14171F;border:1px solid #262C38;border-radius:12px;padding:24px;display:inline-block;max-width:360px;}\n"
-"h2{color:#4ADE80;margin-top:0;}</style></head>\n"
-"<body><div class=\"card\"><h2>Credentials Saved</h2><p>RockCast is restarting to connect to your network. You may now close this window.</p></div></body></html>\n";
+"<style>body{font-family:sans-serif;background:#1A1410;color:#E8DCC8;padding:32px;text-align:center;}\n"
+".card{background:#241C16;border:1px solid #3A2E24;border-radius:12px;padding:24px;display:inline-block;max-width:360px;}\n"
+"h2{color:#C45C26;margin-top:0;}</style></head>\n"
+"<body><div class=\"card\"><h2>Credentials Saved</h2><p>RockCast is connecting to your Wi-Fi network. You can close this window now.</p></div></body></html>\n";
 
 static const char FORBIDDEN_PIN_HTML[] =
 "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
 "<title>Invalid PIN</title>\n"
-"<style>body{font-family:sans-serif;background:#0F1115;color:#F5F7FA;padding:32px;text-align:center;}\n"
-".card{background:#14171F;border:1px solid #7F1D1D;border-radius:12px;padding:24px;display:inline-block;max-width:360px;}\n"
-"h2{color:#F87171;margin-top:0;}a{color:#38BDF8;text-decoration:none;}</style></head>\n"
-"<body><div class=\"card\"><h2>Invalid Setup PIN</h2><p>The 6-digit setup PIN was incorrect. Please check the device screen and try again.</p><p><a href=\"/\">Try again</a></p></div></body></html>\n";
+"<style>body{font-family:sans-serif;background:#1A1410;color:#E8DCC8;padding:32px;text-align:center;}\n"
+".card{background:#241C16;border:1px solid #E05353;border-radius:12px;padding:24px;display:inline-block;max-width:360px;}\n"
+"h2{color:#E05353;margin-top:0;}a{color:#C45C26;text-decoration:none;font-weight:600;}</style></head>\n"
+"<body><div class=\"card\"><h2>Invalid Setup PIN</h2><p>The 6-digit PIN does not match the device screen.</p><p><a href=\"/\">Try again</a></p></div></body></html>\n";
 
 static void url_decode(char *dst, const char *src, size_t dst_cap)
 {
@@ -112,8 +203,128 @@ static void reboot_task(void *pvParameter)
     esp_restart();
 }
 
+static int compare_ap_rssi(const void *a, const void *b)
+{
+    const wifi_ap_record_t *ap_a = (const wifi_ap_record_t *)a;
+    const wifi_ap_record_t *ap_b = (const wifi_ap_record_t *)b;
+    return (int)ap_b->rssi - (int)ap_a->rssi;
+}
+
+static esp_err_t scan_handler(httpd_req_t *req)
+{
+    wifi_scan_config_t scan_cfg = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = false,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time = {
+            .active = {
+                .min = 100,
+                .max = 250,
+            },
+            .passive = 250,
+        },
+    };
+
+    esp_err_t err = esp_wifi_scan_start(&scan_cfg, true);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi scan failed: %s", esp_err_to_name(err));
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+        httpd_resp_send(req, "[]", HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    uint16_t ap_count = 0;
+    esp_wifi_scan_get_ap_num(&ap_count);
+    ESP_LOGI(TAG, "Wi-Fi scan complete, found %u APs", ap_count);
+
+    uint16_t fetch_count = ap_count > 30 ? 30 : ap_count;
+    wifi_ap_record_t *records = NULL;
+    if (fetch_count > 0) {
+        records = calloc(fetch_count, sizeof(wifi_ap_record_t));
+    }
+
+    size_t json_cap = 2048;
+    char *json = malloc(json_cap);
+    if (!json) {
+        if (records) free(records);
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    size_t offset = 0;
+    json[offset++] = '[';
+
+    if (records && esp_wifi_scan_get_ap_records(&fetch_count, records) == ESP_OK) {
+        if (fetch_count > 1) {
+            qsort(records, fetch_count, sizeof(wifi_ap_record_t), compare_ap_rssi);
+        }
+
+        char seen_ssids[30][33];
+        int seen_count = 0;
+
+        for (uint16_t i = 0; i < fetch_count; i++) {
+            if (records[i].ssid[0] == '\0') {
+                continue;
+            }
+
+            const char *curr_ssid = (const char *)records[i].ssid;
+            bool duplicate = false;
+            for (int s = 0; s < seen_count; s++) {
+                if (strcmp(seen_ssids[s], curr_ssid) == 0) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) {
+                continue;
+            }
+            if (seen_count < 30) {
+                strlcpy(seen_ssids[seen_count++], curr_ssid, sizeof(seen_ssids[0]));
+            }
+
+            char esc_ssid[65] = {0};
+            size_t e = 0;
+            for (size_t k = 0; curr_ssid[k] != '\0' && e + 2 < sizeof(esc_ssid); k++) {
+                if (curr_ssid[k] == '"' || curr_ssid[k] == '\\') {
+                    esc_ssid[e++] = '\\';
+                }
+                esc_ssid[e++] = curr_ssid[k];
+            }
+            esc_ssid[e] = '\0';
+
+            char entry[128];
+            int entry_len = snprintf(entry, sizeof(entry),
+                                     "%s{\"ssid\":\"%s\",\"rssi\":%d,\"auth\":%d}",
+                                     (offset > 1 ? "," : ""),
+                                     esc_ssid,
+                                     (int)records[i].rssi,
+                                     (int)records[i].authmode);
+            if (entry_len > 0 && offset + (size_t)entry_len < json_cap - 2) {
+                memcpy(json + offset, entry, entry_len);
+                offset += entry_len;
+            }
+        }
+    }
+
+    json[offset++] = ']';
+    json[offset] = '\0';
+
+    if (records) free(records);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_send(req, json, offset);
+    free(json);
+    return ESP_OK;
+}
+
 static esp_err_t index_handler(httpd_req_t *req)
 {
+    rock_ui_onboarding_status("Phone connected! Complete setup in browser...");
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, ONBOARDING_HTML, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -321,6 +532,9 @@ esp_err_t rock_onboarding_run(void)
         httpd_uri_t uri_get = { .uri = "/", .method = HTTP_GET, .handler = index_handler, .user_ctx = NULL };
         httpd_register_uri_handler(s_httpd, &uri_get);
 
+        httpd_uri_t uri_scan = { .uri = "/api/scan", .method = HTTP_GET, .handler = scan_handler, .user_ctx = NULL };
+        httpd_register_uri_handler(s_httpd, &uri_scan);
+
         httpd_uri_t uri_post = { .uri = "/connect", .method = HTTP_POST, .handler = connect_handler, .user_ctx = NULL };
         httpd_register_uri_handler(s_httpd, &uri_post);
 
@@ -337,15 +551,21 @@ esp_err_t rock_onboarding_run(void)
         ESP_LOGE(TAG, "Failed to start HTTP server");
     }
 
-    // Generate QR code for http://192.168.4.1/?pin=XXXXXX
-    char qr_url[64];
-    snprintf(qr_url, sizeof(qr_url), "http://192.168.4.1/?pin=%s", s_onboarding_pin);
+    // Generate Wi-Fi Quick Connect QR code: WIFI:S:<SSID>;T:nopass;; (or T:WPA;P:<pwd>;;)
+    char qr_payload[128];
+    if (CONFIG_ROCK_AP_PASSWORD[0] != '\0') {
+        snprintf(qr_payload, sizeof(qr_payload), "WIFI:S:%s;T:WPA;P:%s;;", CONFIG_ROCK_AP_SSID, CONFIG_ROCK_AP_PASSWORD);
+    } else {
+        snprintf(qr_payload, sizeof(qr_payload), "WIFI:S:%s;T:nopass;;", CONFIG_ROCK_AP_SSID);
+    }
+    ESP_LOGI(TAG, "Wi-Fi Quick Connect QR payload: %s", qr_payload);
+
     static uint8_t qr_modules[1024];
     uint16_t qr_width = 0;
-    if (rock_qr_encode(qr_url, qr_modules, sizeof(qr_modules), &qr_width) == 0) {
+    if (rock_qr_encode(qr_payload, qr_modules, sizeof(qr_modules), &qr_width) == 0) {
         rock_ui_onboarding_show(CONFIG_ROCK_AP_SSID, s_onboarding_pin, "http://192.168.4.1", qr_modules, qr_width);
     } else {
-        ESP_LOGW(TAG, "QR code generation failed for onboarding URL");
+        ESP_LOGW(TAG, "QR code generation failed for Wi-Fi Quick Connect");
         rock_ui_onboarding_show(CONFIG_ROCK_AP_SSID, s_onboarding_pin, "http://192.168.4.1", NULL, 0);
     }
 

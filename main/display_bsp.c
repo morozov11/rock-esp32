@@ -48,7 +48,10 @@ static lv_display_t *s_display;
 static i2c_master_bus_handle_t s_touch_bus;
 static esp_lcd_panel_io_handle_t s_touch_io;
 static esp_lcd_touch_handle_t s_touch;
-static lv_obj_t *s_clock_label;
+static lv_obj_t *s_splash_status_lbl = NULL;
+static lv_obj_t *s_onboarding_status_lbl = NULL;
+static lv_obj_t *s_ota_bar = NULL;
+static lv_obj_t *s_ota_pct_lbl = NULL;
 static void *s_qr_buffer;
 
 static int display_touch_init(void)
@@ -60,10 +63,10 @@ static int display_touch_init(void)
     esp_lcd_panel_io_i2c_config_t io_cfg = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
     io_cfg.scl_speed_hz = 400000;
     if (esp_lcd_new_panel_io_i2c(s_touch_bus, &io_cfg, &s_touch_io) != ESP_OK) return -1;
-    // The controller is portrait; match the panel's software landscape rotation.
+    // The touch controller native coordinates match panel; LVGL 9 handles rotation mapping
     const esp_lcd_touch_config_t touch_cfg = {
         .x_max = 480, .y_max = 800, .rst_gpio_num = GPIO_NUM_NC,
-        .int_gpio_num = GPIO_NUM_NC, .flags = {.swap_xy = true},
+        .int_gpio_num = GPIO_NUM_NC, .flags = {.swap_xy = 0, .mirror_x = 0, .mirror_y = 0},
     };
     if (esp_lcd_touch_new_i2c_gt911(s_touch_io, &touch_cfg, &s_touch) != ESP_OK) return -1;
     const lvgl_port_touch_cfg_t lvgl_cfg = {.disp = s_display, .handle = s_touch};
@@ -214,6 +217,13 @@ int rock_display_init(void)
         return -1;
     }
 
+    if (!lvgl_port_lock(1000)) {
+        ESP_LOGE(TAG, "Failed to lock LVGL port for rotation");
+        return -1;
+    }
+    lv_display_set_rotation(s_display, LV_DISPLAY_ROTATION_90);
+    lvgl_port_unlock();
+
     if (display_touch_init() != 0) {
         ESP_LOGE(TAG, "GT911 touch init failed");
         return -1;
@@ -226,40 +236,104 @@ int rock_display_init(void)
     return 0;
 }
 
-int rock_ui_clock_init(void)
+int rock_ui_splash_show(void)
 {
-    if (!lvgl_port_lock(0)) {
+    if (!lvgl_port_lock(1000)) {
         return -1;
     }
     lv_obj_t *screen = lv_screen_active();
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x0F1115), 0);
+    lv_obj_clean(screen);
+    s_onboarding_status_lbl = NULL;
+    s_ota_bar = NULL;
+    s_ota_pct_lbl = NULL;
+
+    // RockCast warm dark background
+    lv_obj_set_style_bg_color(screen, lv_color_hex(0x1A1410), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
 
-    // Small product caption; the big uptime label sits centered below.
-    lv_obj_t *caption = lv_label_create(screen);
-    lv_label_set_text(caption, "ROCK");
-    lv_obj_set_style_text_color(caption, lv_color_hex(0x7C8598), 0);
-    lv_obj_set_style_text_font(caption, &lv_font_montserrat_16, 0);
-    lv_obj_align(caption, LV_ALIGN_TOP_MID, 0, 24);
+    // Centered card container for Brand + Logo
+    lv_obj_t *center_box = lv_obj_create(screen);
+    lv_obj_remove_style_all(center_box);
+    lv_obj_set_size(center_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(center_box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(center_box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_align(center_box, LV_ALIGN_CENTER, 0, -20);
 
-    s_clock_label = lv_label_create(screen);
-    lv_label_set_text(s_clock_label, "00:00:00");
-    lv_obj_set_style_text_color(s_clock_label, lv_color_hex(0xF5F7FA), 0);
-    lv_obj_set_style_text_font(s_clock_label, &lv_font_montserrat_48, 0);
-    lv_obj_center(s_clock_label);
+    // Acoustic Waveform Bars container (centered row)
+    lv_obj_t *wave_box = lv_obj_create(center_box);
+    lv_obj_remove_style_all(wave_box);
+    lv_obj_set_size(wave_box, LV_SIZE_CONTENT, 48);
+    lv_obj_set_flex_flow(wave_box, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(wave_box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(wave_box, 6, 0);
+    lv_obj_set_style_pad_bottom(wave_box, 10, 0);
+
+    static const int bar_heights[] = { 14, 24, 38, 48, 38, 24, 14 };
+    for (size_t i = 0; i < sizeof(bar_heights) / sizeof(bar_heights[0]); ++i) {
+        lv_obj_t *bar = lv_obj_create(wave_box);
+        lv_obj_remove_style_all(bar);
+        lv_obj_set_size(bar, 6, bar_heights[i]);
+        lv_obj_set_style_radius(bar, 3, 0);
+        uint32_t bar_color = (i == 3) ? 0xE8DCC8 : ((i == 2 || i == 4) ? 0xD96B30 : 0xC45C26);
+        lv_obj_set_style_bg_color(bar, lv_color_hex(bar_color), 0);
+        lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
+    }
+
+    // Brand Name: "RockCast" with Montserrat 48
+    lv_obj_t *brand_box = lv_obj_create(center_box);
+    lv_obj_remove_style_all(brand_box);
+    lv_obj_set_size(brand_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(brand_box, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(brand_box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *lbl_rock = lv_label_create(brand_box);
+    lv_label_set_text(lbl_rock, "ROCK");
+    lv_obj_set_style_text_color(lbl_rock, lv_color_hex(0xE8DCC8), 0);
+    lv_obj_set_style_text_font(lbl_rock, &lv_font_montserrat_48, 0);
+
+    lv_obj_t *lbl_cast = lv_label_create(brand_box);
+    lv_label_set_text(lbl_cast, "CAST");
+    lv_obj_set_style_text_color(lbl_cast, lv_color_hex(0xC45C26), 0);
+    lv_obj_set_style_text_font(lbl_cast, &lv_font_montserrat_48, 0);
+
+    // Subtitle: "SMART STREAMING RADIO"
+    lv_obj_t *subtitle = lv_label_create(center_box);
+    lv_label_set_text(subtitle, "SMART STREAMING RADIO");
+    lv_obj_set_style_text_color(subtitle, lv_color_hex(0x9A8B78), 0);
+    lv_obj_set_style_text_font(subtitle, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_pad_top(subtitle, 6, 0);
+
+    // Status label at the bottom of the screen
+    s_splash_status_lbl = lv_label_create(screen);
+    lv_label_set_text(s_splash_status_lbl, "Starting system...");
+    lv_obj_set_style_text_color(s_splash_status_lbl, lv_color_hex(0x7C8598), 0);
+    lv_obj_set_style_text_font(s_splash_status_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_align(s_splash_status_lbl, LV_ALIGN_BOTTOM_MID, 0, -28);
 
     lvgl_port_unlock();
     return 0;
 }
 
-bool rock_ui_clock_set_text(const char *text)
+bool rock_ui_splash_status(const char *status_text)
 {
-    if (!lvgl_port_lock(100)) {
+    if (!status_text || !lvgl_port_lock(500)) {
         return false;
     }
-    lv_label_set_text(s_clock_label, text);
+    if (s_splash_status_lbl) {
+        lv_label_set_text(s_splash_status_lbl, status_text);
+    }
     lvgl_port_unlock();
     return true;
+}
+
+int rock_ui_clock_init(void)
+{
+    return rock_ui_splash_show();
+}
+
+bool rock_ui_clock_set_text(const char *text)
+{
+    return rock_ui_splash_status(text);
 }
 
 static bool ui_lock(void)
@@ -472,10 +546,6 @@ bool rock_ui_wifi_scan_show(const rock_wifi_scan_item_t *items, uint16_t count)
     return true;
 }
 
-static lv_obj_t *s_onboarding_status_lbl = NULL;
-static lv_obj_t *s_ota_bar = NULL;
-static lv_obj_t *s_ota_pct_lbl = NULL;
-
 bool rock_ui_onboarding_show(const char *ap_ssid, const char *pin, const char *url,
                              const uint8_t *modules, uint16_t width)
 {
@@ -492,49 +562,49 @@ bool rock_ui_onboarding_show(const char *ap_ssid, const char *pin, const char *u
     lv_obj_clean(screen);
     s_ota_bar = NULL;
     s_ota_pct_lbl = NULL;
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x0F1115), 0);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(0x1A1410), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
 
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "WI-FI SETUP");
-    lv_obj_set_style_text_color(title, lv_color_hex(0xF5F7FA), 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(0xE8DCC8), 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_48, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 42, 25);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 45, 25);
 
     lv_obj_t *step1 = lv_label_create(screen);
-    lv_label_set_text_fmt(step1, "1. Connect phone to Wi-Fi:\n   SSID: %s", ap_ssid);
-    lv_obj_set_style_text_color(step1, lv_color_hex(0x38BDF8), 0);
+    lv_label_set_text_fmt(step1, "1. Scan QR code to connect phone\n   Wi-Fi: %s", ap_ssid);
+    lv_obj_set_style_text_color(step1, lv_color_hex(0xC45C26), 0);
     lv_obj_set_style_text_font(step1, &lv_font_montserrat_16, 0);
     lv_obj_align(step1, LV_ALIGN_TOP_LEFT, 45, 95);
 
     lv_obj_t *step2 = lv_label_create(screen);
-    lv_label_set_text_fmt(step2, "2. Scan QR code or open in browser:\n   %s", url);
-    lv_obj_set_style_text_color(step2, lv_color_hex(0x94A3B8), 0);
+    lv_label_set_text_fmt(step2, "2. Select your home Wi-Fi in portal\n   or open: %s", url);
+    lv_obj_set_style_text_color(step2, lv_color_hex(0x9A8B78), 0);
     lv_obj_set_style_text_font(step2, &lv_font_montserrat_16, 0);
     lv_obj_align(step2, LV_ALIGN_TOP_LEFT, 45, 155);
 
     if (pin && pin[0] != '\0') {
         lv_obj_t *pin_card = lv_obj_create(screen);
-        lv_obj_set_size(pin_card, 360, 48);
-        lv_obj_align(pin_card, LV_ALIGN_TOP_LEFT, 45, 215);
-        lv_obj_set_style_bg_color(pin_card, lv_color_hex(0x1E293B), 0);
-        lv_obj_set_style_border_color(pin_card, lv_color_hex(0x38BDF8), 0);
-        lv_obj_set_style_border_width(pin_card, 1, 0);
+        lv_obj_set_size(pin_card, 350, 50);
+        lv_obj_align(pin_card, LV_ALIGN_TOP_LEFT, 45, 220);
+        lv_obj_set_style_bg_color(pin_card, lv_color_hex(0x241C16), 0);
+        lv_obj_set_style_border_color(pin_card, lv_color_hex(0xC45C26), 0);
+        lv_obj_set_style_border_width(pin_card, 2, 0);
         lv_obj_set_style_radius(pin_card, 8, 0);
         lv_obj_set_style_pad_all(pin_card, 6, 0);
 
         lv_obj_t *pin_lbl = lv_label_create(pin_card);
         lv_label_set_text_fmt(pin_lbl, "SETUP PIN:  %.3s %.3s", pin, pin + (strlen(pin) >= 3 ? 3 : 0));
-        lv_obj_set_style_text_color(pin_lbl, lv_color_hex(0x38BDF8), 0);
+        lv_obj_set_style_text_color(pin_lbl, lv_color_hex(0xE8DCC8), 0);
         lv_obj_set_style_text_font(pin_lbl, &lv_font_montserrat_16, 0);
         lv_obj_center(pin_lbl);
     }
 
     s_onboarding_status_lbl = lv_label_create(screen);
     lv_label_set_text(s_onboarding_status_lbl, "Waiting for phone connection...");
-    lv_obj_set_style_text_color(s_onboarding_status_lbl, lv_color_hex(0x7C8598), 0);
+    lv_obj_set_style_text_color(s_onboarding_status_lbl, lv_color_hex(0x9A8B78), 0);
     lv_obj_set_style_text_font(s_onboarding_status_lbl, &lv_font_montserrat_16, 0);
-    lv_obj_align(s_onboarding_status_lbl, LV_ALIGN_TOP_LEFT, 45, 280);
+    lv_obj_align(s_onboarding_status_lbl, LV_ALIGN_TOP_LEFT, 45, 290);
 
     lv_obj_t *canvas = lv_canvas_create(screen);
     lv_canvas_set_buffer(canvas, s_qr_buffer, canvas_size, canvas_size, LV_COLOR_FORMAT_RGB565);
@@ -545,7 +615,7 @@ bool rock_ui_onboarding_show(const char *ap_ssid, const char *pin, const char *u
         for (int py = 0; py < scale; ++py) for (int px = 0; px < scale; ++px)
             lv_canvas_set_px(canvas, origin + x * scale + px, origin + y * scale + py, lv_color_black(), LV_OPA_COVER);
     }
-    lv_obj_align(canvas, LV_ALIGN_RIGHT_MID, -35, 0);
+    lv_obj_align(canvas, LV_ALIGN_RIGHT_MID, -45, 0);
     lvgl_port_unlock();
     return true;
 }
