@@ -271,6 +271,17 @@
   decode-голодание (данных за это нет). SIMD остаётся желательным в
   FFT-спектре (esp-dsp выбирает ядро сам) и уже учтён в RE-8
   (прекомпилированный esp32p4_less_v3_idf6).
+- **2026-09-16, центр управления.** Жалоба «голос не работает в rockcast/
+  rockmobile» диагностирована центром напрямую против прода: WSS-проба +
+  логи (WARN «streaming speech recognition failed», падение за 0.7 с) +
+  прямой запрос к Yandex STT с ключом из .env → HTTP 401. Ключ чистый по
+  формату → отозван/истёк. Выводы: (а) не регрессия RS-4 и не деплой —
+  старая сборка стояла на том же ключе; (б) observability-долг: класс
+  ошибки провайдера не логируется (log_speech_error игнорирует
+  дискриминант) — вошёл в RS-6. Попутно задеплоен свежий rockserver
+  987967d на прод (readiness passed) и собран APK rockmobile с RM-1;
+  обнаружен и обойдён bash-нюанс деплой-скрипта (GNU tar вместо tar.exe —
+  фиксится PATH, скрипт не менялся).
 
 ## Доска задач
 
@@ -284,6 +295,7 @@
 | RS-3 | rockserver | 3 | Реализовать резолюцию play_station → play_stream под тем же command_id | RS-1 | done (2026-09-09) | e24d00f: CommandBody::PlayStream + validate_stream_uri (42 кейса), резолв в роутере после fingerprint (идемпотентность сохранена), URI не попадает в persistence/lifecycle/логи; DNS-уровень SSRF — задокументированное ограничение; lib 152 + контракты 8/8 + каталог 12/12 |
 | RS-4 | rockserver | 3 | Реализовать voice: device-auth, cancel, UserIntent → командный роутер | RS-1, RS-3 | done (2026-09-09) | a9dd9cf: device-voice-флоу (surface_id=voice.main, source_device_id, cancel → один error(cancelled)), интенты play_radio/stop/volume через CommandRouter.submit (play_station → play_stream внутри роутера), анонимный путь сохранён; схема дополнена VoiceDeviceCommandResult (утверждено центром); voice 9/9, контракты 8/8, cargo test 206 |
 | RS-5 | rockserver | выравнивание | Привести терминальные command.result-ошибки к канонической схеме v1 (добавить request_id + details на wire) — расхождение с DC-003; проверить толерантность парсера rockmobile | до RE-5; прошивка толерантна (проверено центром: нет deny_unknown_fields в rock-esp32/src) | done (2026-09-09) | 987967d: request_id + details:{} на wire, ID сохранён для timeout/disconnect/replay; rockmobile толерантен (DirectoryDtos.kt:9 ignoreUnknownKeys); regression-тест добавлен; cargo test 206/0 |
+| RS-6 | rockserver | диагностика+фикс | Голосовой путь rockcast/rockmobile не работает на проде | диагностика центра 2026-09-16 | in progress | Корневая причина найдена центром: Yandex SpeechKit отвечает HTTP 401 на валидный-по-формату ключ из .env (len=40, чистый) — ключ отозван/истёк. НЕ регрессия RS-4/деплоя: тот же ключ стоял и в старой сборке. Остаток: (1) владелец выпускает новый API-ключ в Yandex Cloud → вписывает в C:\repos\rockserver\.env (YANDEX_AI_API_KEY); (2) центр передеплоит (кэш, быстро); (3) сквозная проверка voice в rockcast/rockmobile. Код-фикс в RS-6: log_speech_error (voice.rs:1240) выбрасывает класс ошибки совсем — логировать дискриминант (auth/network/protocol) без содержимого |
 | RC-1 | rockcast | 6 | Извлечь design tokens (палитра, типографика, отступы, композиция now_playing) в справочный документ для rock-esp32 | — | done (2026-09-09) | 0c62c14: docs/rockcast-design-tokens.md — 54 токена с привязкой файл:строка (23 цвета, 11 типографических ролей, 20 геометрий), egui-defaults со значениями, раздел «не переносить» (9 паттернов), готовые C-дефайны + бонус HTML-превью экранов 800x480; rockcast не тронут |
 | RE-1 | rock-esp32 | 6.0 | Закрыть физическую приёмку DC-018: golden views, тач после power cycle, offline-переходы | — | absorbed (2026-09-11) | Поглощена RE-6: landscape+тач физически проверены владельцем (15cd93f и фаза A — ребут/авто-переподключение/живой тач); golden-views и offline-переходы войдут в приёмку RE-6 на новых экранах по токенам RC-1 |
 | RE-2 | rock-esp32 | 1.1 | Мигрировать партиции: otadata + два OTA-слота под 16 МБ, NVS остаётся на 0x9000 | — | done (2026-09-09) | f4cdb16: otadata 0x10000 + 2×0x7F0000; загрузка из ota_0 и целостность NVS подтверждены на плате |
