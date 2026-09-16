@@ -5,9 +5,21 @@ use crate::device_control::{
     self, Credentials, DeviceSession, PairingComplete, PairingCreate, PairingRequest, SessionToken,
 };
 
+pub(crate) enum SessionError {
+    Unauthorized,
+    Temporary,
+}
+
 pub(crate) fn credentials() -> Result<Credentials, ()> {
     match platform::identity_load() {
-        Some((id, secret)) => session(&id, &secret),
+        Some((id, secret)) => match session(&id, &secret) {
+            Ok(creds) => Ok(creds),
+            Err(SessionError::Unauthorized) => {
+                platform::identity_clear();
+                provision()
+            }
+            Err(SessionError::Temporary) => Err(()),
+        },
         None => provision(),
     }
 }
@@ -54,18 +66,23 @@ fn provision() -> Result<Credentials, ()> {
     }
 }
 
-fn session(id: &str, secret: &str) -> Result<Credentials, ()> {
+fn session(id: &str, secret: &str) -> Result<Credentials, SessionError> {
     let (status, value) = platform::post(
         "/api/v1/auth/device-session",
         &DeviceSession {
             device_id: id,
             device_secret: secret,
         },
-    )?;
-    if status != 200 {
-        return Err(());
+    )
+    .map_err(|_| SessionError::Temporary)?;
+
+    if status == 401 || status == 403 || status == 404 {
+        return Err(SessionError::Unauthorized);
     }
-    let token: SessionToken = serde_json::from_value(value).map_err(|_| ())?;
+    if status != 200 {
+        return Err(SessionError::Temporary);
+    }
+    let token: SessionToken = serde_json::from_value(value).map_err(|_| SessionError::Temporary)?;
     Ok(Credentials {
         device_id: id.into(),
         device_secret: secret.into(),

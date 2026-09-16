@@ -84,5 +84,17 @@ config ROCK_AP_MAX_CONN
 
 endmenu
 
+config ROCK_PLAYER_SELFTEST
+    bool "Enable player startup self-test tone"
+    default n
+    help
+        Run player hardware bring-up and verification audio test on boot.
+
+config ROCK_UI_DEBUG_OVERLAY
+    bool "Enable UI debug telemetry in bottom status bar"
+    default n
+    help
+        Show detailed player and memory metrics in the status ticker.
+
 endmenu
 

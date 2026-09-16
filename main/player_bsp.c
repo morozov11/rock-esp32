@@ -1,4 +1,5 @@
 #include "player_bsp.h"
+#include "pcm_snapshot.h"
 #include "audio_bsp.h"
 #include "display_bsp.h"
 #include "test_mp3.h"
@@ -48,6 +49,10 @@ typedef struct {
 } pcm_ring_t;
 
 static pcm_ring_t s_pcm_ring;
+static rock_pcm_snapshot_t s_pcm_tap;
+static atomic_uint s_pcm_rate = 44100;
+static atomic_uint s_pcm_channels = 2;
+static atomic_bool s_spectrum_playing;
 
 static int pcm_ring_init(pcm_ring_t *r, size_t capacity)
 {
@@ -104,6 +109,7 @@ static size_t pcm_ring_read(pcm_ring_t *r, uint8_t *out, size_t max_len)
         r->fill -= to_read;
     }
     xSemaphoreGive(r->lock);
+    rock_pcm_publish(&s_pcm_tap, out, to_read, atomic_load(&s_pcm_rate), atomic_load(&s_pcm_channels));
     return to_read;
 }
 
@@ -124,6 +130,13 @@ static void pcm_ring_clear(pcm_ring_t *r)
     r->tail = 0;
     r->fill = 0;
     xSemaphoreGive(r->lock);
+}
+
+size_t rock_player_copy_pcm_snapshot(int16_t *out_samples, size_t max_samples,
+                                     uint32_t *sample_rate, uint8_t *channels)
+{
+    if (!out_samples || !sample_rate || !channels || !atomic_load(&s_spectrum_playing)) return 0;
+    return rock_pcm_copy(&s_pcm_tap, out_samples, max_samples, sample_rate, channels);
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +163,7 @@ static void set_player_status(rock_player_status_t status)
 {
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     s_status = status;
+    atomic_store(&s_spectrum_playing, status == ROCK_PLAYER_STATUS_PLAYING);
     xSemaphoreGive(s_state_mutex);
 }
 
@@ -386,6 +400,8 @@ static void stream_rx_task(void *arg)
                             ESP_LOGI(TAG, "Decoder format: %lu Hz, %u ch (reconfiguring codec)",
                                      (unsigned long)info.sample_rate, info.channel);
                             rock_audio_reconfig(info.sample_rate, info.channel);
+                            atomic_store(&s_pcm_rate, info.sample_rate);
+                            atomic_store(&s_pcm_channels, info.channel);
                             current_fs = info.sample_rate;
                             current_channels = info.channel;
                         }
@@ -692,6 +708,8 @@ static void player_bringup_task(void *arg)
                         ESP_LOGI(TAG, "[TEST 2/5] Decoded stream format: %lu Hz, %u ch (reconfiguring codec)",
                                  (unsigned long)info.sample_rate, info.channel);
                         rock_audio_reconfig(info.sample_rate, info.channel);
+                            atomic_store(&s_pcm_rate, info.sample_rate);
+                            atomic_store(&s_pcm_channels, info.channel);
                         current_fs = info.sample_rate;
                         current_channels = info.channel;
                     }

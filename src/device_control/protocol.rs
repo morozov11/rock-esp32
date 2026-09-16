@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const MAX_JSON_FRAME_BYTES: usize = 65_536;
@@ -163,6 +163,30 @@ pub fn command_failed(
     )
 }
 
+pub fn station_play_station(
+    message_id: &str,
+    sent_at: &str,
+    command_id: &str,
+    target_device_id: &str,
+    station_id: &str,
+) -> Value {
+    envelope(
+        message_id,
+        "device.command",
+        sent_at,
+        json!({
+            "command_id": command_id,
+            "target": {
+                "device_id": target_device_id,
+            },
+            "body": {
+                "name": "station.play_station",
+                "station_id": station_id,
+            }
+        }),
+    )
+}
+
 fn envelope(message_id: &str, kind: &str, sent_at: &str, payload: Value) -> Value {
     json!({"protocol_version": PROTOCOL_VERSION, "message_id": message_id, "type": kind, "sent_at": sent_at, "payload": payload})
 }
@@ -222,7 +246,9 @@ pub fn validate_stream_uri(uri: &str) -> Result<(), StreamUriError> {
 
 fn split_stream_authority(authority: &str) -> Result<(&str, Option<&str>, bool), StreamUriError> {
     if let Some(bracketed) = authority.strip_prefix('[') {
-        let (host, tail) = bracketed.split_once(']').ok_or(StreamUriError::MissingHost)?;
+        let (host, tail) = bracketed
+            .split_once(']')
+            .ok_or(StreamUriError::MissingHost)?;
         let port = tail.strip_prefix(':');
         if !tail.is_empty() && port.is_none() {
             return Err(StreamUriError::InvalidPort);
@@ -240,13 +266,17 @@ fn validate_stream_host(host: &str, literal_v6: bool) -> Result<(), StreamUriErr
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     if literal_v6 {
-        let address = host.parse::<Ipv6Addr>().map_err(|_| StreamUriError::ForbiddenDestination)?;
+        let address = host
+            .parse::<Ipv6Addr>()
+            .map_err(|_| StreamUriError::ForbiddenDestination)?;
         return validate_stream_ipv6(&address);
     }
     if let Ok(address) = host.parse::<Ipv4Addr>() {
         return validate_stream_ipv4(&address);
     }
-    if host.chars().any(|c| c.is_ascii_whitespace() || c.is_ascii_control() || c == '%')
+    if host
+        .chars()
+        .any(|c| c.is_ascii_whitespace() || c.is_ascii_control() || c == '%')
         || host.eq_ignore_ascii_case("localhost")
         || host.chars().all(|c| c.is_ascii_digit())
     {

@@ -7,7 +7,8 @@
 # Rust side drives the clock UI through the display_bsp facade.
 idf_component_register(
     SRCS "main.c" "display_bsp.c" "control_platform.c" "board_bus.c" "audio_bsp.c" "player_bsp.c"
-         "rock_wifi_storage.c" "rock_ota.c" "rock_onboarding.c"
+         "rock_wifi_storage.c" "rock_ota.c" "rock_onboarding.c" "audio_spectrum.c" "rock_gui.c"
+         "font_inter_14.c" "font_inter_18.c" "font_inter_24.c" "font_hack_16.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         "heap"
@@ -59,7 +60,23 @@ idf_component_register(
         "esp_codec_dev"
         "esp_audio_codec"
         "esp-sr"
+        "esp-dsp"
     WHOLE_ARCHIVE
+)
+
+if(TARGET __idf_lvgl__lvgl)
+    target_compile_definitions(__idf_lvgl__lvgl PUBLIC
+        LV_USE_STDLIB_MALLOC=1
+        LV_USE_STDLIB_STRING=1
+        LV_USE_STDLIB_SPRINTF=1
+        LV_USE_FONT_COMPRESSED=1
+        LV_USE_SNAPSHOT=1
+    )
+endif()
+
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    LV_USE_FONT_COMPRESSED=1
+    LV_USE_SNAPSHOT=1
 )
 
 include(ExternalProject)

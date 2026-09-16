@@ -9,6 +9,7 @@
 // landscape 800x480 the product uses.
 
 #include "display_bsp.h"
+#include "rock_gui.h"
 
 #include "board_bus.h"
 
@@ -54,6 +55,13 @@ static lv_obj_t *s_ota_bar = NULL;
 static lv_obj_t *s_ota_pct_lbl = NULL;
 static void *s_qr_buffer;
 
+static void touch_pressed_cb(lv_event_t *event)
+{
+    lv_point_t point;
+    lv_indev_get_point(lv_event_get_target(event), &point);
+    ESP_LOGI("rock-touch", "pressed x=%ld y=%ld", (long)point.x, (long)point.y);
+}
+
 static int display_touch_init(void)
 {
     // The GT911 shares I2C1 with the ES8311 codec; the bus itself is owned
@@ -70,7 +78,10 @@ static int display_touch_init(void)
     };
     if (esp_lcd_touch_new_i2c_gt911(s_touch_io, &touch_cfg, &s_touch) != ESP_OK) return -1;
     const lvgl_port_touch_cfg_t lvgl_cfg = {.disp = s_display, .handle = s_touch};
-    return lvgl_port_add_touch(&lvgl_cfg) ? 0 : -1;
+    lv_indev_t *indev = lvgl_port_add_touch(&lvgl_cfg);
+    if (!indev) return -1;
+    lv_indev_add_event_cb(indev, touch_pressed_cb, LV_EVENT_PRESSED, NULL);
+    return 0;
 }
 
 static int display_brightness_init(void)
@@ -326,6 +337,11 @@ bool rock_ui_splash_status(const char *status_text)
     return true;
 }
 
+void rock_ui_splash_dismiss(void)
+{
+    s_splash_status_lbl = NULL;
+}
+
 int rock_ui_clock_init(void)
 {
     return rock_ui_splash_show();
@@ -336,10 +352,18 @@ bool rock_ui_clock_set_text(const char *text)
     return rock_ui_splash_status(text);
 }
 
+static lv_obj_t *legacy_screen(void)
+{
+    static lv_obj_t *screen;
+    if (!screen) screen = lv_obj_create(NULL);
+    if (lv_screen_active() != screen) lv_screen_load(screen);
+    return screen;
+}
+
 static bool ui_lock(void)
 {
     if (!lvgl_port_lock(1000)) return false;
-    lv_obj_t *screen = lv_screen_active();
+    lv_obj_t *screen = legacy_screen();
     lv_obj_clean(screen);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x0F1115), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
@@ -358,6 +382,7 @@ static void ui_label(lv_obj_t *parent, const char *text, uint32_t color,
 
 bool rock_ui_show_text(const char *text)
 {
+    if (rock_gui_is_active()) { rock_gui_present(NULL, text, NULL); return true; }
     if (!text || !ui_lock()) return false;
     ui_label(lv_screen_active(), "ROCK", 0x7C8598, &lv_font_montserrat_16,
              LV_ALIGN_TOP_MID, 0, 24);
@@ -370,8 +395,9 @@ bool rock_ui_show_text(const char *text)
 bool rock_ui_show_now_playing(const char *station_id, const char *title,
                               const char *subtitle)
 {
+    if (rock_gui_is_active()) { rock_gui_present(station_id, title, subtitle); return true; }
     if (!station_id || !title || !ui_lock()) return false;
-    lv_obj_t *screen = lv_screen_active();
+    lv_obj_t *screen = legacy_screen();
     ui_label(screen, "NOW PLAYING", 0x7C8598, &lv_font_montserrat_16,
              LV_ALIGN_TOP_LEFT, 42, 42);
     ui_label(screen, title, 0xF5F7FA, &lv_font_montserrat_48,
@@ -386,8 +412,9 @@ bool rock_ui_show_now_playing(const char *station_id, const char *title,
 
 bool rock_ui_show_sensor_grid(const char *title, const char *items)
 {
+    if (rock_gui_is_active()) { rock_gui_present(NULL, title, items); return true; }
     if (!title || !items || !ui_lock()) return false;
-    lv_obj_t *screen = lv_screen_active();
+    lv_obj_t *screen = legacy_screen();
     ui_label(screen, title, 0xF5F7FA, &lv_font_montserrat_16,
              LV_ALIGN_TOP_LEFT, 30, 25);
     lv_obj_t *grid = lv_label_create(screen);
@@ -413,7 +440,7 @@ bool rock_ui_pairing_show(const char *short_code, const char *phrase,
         s_qr_buffer = heap_caps_calloc((size_t)canvas_size * canvas_size, sizeof(lv_color16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
     if (!s_qr_buffer) { lvgl_port_unlock(); return false; }
-    lv_obj_t *screen = lv_screen_active();
+    lv_obj_t *screen = legacy_screen();
     lv_obj_clean(screen);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x0F1115), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
@@ -462,7 +489,7 @@ bool rock_ui_wifi_scan_show(const rock_wifi_scan_item_t *items, uint16_t count)
 {
     if (!lvgl_port_lock(1000)) return false;
 
-    lv_obj_t *screen = lv_screen_active();
+    lv_obj_t *screen = legacy_screen();
     lv_obj_clean(screen);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x0F1115), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
@@ -558,7 +585,7 @@ bool rock_ui_onboarding_show(const char *ap_ssid, const char *pin, const char *u
         s_qr_buffer = heap_caps_calloc((size_t)canvas_size * canvas_size, sizeof(lv_color16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
     if (!s_qr_buffer) { lvgl_port_unlock(); return false; }
-    lv_obj_t *screen = lv_screen_active();
+    lv_obj_t *screen = legacy_screen();
     lv_obj_clean(screen);
     s_ota_bar = NULL;
     s_ota_pct_lbl = NULL;
@@ -633,7 +660,7 @@ bool rock_ui_onboarding_status(const char *status_text)
 bool rock_ui_ota_progress_show(const char *version, int percent)
 {
     if (!lvgl_port_lock(1000)) return false;
-    lv_obj_t *screen = lv_screen_active();
+    lv_obj_t *screen = legacy_screen();
 
     if (!s_ota_bar) {
         lv_obj_clean(screen);

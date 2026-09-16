@@ -16,3 +16,4 @@ Thumbs.db
 tools/*.bin
 tools/*.pem
 tools/*.key
+tools/*.ttf

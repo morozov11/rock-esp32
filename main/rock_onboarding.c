@@ -1,6 +1,7 @@
 #include "rock_onboarding.h"
 #include "rock_wifi_storage.h"
 #include "display_bsp.h"
+#include "rock_gui.h"
 
 #include "esp_http_server.h"
 #include "esp_log.h"

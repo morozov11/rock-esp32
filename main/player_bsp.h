@@ -51,6 +51,13 @@ int rock_player_get_state(char *status_buf, size_t status_cap,
  */
 void rock_player_get_stats(uint32_t *underruns, uint32_t *decode_errors, uint32_t *net_reconnects);
 
+/**
+ * Non-blocking read-only peek of recent decoded PCM samples from the ring buffer
+ * for audio spectrum analysis. Never blocks or modifies the ring buffer.
+ */
+size_t rock_player_copy_pcm_snapshot(int16_t *out_samples, size_t max_samples,
+                                     uint32_t *sample_rate, uint8_t *channels);
+
 #ifdef __cplusplus
 }
 #endif

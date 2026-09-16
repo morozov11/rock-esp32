@@ -26,6 +26,11 @@ int rock_ui_splash_show(void);
  */
 bool rock_ui_splash_status(const char *status_text);
 
+/**
+ * Dismiss the splash screen state and invalidate splash pointers.
+ */
+void rock_ui_splash_dismiss(void);
+
 /** Legacy clock init (redirected to splash screen) */
 int rock_ui_clock_init(void);
 

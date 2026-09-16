@@ -271,44 +271,62 @@ fn playback_and_volume_command_parsing_and_bounds() {
 
     // Volume set_volume
     assert_eq!(
-        device_control::player_command(&make_frame(json!({"name": "volume.set_volume", "level": 0}))).unwrap(),
+        device_control::player_command(&make_frame(
+            json!({"name": "volume.set_volume", "level": 0})
+        ))
+        .unwrap(),
         device_control::PlayerCommand::Volume {
             command_id: "60000000-0000-4000-8000-000000000002".into(),
             action: device_control::VolumeAction::SetLevel(0),
         }
     );
     assert_eq!(
-        device_control::player_command(&make_frame(json!({"name": "volume.set_volume", "level": 100}))).unwrap(),
+        device_control::player_command(&make_frame(
+            json!({"name": "volume.set_volume", "level": 100})
+        ))
+        .unwrap(),
         device_control::PlayerCommand::Volume {
             command_id: "60000000-0000-4000-8000-000000000002".into(),
             action: device_control::VolumeAction::SetLevel(100),
         }
     );
     assert_eq!(
-        device_control::player_command(&make_frame(json!({"name": "volume.set_volume", "level": 101}))),
+        device_control::player_command(&make_frame(
+            json!({"name": "volume.set_volume", "level": 101})
+        )),
         Err("invalid_payload")
     );
 
     // Volume change_volume
     assert_eq!(
-        device_control::player_command(&make_frame(json!({"name": "volume.change_volume", "delta": 5}))).unwrap(),
+        device_control::player_command(&make_frame(
+            json!({"name": "volume.change_volume", "delta": 5})
+        ))
+        .unwrap(),
         device_control::PlayerCommand::Volume {
             command_id: "60000000-0000-4000-8000-000000000002".into(),
             action: device_control::VolumeAction::Change(5),
         }
     );
     assert_eq!(
-        device_control::player_command(&make_frame(json!({"name": "volume.change_volume", "delta": 0}))),
+        device_control::player_command(&make_frame(
+            json!({"name": "volume.change_volume", "delta": 0})
+        )),
         Err("invalid_payload")
     );
     assert_eq!(
-        device_control::player_command(&make_frame(json!({"name": "volume.change_volume", "delta": 105}))),
+        device_control::player_command(&make_frame(
+            json!({"name": "volume.change_volume", "delta": 105})
+        )),
         Err("invalid_payload")
     );
 
     // Volume set_mute
     assert_eq!(
-        device_control::player_command(&make_frame(json!({"name": "volume.set_mute", "muted": true}))).unwrap(),
+        device_control::player_command(&make_frame(
+            json!({"name": "volume.set_mute", "muted": true})
+        ))
+        .unwrap(),
         device_control::PlayerCommand::Volume {
             command_id: "60000000-0000-4000-8000-000000000002".into(),
             action: device_control::VolumeAction::SetMute(true),
@@ -420,3 +438,195 @@ fn stream_uri_never_leaks_into_logs_or_state_or_errors() {
     }
 }
 
+#[test]
+fn device_station_dto_and_catalog_page_parsing_and_boundaries() {
+    // 1. Valid page from RS-2 catalog without stream_url
+    let valid_json = json!({
+        "request_id": "req-1234-abcd",
+        "stations": [
+            {
+                "id": "station.rock_classic",
+                "name": "Rock Classic Radio",
+                "tags": ["rock", "classic"],
+                "health": "healthy",
+                "codec": "mp3",
+                "bitrate_kbps": 128,
+                "extra_unknown_server_field": "tolerated"
+            },
+            {
+                "id": "station.metal",
+                "name": "Heavy Metal FM",
+                "tags": ["metal"],
+                "health": "unknown"
+            }
+        ],
+        "next_cursor": "station.metal"
+    });
+
+    let bytes = serde_json::to_vec(&valid_json).unwrap();
+    let page = device_control::parse_catalog_page(&bytes).unwrap();
+    assert_eq!(page.request_id, "req-1234-abcd");
+    assert_eq!(page.stations.len(), 2);
+    assert_eq!(page.stations[0].id, "station.rock_classic");
+    assert_eq!(page.stations[0].name, "Rock Classic Radio");
+    assert_eq!(page.stations[0].tags, vec!["rock", "classic"]);
+    assert_eq!(page.stations[0].health, "healthy");
+    assert_eq!(page.stations[0].codec.as_deref(), Some("mp3"));
+    assert_eq!(page.stations[0].bitrate_kbps, Some(128));
+    assert_eq!(page.next_cursor.as_deref(), Some("station.metal"));
+
+    // 2. Reject oversized catalog (> 20 stations)
+    let mut oversized_stations = Vec::new();
+    for i in 0..21 {
+        oversized_stations.push(json!({
+            "id": format!("station.{}", i),
+            "name": format!("Station {}", i),
+            "health": "healthy"
+        }));
+    }
+    let oversized_json = json!({
+        "request_id": "req-oversized",
+        "stations": oversized_stations
+    });
+    let oversized_bytes = serde_json::to_vec(&oversized_json).unwrap();
+    assert_eq!(
+        device_control::parse_catalog_page(&oversized_bytes),
+        Err(device_control::CatalogError::Oversized)
+    );
+
+    // 3. Reject malformed station metadata (e.g. invalid health or empty id)
+    let bad_station_json = json!({
+        "request_id": "req-bad",
+        "stations": [
+            {
+                "id": "",
+                "name": "Missing ID",
+                "health": "healthy"
+            }
+        ]
+    });
+    let bad_bytes = serde_json::to_vec(&bad_station_json).unwrap();
+    assert_eq!(
+        device_control::parse_catalog_page(&bad_bytes),
+        Err(device_control::CatalogError::Malformed)
+    );
+}
+
+#[test]
+fn device_search_page_parsing_and_boundaries() {
+    let search_json = json!({
+        "request_id": "req-search-5678",
+        "stations": [
+            {
+                "id": "station.alternative",
+                "name": "Alternative Rock",
+                "health": "healthy"
+            }
+        ]
+    });
+    let bytes = serde_json::to_vec(&search_json).unwrap();
+    let page = device_control::parse_search_page(&bytes).unwrap();
+    assert_eq!(page.request_id, "req-search-5678");
+    assert_eq!(page.stations.len(), 1);
+    assert_eq!(page.stations[0].id, "station.alternative");
+}
+
+#[test]
+fn station_play_station_envelope_construction() {
+    let envelope = device_control::station_play_station(
+        "10000000-0000-4000-8000-000000000010",
+        "2026-09-11T12:00:00Z",
+        "70000000-0000-4000-8000-000000000001",
+        "40000000-0000-4000-8000-000000000001",
+        "station.rock_classic",
+    );
+
+    assert_eq!(envelope["protocol_version"], 1);
+    assert_eq!(envelope["type"], "device.command");
+    assert_eq!(
+        envelope["message_id"],
+        "10000000-0000-4000-8000-000000000010"
+    );
+    assert_eq!(envelope["sent_at"], "2026-09-11T12:00:00Z");
+    assert_eq!(
+        envelope["payload"]["command_id"],
+        "70000000-0000-4000-8000-000000000001"
+    );
+    assert_eq!(
+        envelope["payload"]["target"]["device_id"],
+        "40000000-0000-4000-8000-000000000001"
+    );
+    assert_eq!(envelope["payload"]["body"]["name"], "station.play_station");
+    assert_eq!(
+        envelope["payload"]["body"]["station_id"],
+        "station.rock_classic"
+    );
+}
+
+#[test]
+fn catalog_limits_and_utf8_query_are_enforced() {
+    use device_control::catalog::*;
+    let station = json!({"id":"x", "name":"Радио", "health":"healthy"});
+    let page = |station: serde_json::Value| json!({"request_id":"r", "stations":[station]});
+    let parses =
+        |value: &serde_json::Value| parse_catalog_page(&serde_json::to_vec(value).unwrap()).is_ok();
+    assert!(parses(&page(station.clone())));
+    for (field, good, bad) in [
+        ("id", json!("x".repeat(128)), json!("x".repeat(129))),
+        ("name", json!("x".repeat(128)), json!("x".repeat(129))),
+        ("tags", json!(vec!["x"; 10]), json!(vec!["x"; 11])),
+        ("tags", json!(["x".repeat(64)]), json!(["x".repeat(65)])),
+        (
+            "homepage_url",
+            json!("x".repeat(512)),
+            json!("x".repeat(513)),
+        ),
+        ("codec", json!("x".repeat(32)), json!("x".repeat(33))),
+        ("health", json!("unknown"), json!("bad")),
+        ("bitrate_kbps", json!(1), json!(0)),
+    ] {
+        let mut valid = station.clone();
+        valid[field] = good;
+        assert!(parses(&page(valid)), "valid {field}");
+        let mut invalid = station.clone();
+        invalid[field] = bad;
+        assert!(!parses(&page(invalid)), "invalid {field}");
+    }
+    for field in ["id", "name", "health"] {
+        let mut invalid = station.clone();
+        invalid[field] = json!("a\u{0}b");
+        assert!(!parses(&page(invalid)));
+    }
+    let mut valid = json!({"request_id":"x".repeat(64), "stations":vec![station.clone();20], "next_cursor":"x".repeat(512)});
+    assert!(parses(&valid));
+    valid["next_cursor"] = json!("x".repeat(513));
+    assert!(!parses(&valid));
+    valid["next_cursor"] = json!(null);
+    valid["request_id"] = json!("x".repeat(65));
+    assert!(!parses(&valid));
+    assert_eq!(
+        parse_search_page(&vec![b' '; MAX_CATALOG_BYTES + 1]),
+        Err(CatalogError::Oversized)
+    );
+    assert_eq!(
+        parse_catalog_page(&vec![b' '; MAX_CATALOG_BYTES + 1]),
+        Err(CatalogError::Oversized)
+    );
+    assert!(
+        parse_search_page(
+            &serde_json::to_vec(&json!({"request_id":"r", "stations":vec![station;21]})).unwrap()
+        )
+        .is_err()
+    );
+    assert!(parse_catalog_page(b"{").is_err());
+    assert!(catalog_path(None).unwrap().ends_with("limit=20"));
+    assert!(
+        catalog_path(Some(" рок & jazz? "))
+            .unwrap()
+            .ends_with("q=%D1%80%D0%BE%D0%BA%20%26%20jazz%3F")
+    );
+    assert!(catalog_path(Some(&"я".repeat(128))).is_ok());
+    assert!(catalog_path(Some(&"я".repeat(129))).is_err());
+    assert!(catalog_path(Some(" \t")).is_err());
+    assert!(catalog_path(Some("a\nb")).is_err());
+}

@@ -12,6 +12,7 @@
 #include "esp_netif_sntp.h"
 #include "esp_random.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "esp_websocket_client.h"
 #include "esp_wifi.h"
 #include "driver/gpio.h"
@@ -158,9 +159,11 @@ static int http_request(const char *method, const char *path, const char *bearer
     }
     esp_err_t err = esp_http_client_perform(client);
     *status = esp_http_client_get_status_code(client);
+    int ret = ((err == ESP_OK || *status > 0) && !sink.overflow) ? (int)sink.len : -1;
+    ESP_LOGI(TAG, "HTTP %s %s -> status=%d err=%d len=%u resp=%.80s",
+             method, path, *status, (int)err, (unsigned)sink.len, response);
     esp_http_client_cleanup(client);
-    if (err != ESP_OK || sink.overflow) return -1;
-    return (int)sink.len;
+    return ret;
 }
 
 static void websocket_event(void *arg, esp_event_base_t base, int32_t id, void *event_data)
@@ -219,15 +222,15 @@ int rock_platform_init(void)
     bool has_creds = false;
     bool creds_from_sdkconfig = false;
 
-    if (CONFIG_ROCK_WIFI_SSID[0] != '\0') {
-        ESP_LOGI(TAG, "Using Wi-Fi credentials from sdkconfig");
+    if (rock_wifi_storage_load(active_ssid, sizeof(active_ssid), active_password, sizeof(active_password))) {
+        ESP_LOGI(TAG, "Using Wi-Fi credentials from NVS rock_wifi: '%s'", active_ssid);
+        has_creds = true;
+    } else if (CONFIG_ROCK_WIFI_SSID[0] != '\0') {
+        ESP_LOGI(TAG, "Using Wi-Fi credentials from sdkconfig: '%s'", CONFIG_ROCK_WIFI_SSID);
         strlcpy(active_ssid, CONFIG_ROCK_WIFI_SSID, sizeof(active_ssid));
         strlcpy(active_password, CONFIG_ROCK_WIFI_PASSWORD, sizeof(active_password));
         has_creds = true;
         creds_from_sdkconfig = true;
-    } else if (rock_wifi_storage_load(active_ssid, sizeof(active_ssid), active_password, sizeof(active_password))) {
-        ESP_LOGI(TAG, "Using Wi-Fi credentials from NVS rock_wifi");
-        has_creds = true;
     }
 
     if (!has_creds) {
@@ -269,8 +272,8 @@ int rock_platform_init(void)
         rock_wifi_storage_save(active_ssid, active_password);
     }
     esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-    if (esp_netif_sntp_init(&sntp) != ESP_OK || esp_netif_sntp_sync_wait(pdMS_TO_TICKS(30000)) != ESP_OK) {
-        ESP_LOGW(TAG, "SNTP sync failed or timed out; continuing");
+    if (esp_netif_sntp_init(&sntp) != ESP_OK || esp_netif_sntp_sync_wait(pdMS_TO_TICKS(2000)) != ESP_OK) {
+        ESP_LOGW(TAG, "SNTP sync failed or timed out; continuing in background");
     }
 
     // OTA validation: cancel rollback now that network is functional
@@ -284,8 +287,15 @@ int rock_platform_init(void)
 #endif
 
     if (CONFIG_ROCKSERVER_BASE_URL[0] != '\0') {
-        char response[128]; int status;
-        if (http_request("GET", "/health/ready", NULL, NULL, response, sizeof(response), &status) < 0 || status / 100 != 2) return -1;
+        char response[128] = {0};
+        int status = 0;
+        ESP_LOGI(TAG, "Checking RockServer health at %s/health/ready...", CONFIG_ROCKSERVER_BASE_URL);
+        int ret = http_request("GET", "/health/ready", NULL, NULL, response, sizeof(response), &status);
+        ESP_LOGI(TAG, "RockServer health result: ret=%d, status=%d, body='%s'", ret, status, response);
+        if (ret < 0 || status / 100 != 2) {
+            ESP_LOGE(TAG, "RockServer health check failed!");
+            return -1;
+        }
     } else {
         ESP_LOGI(TAG, "CONFIG_ROCKSERVER_BASE_URL not configured; skipping RockServer health check");
     }
@@ -318,8 +328,22 @@ int rock_identity_save(const char *id, const char *secret)
     return err == ESP_OK ? 0 : -1;
 }
 
+int rock_identity_clear(void)
+{
+    nvs_handle_t nvs;
+    if (nvs_open("rock_auth", NVS_READWRITE, &nvs) != ESP_OK) return -1;
+    esp_err_t err = nvs_erase_all(nvs);
+    if (err == ESP_OK) err = nvs_commit(nvs);
+    nvs_close(nvs);
+    ESP_LOGI(TAG, "Cleared rock_auth NVS partition (err=%d)", (int)err);
+    return err == ESP_OK ? 0 : -1;
+}
+
 int rock_http_post(const char *path, const char *bearer, const char *body, char *response, size_t cap, int *status)
 { return http_request("POST", path, bearer, body, response, cap, status); }
+
+int rock_http_get(const char *path, const char *bearer, char *response, size_t cap, int *status)
+{ return http_request("GET", path, bearer, NULL, response, cap, status); }
 
 int rock_ws_start(const char *access_token)
 {
@@ -395,5 +419,18 @@ void rock_hosted_recover(void)
     vTaskDelay(pdMS_TO_TICKS(100));
     gpio_set_level(ROCK_C6_RESET_GPIO, 1);
     vTaskDelay(pdMS_TO_TICKS(1000));
-    esp_restart();
+}
+
+int rock_wifi_rssi(void)
+{
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        return ap_info.rssi;
+    }
+    return -128;
+}
+
+uint64_t rock_uptime_ms(void)
+{
+    return (uint64_t)(esp_timer_get_time() / 1000);
 }

@@ -4,6 +4,8 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include "board_bus.h"
 #include "display_bsp.h"
@@ -40,5 +42,15 @@ void app_main(void)
     if (rock_player_init() != 0) {
         ESP_LOGE(TAG, "Player subsystem init failed");
     }
+#if CONFIG_ROCK_PLAYER_SELFTEST
+    if (rock_player_bringup_start() != 0) {
+        ESP_LOGE(TAG, "Player bring-up task start failed");
+    }
+#endif
+
+    // Setup local timezone for SNTP (MSK UTC+3 by default per center instruction)
+    setenv("TZ", "MSK-3", 1);
+    tzset();
+
     rust_main();
 }
