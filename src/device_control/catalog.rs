@@ -166,3 +166,10 @@ pub fn parse_search_page(bytes: &[u8]) -> Result<DeviceSearchPageDto, CatalogErr
     }
     Ok(page)
 }
+
+/// A long-lived WebSocket session outlives the HTTP access token TTL, so a
+/// catalog request can be rejected with 401 mid-session. Retry exactly once
+/// after obtaining a fresh session token; every other status is terminal.
+pub fn should_retry_catalog_with_fresh_token(status: u16, already_retried: bool) -> bool {
+    status == 401 && !already_retried
+}

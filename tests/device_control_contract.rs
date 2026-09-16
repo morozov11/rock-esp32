@@ -571,6 +571,91 @@ fn station_play_station_envelope_construction() {
 }
 
 #[test]
+fn catalog_load_refreshes_expired_session_token_exactly_once() {
+    use device_control::catalog::should_retry_catalog_with_fresh_token;
+    // A 401 from an expired access token triggers exactly one refresh+retry.
+    assert!(should_retry_catalog_with_fresh_token(401, false));
+    assert!(!should_retry_catalog_with_fresh_token(401, true));
+    // Every other status is terminal: success, forbidden identity,
+    // server errors, transport-level failures reported as status 0.
+    for status in [200u16, 403, 404, 429, 500, 502, 0] {
+        assert!(
+            !should_retry_catalog_with_fresh_token(status, false),
+            "status {status}"
+        );
+    }
+}
+
+#[test]
+fn station_play_command_result_resolution_variants() {
+    let received = device_control::parse_frame(&fixture("station-command-received-server.json")).unwrap();
+    let accepted = device_control::parse_frame(&fixture("station-command-accepted-rockcast.json")).unwrap();
+    let succeeded = device_control::parse_frame(&fixture("station-command-succeeded-rockcast.json")).unwrap();
+    let failed = device_control::parse_frame(&fixture("station-command-failed-rockcast.json")).unwrap();
+
+    // Intermediate acknowledgements must not resolve a pending play request.
+    assert_eq!(received.kind, "command.received");
+    assert_eq!(accepted.kind, "command.accepted");
+    assert!(device_control::command_result_outcome(&received).is_none());
+    assert!(device_control::command_result_outcome(&accepted).is_none());
+
+    // A successful result resolves its command_id as success.
+    let (id, ok) = device_control::command_result_outcome(&succeeded).unwrap();
+    assert_eq!(id, "60000000-0000-4000-8000-000000000002");
+    assert!(ok);
+
+    // A failed result (e.g. station unavailable) resolves as failure,
+    // carrying the same command_id the device compares against its pending one.
+    let (id, ok) = device_control::command_result_outcome(&failed).unwrap();
+    assert_eq!(id, "60000000-0000-4000-8000-000000000003");
+    assert!(!ok);
+
+    // A duplicate/late result for an already resolved command parses the same
+    // way; the caller ignores it because the pending slot was already cleared.
+    let duplicate =
+        device_control::parse_frame(&fixture("duplicate-command-result-server.json")).unwrap();
+    assert_eq!(
+        device_control::command_result_outcome(&duplicate),
+        Some(("60000000-0000-4000-8000-000000000002", true))
+    );
+}
+
+#[test]
+fn catalog_browse_and_search_pages_cover_load_variants() {
+    // Canonical RockServer catalog response parses with its pagination cursor.
+    let canonical = device_control::parse_catalog_page(&fixture("device-catalog-response.json")).unwrap();
+    assert_eq!(canonical.stations.len(), 3);
+    assert_eq!(canonical.stations[0].id, "station-rock-001");
+    assert_eq!(canonical.stations[0].codec.as_deref(), Some("AAC"));
+    assert_eq!(canonical.next_cursor.as_deref(), Some("station-news-001"));
+
+    // Last browse page: no next_cursor at all.
+    let last_page = json!({
+        "request_id": "req-last",
+        "stations": [{"id": "station.last", "name": "Last Station", "health": "healthy"}]
+    });
+    let page =
+        device_control::parse_catalog_page(&serde_json::to_vec(&last_page).unwrap()).unwrap();
+    assert_eq!(page.next_cursor, None);
+
+    // Empty search result parses to zero stations (GUI shows "Ничего не найдено").
+    let empty = json!({"request_id": "req-empty", "stations": []});
+    let search =
+        device_control::parse_search_page(&serde_json::to_vec(&empty).unwrap()).unwrap();
+    assert!(search.stations.is_empty());
+
+    // Search page with unknown extra server fields is tolerated.
+    let extra = json!({
+        "request_id": "req-extra",
+        "extra_field": true,
+        "stations": [{"id": "station.hit", "name": "Hits", "health": "healthy", "rank": 7}]
+    });
+    let search =
+        device_control::parse_search_page(&serde_json::to_vec(&extra).unwrap()).unwrap();
+    assert_eq!(search.stations[0].id, "station.hit");
+}
+
+#[test]
 fn catalog_limits_and_utf8_query_are_enforced() {
     use device_control::catalog::*;
     let station = json!({"id":"x", "name":"Радио", "health":"healthy"});

@@ -120,7 +120,7 @@ fn update_gui(player: &PlayerState) {
     );
 }
 
-fn load_catalog(token: &str, query: Option<&str>) {
+fn load_catalog(token: &mut String, query: Option<&str>) {
     let Ok(path) = device_control::catalog::catalog_path(query) else {
         platform::gui_show_error("Запрос должен содержать от 1 до 128 символов");
         return;
@@ -130,7 +130,18 @@ fn load_catalog(token: &str, query: Option<&str>) {
     } else {
         "Загрузка каталога..."
     });
-    match platform::get(&path, Some(token)) {
+    let mut response = platform::get(&path, Some(token));
+    if let Ok((status, _)) = &response {
+        if device_control::catalog::should_retry_catalog_with_fresh_token(*status, false) {
+            // The long-lived WebSocket session outlives the access token TTL;
+            // obtain a fresh session token and retry the catalog request once.
+            if let Ok(credentials) = super::pairing::credentials() {
+                *token = credentials.access_token;
+                response = platform::get(&path, Some(token));
+            }
+        }
+    }
+    match response {
         Ok((200, bytes)) => {
             if query.is_some() {
                 match device_control::parse_search_page(&bytes) {
@@ -157,6 +168,7 @@ fn load_catalog(token: &str, query: Option<&str>) {
 }
 
 fn session(token: &str) -> Result<(), ()> {
+    let mut token = token.to_string();
     send(&device_control::hello(&message_id(), &platform::now()?))?;
     let mut frame = vec![0 as c_char; FRAME_CAPACITY];
     let len = platform::ws_receive(&mut frame, 30_000);
@@ -233,11 +245,11 @@ fn session(token: &str) -> Result<(), ()> {
                 }
                 platform::GuiEvent::CatalogBrowse => {
                     retry = Some(platform::GuiEvent::CatalogBrowse);
-                    load_catalog(token, None);
+                    load_catalog(&mut token, None);
                 }
                 platform::GuiEvent::CatalogSearch(query) => {
                     retry = Some(platform::GuiEvent::CatalogSearch(query.clone()));
-                    load_catalog(token, Some(&query));
+                    load_catalog(&mut token, Some(&query));
                 }
                 platform::GuiEvent::PlaybackPlay => {
                     let _ = platform::player_play();
@@ -294,12 +306,12 @@ fn session(token: &str) -> Result<(), ()> {
             continue;
         }
         if inbound.kind == "command.result" || inbound.kind == "protocol.error" {
+            let outcome = device_control::command_result_outcome(&inbound);
             if let Some((id, _)) = &pending {
-                let matches = inbound.payload.get("command_id").and_then(Value::as_str) == Some(id)
+                let matches = matches!(outcome, Some((command_id, _)) if command_id == id.as_str())
                     || inbound.kind == "protocol.error";
                 if matches {
-                    let failed =
-                        inbound.payload.get("status").and_then(Value::as_str) != Some("succeeded");
+                    let failed = !matches!(outcome, Some((_, true)));
                     pending = None;
                     update_gui(&player);
                     if failed {

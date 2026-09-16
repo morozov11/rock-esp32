@@ -45,19 +45,49 @@ static char s_ws_headers[640];
 
 typedef struct { char *data; size_t cap; size_t len; bool overflow; } http_sink_t;
 
+static const char *wifi_reason_desc(unsigned reason)
+{
+    switch (reason) {
+    case 2: return "auth-expire";
+    case 4: return "assoc-expire";
+    case 8: return "assoc-leave";
+    case 15: return "4way-handshake-timeout";
+    case 200: return "beacon-timeout";
+    case 201: return "no-ap-found";
+    case 202: return "auth-fail";
+    case 203: return "assoc-fail";
+    case 204: return "handshake-timeout";
+    case 205: return "connection-fail";
+    default: return "other";
+    }
+}
+
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg; (void)data;
+    static bool s_sta_associated = false;
+    static uint64_t s_sta_since_ms = 0;
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         // Connected explicitly after boot Wi-Fi scan
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         const wifi_event_sta_disconnected_t *event = data;
-        ESP_LOGW(TAG, "STA disconnected reason=%u", event ? event->reason : 0);
+        unsigned reason = event ? event->reason : 0;
+        if (s_sta_associated) {
+            ESP_LOGW(TAG, "STA link lost reason=%u (%s) after %llu s associated",
+                     reason, wifi_reason_desc(reason),
+                     (unsigned long long)((rock_uptime_ms() - s_sta_since_ms) / 1000));
+            s_sta_associated = false;
+        } else {
+            ESP_LOGW(TAG, "STA reconnect attempt failed reason=%u (%s)",
+                     reason, wifi_reason_desc(reason));
+        }
         xEventGroupClearBits(s_wifi_events, WIFI_READY);
         xEventGroupSetBits(s_wifi_events, WIFI_FAILED);
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         xEventGroupClearBits(s_wifi_events, WIFI_FAILED);
         xEventGroupSetBits(s_wifi_events, WIFI_READY);
+        s_sta_associated = true;
+        s_sta_since_ms = rock_uptime_ms();
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)data;
         if (event) {
             char ip_buf[48];
@@ -67,9 +97,78 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     }
 }
 
+// Rate-limited all-channel survey used while STA cannot associate.
+// Reports neighbour density per channel and whether the configured network
+// is visible, without logging any SSID.
+static void wifi_rf_survey(void)
+{
+    static uint64_t s_last_ms = 0;
+    uint64_t now_ms = rock_uptime_ms();
+    if (s_last_ms != 0 && now_ms - s_last_ms < 30000) return;
+    s_last_ms = now_ms;
+
+    wifi_scan_config_t scan_cfg = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = false,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time = {
+            .active = { .min = 120, .max = 350 },
+            .passive = 350,
+        },
+    };
+    if (esp_wifi_scan_start(&scan_cfg, true) != ESP_OK) return;
+    uint16_t ap_count = 0;
+    esp_wifi_scan_get_ap_num(&ap_count);
+    uint16_t fetch = ap_count > 64 ? 64 : ap_count;
+    if (fetch == 0) {
+        ESP_LOGW(TAG, "RF survey: radio silent, no networks visible");
+        return;
+    }
+    wifi_ap_record_t *records = calloc(fetch, sizeof(wifi_ap_record_t));
+    if (!records) return;
+    esp_wifi_scan_get_ap_records(&fetch, records);
+
+    wifi_config_t cfg = {0};
+    esp_wifi_get_config(WIFI_IF_STA, &cfg);
+    uint16_t per_channel[14] = {0};
+    int target_channel = 0;
+    int target_rssi = 0;
+    for (uint16_t i = 0; i < fetch; i++) {
+        if (records[i].primary >= 1 && records[i].primary <= 13) {
+            per_channel[records[i].primary]++;
+        }
+        if (target_channel == 0 && cfg.sta.ssid[0] != '\0' &&
+            records[i].ssid[0] != '\0' &&
+            strncmp((const char *)records[i].ssid, (const char *)cfg.sta.ssid,
+                    sizeof(cfg.sta.ssid)) == 0) {
+            target_channel = records[i].primary;
+            target_rssi = records[i].rssi;
+        }
+    }
+    free(records);
+
+    if (target_channel > 0) {
+        ESP_LOGW(TAG, "RF survey: aps=%u ch 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u | target ch=%d rssi=%d",
+                 (unsigned)fetch,
+                 per_channel[1], per_channel[2], per_channel[3], per_channel[4],
+                 per_channel[5], per_channel[6], per_channel[7], per_channel[8],
+                 per_channel[9], per_channel[10], per_channel[11], per_channel[12],
+                 per_channel[13], target_channel, target_rssi);
+    } else {
+        ESP_LOGW(TAG, "RF survey: aps=%u ch 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u | target not visible",
+                 (unsigned)fetch,
+                 per_channel[1], per_channel[2], per_channel[3], per_channel[4],
+                 per_channel[5], per_channel[6], per_channel[7], per_channel[8],
+                 per_channel[9], per_channel[10], per_channel[11], per_channel[12],
+                 per_channel[13]);
+    }
+}
+
 static bool wifi_connect_with_backoff(uint64_t deadline_ms)
 {
-    uint32_t backoff_ms = 1000;
+    uint32_t backoff_ms = 0;
     do {
         xEventGroupClearBits(s_wifi_events, WIFI_FAILED);
         esp_err_t err = esp_wifi_connect();
@@ -80,9 +179,13 @@ static bool wifi_connect_with_backoff(uint64_t deadline_ms)
         } else {
             ESP_LOGW(TAG, "STA connect request failed: %s", esp_err_to_name(err));
         }
-        ESP_LOGW(TAG, "STA retry in %lu ms", (unsigned long)backoff_ms);
-        vTaskDelay(pdMS_TO_TICKS(backoff_ms));
-        backoff_ms = backoff_ms < 15000 ? backoff_ms * 2 : 30000;
+        if (rock_uptime_ms() >= deadline_ms) break;
+        wifi_rf_survey();
+        if (backoff_ms > 0) {
+            ESP_LOGW(TAG, "STA retry in %lu ms", (unsigned long)backoff_ms);
+            vTaskDelay(pdMS_TO_TICKS(backoff_ms));
+        }
+        backoff_ms = backoff_ms == 0 ? 250 : (backoff_ms * 2 > 2000 ? 2000 : backoff_ms * 2);
     } while (rock_uptime_ms() < deadline_ms);
     return false;
 }
@@ -92,7 +195,7 @@ static void wifi_reconnect_task(void *arg)
     (void)arg;
     for (;;) {
         xEventGroupWaitBits(s_wifi_events, WIFI_FAILED, pdTRUE, pdFALSE, portMAX_DELAY);
-        if (rock_wifi_rssi() == -128) wifi_connect_with_backoff(UINT64_MAX);
+        wifi_connect_with_backoff(UINT64_MAX);
     }
 }
 
@@ -285,6 +388,14 @@ int rock_platform_init(void)
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event, NULL);
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event, NULL);
     if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK || esp_wifi_start() != ESP_OK) return -1;
+    // Allow scanning/operating on channels 12-13 (EU/RU 2.4 GHz band) so the
+    // default 1-11 country cannot hide the target AP after a router channel change.
+    esp_err_t country_err = esp_wifi_set_country_code("RU", true);
+    if (country_err != ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi country code set failed: %s", esp_err_to_name(country_err));
+    } else {
+        ESP_LOGI(TAG, "Wi-Fi country set to RU (channels 1-13 enabled)");
+    }
 
     rock_ui_splash_status("Checking network...");
 

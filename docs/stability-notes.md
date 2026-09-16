@@ -38,6 +38,22 @@
 
 Deferred: the live onboarding `/api/scan` check. It requires the owner to hide the 2.4 GHz AP for ~11 minutes and to join `RockCast-Setup` with a phone; the owner was not available during this autonomous acceptance session. Per the new semantics the device keeps its NVS credentials, retries STA with 1–30 s backoff for 10 minutes, and only then opens the portal, so the check remains a safe manual follow-up. No unsafe workaround (NVS erase, `/connect`, `/forget`) was attempted.
 
+## Follow-up hardening (same evening, owner-requested)
+
+After the acceptance commit, live observation of further drops led to a second round of changes:
+
+- Disconnect logging now names the 802.11 reason (`beacon-timeout`, `no-ap-found`, `assoc-expire`, ...) and distinguishes the first `STA link lost ... after N s associated` from subsequent `STA reconnect attempt failed` lines, so the original drop reason is no longer hidden behind the failed-reconnect `201` noise.
+- STA reconnect is immediate: the retry backoff now starts at 0 and caps at 2 s (was 1–30 s), and the reconnect task no longer gates on a possibly-stale RSSI reading that could block recovery entirely. Observed live: two `reason=34` drops at 22:31 and 22:35 recovered to an IP address within 15 s each.
+- The Wi-Fi country code is set to RU at init, enabling channels 12–13, so a router channel change cannot make the target AP unscannable.
+- On persistent association failure an all-channel `RF survey` (rate-limited to once per 30 s) logs neighbour density per channel plus the target's channel/RSSI without any SSID. Live capture during a drop showed the target visible on channel 6 at rssi −77 while connect attempts failed — evidence the residual drops are RF-level (weak, fluctuating signal −72…−85 in a congested band), not a missing AP.
+- The Rust reconnect loop breaks its exponential backoff as soon as Wi-Fi reassociates, so the server session restarts immediately instead of sleeping up to 30 s (the 21:46 IP→session gap of 31 s came from this sleep).
+- Catalog loads through the session loop now refresh the access token when it is rejected: a 401 triggers one `device-session` POST and a single retry. Root cause observed live: catalog requests at a token age of ~18 min returned 401 while the WSS session (established connection) stayed healthy; at ages of 2–3 min the same request returned 200. Verified directly with a per-minute catalog probe over the COM console: access-token TTL is ≈15.3 min; at uptime 925.7 s the GET returned 401, the in-session `device-session` POST returned 200 within 2.3 s, and the retried catalog GET returned 200 within 6.8 s, with the WSS session never dropping.
+- Station playback attempts during COM-port-driven testing showed the server rejecting some stations with `protocol.error` within a second while another station's play command received no response at all within 20 s — unavailable stations are an expected outcome; the device-side contract is the existing 30 s pending deadline.
+
+## Hardware-in-the-loop test harness
+
+`tools/rock_hwtest.py` (PC side, pyserial) drives the device over the USB Serial/JTAG console using the firmware's existing `CMD:*` interface (`CMD:UI:CATALOG`, `CMD:UI:SEARCH:<query>`, `CMD:UI:STATION:<row>`, `CMD:UI:PLAYPAUSE|STOP|VOL±`, `CMD:METRICS`) and asserts on the device log: boot-to-WSS timing, catalog/search via the real GUI path, per-station play outcomes (playing or a reported error both count as resolved; a hang is a failure), transport controls, heartbeat continuity within the 45 s watchdog, and absence of crashes. First full run (18 min window): 11/13 checks — the two failures were a station whose play command the server never answered (server-side; the harness window was later widened to the device's own 30 s pending deadline) and the post-TTL catalog check, which the harness evaluated before the token-refresh chain had time to settle. The refresh chain itself was then verified directly by the per-minute probe described above. The harness also holds DTR/RTS deasserted on port open: asserting them (pyserial's default) hard-resets the board over the native USB Serial/JTAG port and masquerades as spontaneous reboots.
+
 ## Open questions
 
 - Whether APSTA scanning on this specific ESP-Hosted 3.0.7 C6 reports records while SoftAP has a connected phone. The pre-AP cache provides a fallback, but the portal response still needs a live test — deferred until the owner can hide the 2.4 GHz AP and join the portal (see Acceptance).

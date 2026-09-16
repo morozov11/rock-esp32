@@ -128,6 +128,19 @@ pub fn command_accepted(message_id: &str, sent_at: &str, command_id: &str) -> Va
     )
 }
 
+/// Outcome of an inbound `command.result` frame: the command it resolves and
+/// whether that command reports success. Intermediate acknowledgements
+/// (`command.received`, `command.accepted`) and result frames without a
+/// usable command_id resolve nothing and yield `None`.
+pub fn command_result_outcome(envelope: &Envelope) -> Option<(&str, bool)> {
+    if envelope.kind != "command.result" {
+        return None;
+    }
+    let command_id = envelope.payload.get("command_id").and_then(Value::as_str)?;
+    let succeeded = envelope.payload.get("status").and_then(Value::as_str) == Some("succeeded");
+    Some((command_id, succeeded))
+}
+
 pub fn command_succeeded(
     message_id: &str,
     sent_at: &str,

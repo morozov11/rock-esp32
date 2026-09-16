@@ -36,6 +36,7 @@ pub extern "C" fn rust_main() -> ! {
         platform::random_fill(&mut random);
         let backoff = (u32::from_le_bytes(random) % ceiling.max(1)).max(1_000);
         let steps = backoff / 50;
+        let mut wifi_was_ready = platform::wifi_ready();
         'backoff: for _ in 0..steps {
             while let Some(evt) = platform::gui_poll_event(0) {
                 match evt {
@@ -68,6 +69,14 @@ pub extern "C" fn rust_main() -> ! {
                 }
             }
             transport::refresh_player(&mut local_player);
+            let wifi_ready_now = platform::wifi_ready();
+            if !wifi_was_ready && wifi_ready_now {
+                // Wi-Fi just reassociated: retry the server session immediately
+                // instead of sleeping through the remaining backoff.
+                failures = 0;
+                break 'backoff;
+            }
+            wifi_was_ready = wifi_ready_now;
             platform::gui_connectivity(false);
             platform::delay(50);
         }
