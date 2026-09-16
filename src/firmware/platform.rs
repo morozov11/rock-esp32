@@ -63,6 +63,7 @@ unsafe extern "C" {
     fn rock_ws_stop();
     fn rock_ws_send(data: *const c_char, len: usize) -> c_int;
     fn rock_ws_receive(data: *mut c_char, cap: usize, timeout_ms: u32) -> c_int;
+    fn rock_ws_log_heartbeat_timeout(age_ms: u64);
     fn rock_now_rfc3339(out: *mut c_char, cap: usize) -> c_int;
     fn rock_random_fill(out: *mut u8, len: usize);
     fn rock_server_base_url() -> *const c_char;
@@ -254,6 +255,9 @@ pub(crate) fn ws_send(text: &str) -> Result<(), ()> {
 }
 pub(crate) fn ws_receive(frame: &mut [c_char], timeout_ms: u32) -> i32 {
     unsafe { rock_ws_receive(frame.as_mut_ptr(), frame.len(), timeout_ms) }
+}
+pub(crate) fn ws_log_heartbeat_timeout(age_ms: u64) {
+    unsafe { rock_ws_log_heartbeat_timeout(age_ms) }
 }
 
 pub(crate) fn player_play_stream(stream_uri: &str, station_id: &str) -> Result<(), ()> {
@@ -527,9 +531,9 @@ pub(crate) fn uptime_ms() -> u64 {
     unsafe { rock_uptime_ms() }
 }
 pub(crate) fn wifi_ready() -> bool {
-    unsafe { rock_wifi_rssi() != -127 }
+    unsafe { rock_wifi_rssi() != -128 }
 }
 pub(crate) fn gui_connectivity(server: bool) {
     let rssi = unsafe { rock_wifi_rssi() };
-    gui_update_connectivity(rssi, rssi != -127, server && rssi != -127);
+    gui_update_connectivity(rssi, rssi != -128, server && rssi != -128);
 }

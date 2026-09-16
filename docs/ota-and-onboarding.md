@@ -47,7 +47,7 @@ This document describes the firmware Over-The-Air (OTA) update mechanism and the
    - The QR code on the ST7701 display encodes standard Wi-Fi configuration (`WIFI:S:RockCast-Setup;T:nopass;;`).
    - Pointing any iOS or Android camera at the screen displays a native 1-tap "Join Network" prompt without searching for the network manually.
 4. **Interactive Network Scanner (`GET /api/scan`)**:
-   - The captive portal page queries `/api/scan` to automatically list nearby Wi-Fi networks in a `<select>` dropdown with RSSI signal bars and encryption status (🔒/🔓). Users only need to pick their network and enter the password.
+   - The captive portal page queries `/api/scan` to automatically list nearby Wi-Fi networks in a `<select>` dropdown with RSSI signal bars and encryption status (🔒/🔓). A STA scan runs before SoftAP starts; its results remain available if a later APSTA scan through ESP-Hosted fails or returns no networks.
 5. **No Insecure TLS**:
    - OTA updates strictly enforce TLS certificate verification.
    - Production builds use the ESP certificate bundle (`CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y`).
@@ -61,12 +61,12 @@ This document describes the firmware Over-The-Air (OTA) update mechanism and the
 
 At boot time, `rock_platform_init()` determines Wi-Fi configuration in the following strict order:
 
-1. **`CONFIG_ROCK_WIFI_SSID` in `sdkconfig` (Development Priority)**:
-   If populated, the device connects directly using compile-time credentials. Onboarding is bypassed.
-2. **`rock_wifi` in NVS**:
-   If `CONFIG_ROCK_WIFI_SSID` is empty, the device attempts to load credentials from NVS. If valid credentials exist, it connects to the configured station.
+1. **`rock_wifi` in NVS**:
+   If saved credentials exist, the device uses them for STA connection.
+2. **`CONFIG_ROCK_WIFI_SSID` in local `sdkconfig` (development fallback)**:
+   If NVS has no credentials and this value is populated, the device uses it and saves it to NVS after a successful connection.
 3. **Interactive SoftAP Onboarding**:
-   If neither source contains valid credentials (or if NVS credentials permanently fail to authenticate), the device starts SoftAP mode (`RockCast-Setup`) and presents the onboarding screen.
+   If neither source contains credentials, the device starts SoftAP mode (`RockCast-Setup`) and presents the onboarding screen. With saved credentials, STA retries with exponential backoff for 10 minutes of continuous failure before opening the portal. The saved credentials remain in NVS so a reboot can try them again. `POST /connect` replaces them; the portal's PIN-protected “Forget saved network” action clears them explicitly.
 
 ---
 
@@ -110,7 +110,7 @@ At boot time, `rock_platform_init()` determines Wi-Fi configuration in the follo
 | **S2: Image Boots but Network Fails** | New version fails Wi-Fi connection or self-test. | Firmware calls `esp_ota_mark_app_invalid_rollback_and_reboot()`; reboot returns to good slot. |
 | **S3: Download Interrupted** | Wi-Fi disconnect, socket timeout, server reset. | `esp_https_ota_perform()` reports error; `esp_https_ota_abort()` cleans up; `otadata` is unchanged. |
 | **S4: Matching Firmware Version** | Incoming image version equals running version. | Header check detects match; aborts download without flash erase or reboot. |
-| **S5: Invalid Wi-Fi Password in Onboarding** | User enters incorrect password in web portal. | STA connection fails; NVS `rock_wifi` is cleared; SoftAP onboarding restarts with error banner on screen. |
+| **S5: STA Cannot Connect** | A saved password is wrong or the AP is temporarily unavailable. | STA retries with backoff for 10 minutes. The firmware never clears `rock_wifi` automatically. If still offline, it opens SoftAP onboarding with the saved credentials intact; `POST /connect` can replace them, and the PIN-protected “Forget saved network” action can erase them. |
 | **S6: Simultaneous Radio Playback & OTA** | Radio stream active on Core 1 during OTA check. | Core 0 worker with 15ms task delay yields CPU; 0 audio buffer underruns occur on Core 1. |
 
 ---

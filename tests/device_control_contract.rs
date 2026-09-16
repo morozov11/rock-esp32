@@ -22,6 +22,13 @@ fn consumes_canonical_hello_and_welcome() {
     assert_eq!(hello.kind, "protocol.hello");
     assert_eq!(welcome.payload["limits"]["max_json_frame_bytes"], 65_536);
     assert_eq!(welcome.payload["limits"]["heartbeat_interval_seconds"], 20);
+    let heartbeat = device_control::heartbeat(
+        "10000000-0000-4000-8000-000000000001",
+        "2026-09-02T12:00:20Z",
+        7,
+    );
+    assert_eq!(heartbeat["type"], "device.heartbeat");
+    assert_eq!(heartbeat["payload"], json!({"sequence": 7}));
 }
 
 #[test]

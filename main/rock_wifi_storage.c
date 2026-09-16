@@ -87,6 +87,6 @@ bool rock_wifi_storage_clear(void)
         err = nvs_commit(handle);
     }
     nvs_close(handle);
-    ESP_LOGI(TAG, "Wi-Fi credentials cleared from NVS (namespace: %s)", NVS_NAMESPACE);
+    ESP_LOGI(TAG, "Wi-Fi credentials clear result=%s", esp_err_to_name(err));
     return err == ESP_OK;
 }

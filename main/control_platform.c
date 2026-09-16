@@ -37,7 +37,6 @@
 static const char *TAG = "rock-control";
 static EventGroupHandle_t s_wifi_events;
 static EventGroupHandle_t s_ws_events;
-static int s_wifi_retries;
 static esp_websocket_client_handle_t s_ws;
 static QueueHandle_t s_ws_queue;
 static char s_ws_frame[ROCK_MAX_FRAME + 1];
@@ -52,9 +51,12 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         // Connected explicitly after boot Wi-Fi scan
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (++s_wifi_retries <= 10) esp_wifi_connect(); else xEventGroupSetBits(s_wifi_events, WIFI_FAILED);
+        const wifi_event_sta_disconnected_t *event = data;
+        ESP_LOGW(TAG, "STA disconnected reason=%u", event ? event->reason : 0);
+        xEventGroupClearBits(s_wifi_events, WIFI_READY);
+        xEventGroupSetBits(s_wifi_events, WIFI_FAILED);
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-        s_wifi_retries = 0;
+        xEventGroupClearBits(s_wifi_events, WIFI_FAILED);
         xEventGroupSetBits(s_wifi_events, WIFI_READY);
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)data;
         if (event) {
@@ -62,6 +64,35 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             snprintf(ip_buf, sizeof(ip_buf), "Connected! IP: " IPSTR, IP2STR(&event->ip_info.ip));
             rock_ui_splash_status(ip_buf);
         }
+    }
+}
+
+static bool wifi_connect_with_backoff(uint64_t deadline_ms)
+{
+    uint32_t backoff_ms = 1000;
+    do {
+        xEventGroupClearBits(s_wifi_events, WIFI_FAILED);
+        esp_err_t err = esp_wifi_connect();
+        if (err == ESP_OK) {
+            EventBits_t bits = xEventGroupWaitBits(s_wifi_events, WIFI_READY | WIFI_FAILED,
+                                                   pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
+            if (bits & WIFI_READY) return true;
+        } else {
+            ESP_LOGW(TAG, "STA connect request failed: %s", esp_err_to_name(err));
+        }
+        ESP_LOGW(TAG, "STA retry in %lu ms", (unsigned long)backoff_ms);
+        vTaskDelay(pdMS_TO_TICKS(backoff_ms));
+        backoff_ms = backoff_ms < 15000 ? backoff_ms * 2 : 30000;
+    } while (rock_uptime_ms() < deadline_ms);
+    return false;
+}
+
+static void wifi_reconnect_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        xEventGroupWaitBits(s_wifi_events, WIFI_FAILED, pdTRUE, pdFALSE, portMAX_DELAY);
+        if (rock_wifi_rssi() == -128) wifi_connect_with_backoff(UINT64_MAX);
     }
 }
 
@@ -105,8 +136,6 @@ int rock_wifi_scan_and_show(void)
                 items[i].rssi = records[i].rssi;
                 items[i].authmode = (uint8_t)records[i].authmode;
                 items[i].channel = records[i].primary;
-                ESP_LOGI(TAG, "  [%2u] SSID: %-32s | RSSI: %3d dBm | CH: %2u | Auth: %u",
-                         i + 1, items[i].ssid, items[i].rssi, items[i].channel, items[i].authmode);
             }
         }
     }
@@ -160,10 +189,25 @@ static int http_request(const char *method, const char *path, const char *bearer
     esp_err_t err = esp_http_client_perform(client);
     *status = esp_http_client_get_status_code(client);
     int ret = ((err == ESP_OK || *status > 0) && !sink.overflow) ? (int)sink.len : -1;
-    ESP_LOGI(TAG, "HTTP %s %s -> status=%d err=%d len=%u resp=%.80s",
-             method, path, *status, (int)err, (unsigned)sink.len, response);
+    ESP_LOGI(TAG, "HTTP %s %s -> status=%d err=%s len=%u",
+             method, path, *status, esp_err_to_name(err), (unsigned)sink.len);
     esp_http_client_cleanup(client);
     return ret;
+}
+
+static const char *ws_frame_kind(const char *frame)
+{
+    static const char *const kinds[] = {
+        "protocol.hello", "protocol.welcome", "protocol.error", "device.register",
+        "device.registered", "device.state_full", "device.heartbeat",
+        "device.heartbeat_ack", "device.command", "command.result"
+    };
+    for (size_t i = 0; i < sizeof(kinds) / sizeof(kinds[0]); ++i) {
+        char marker[64];
+        snprintf(marker, sizeof(marker), "\"type\":\"%s\"", kinds[i]);
+        if (strstr(frame, marker)) return kinds[i];
+    }
+    return "other";
 }
 
 static void websocket_event(void *arg, esp_event_base_t base, int32_t id, void *event_data)
@@ -171,11 +215,24 @@ static void websocket_event(void *arg, esp_event_base_t base, int32_t id, void *
     (void)arg; (void)base;
     int result;
     if (id == WEBSOCKET_EVENT_CONNECTED) {
+        ESP_LOGI(TAG, "WSS connected uptime_ms=%llu", (unsigned long long)(esp_timer_get_time() / 1000));
         xEventGroupSetBits(s_ws_events, WS_CONNECTED);
     } else if (id == WEBSOCKET_EVENT_DATA) {
         esp_websocket_event_data_t *event = event_data;
+        if (event->op_code == 9 || event->op_code == 10) {
+            ESP_LOGI(TAG, "WSS control opcode=%u handled by client", event->op_code);
+            return;
+        }
+        if (event->op_code == 8) {
+            ESP_LOGW(TAG, "WSS close frame received");
+            xEventGroupSetBits(s_ws_events, WS_DISCONNECTED);
+            result = -1;
+            xQueueOverwrite(s_ws_queue, &result);
+            return;
+        }
         if (event->op_code != 1 || event->payload_len > ROCK_MAX_FRAME || event->payload_offset < 0 ||
             event->data_len < 0 || event->payload_offset + event->data_len > ROCK_MAX_FRAME) {
+            ESP_LOGW(TAG, "WSS unsupported frame opcode=%u len=%d", event->op_code, event->payload_len);
             result = event->op_code == 1 ? -2 : -3;
             xQueueOverwrite(s_ws_queue, &result);
             return;
@@ -188,7 +245,22 @@ static void websocket_event(void *arg, esp_event_base_t base, int32_t id, void *
             result = (int)s_ws_length;
             xQueueOverwrite(s_ws_queue, &result);
         }
-    } else if (id == WEBSOCKET_EVENT_DISCONNECTED || id == WEBSOCKET_EVENT_ERROR) {
+    } else if (id == WEBSOCKET_EVENT_DISCONNECTED || id == WEBSOCKET_EVENT_ERROR || id == WEBSOCKET_EVENT_CLOSED) {
+        const esp_websocket_event_data_t *event = event_data;
+        if (event) {
+            ESP_LOGW(TAG, "WSS %s type=%d close=%d http=%d uptime_ms=%llu",
+                     id == WEBSOCKET_EVENT_ERROR ? "error" : id == WEBSOCKET_EVENT_CLOSED ? "closed" : "disconnected",
+                     event->error_handle.error_type, event->close_status_code,
+                     event->error_handle.esp_ws_handshake_status_code,
+                     (unsigned long long)(esp_timer_get_time() / 1000));
+            if (event->error_handle.error_type == WEBSOCKET_ERROR_TYPE_TCP_TRANSPORT) {
+                ESP_LOGW(TAG, "WSS transport esp=%s tls=%d verify=%d errno=%d",
+                         esp_err_to_name(event->error_handle.esp_tls_last_esp_err),
+                         event->error_handle.esp_tls_stack_err,
+                         event->error_handle.esp_tls_cert_verify_flags,
+                         event->error_handle.esp_transport_sock_errno);
+            }
+        }
         xEventGroupSetBits(s_ws_events, WS_DISCONNECTED);
         result = -1;
         xQueueOverwrite(s_ws_queue, &result);
@@ -223,10 +295,10 @@ int rock_platform_init(void)
     bool creds_from_sdkconfig = false;
 
     if (rock_wifi_storage_load(active_ssid, sizeof(active_ssid), active_password, sizeof(active_password))) {
-        ESP_LOGI(TAG, "Using Wi-Fi credentials from NVS rock_wifi: '%s'", active_ssid);
+        ESP_LOGI(TAG, "Using Wi-Fi credentials from NVS rock_wifi");
         has_creds = true;
     } else if (CONFIG_ROCK_WIFI_SSID[0] != '\0') {
-        ESP_LOGI(TAG, "Using Wi-Fi credentials from sdkconfig: '%s'", CONFIG_ROCK_WIFI_SSID);
+        ESP_LOGI(TAG, "Using Wi-Fi credentials from sdkconfig");
         strlcpy(active_ssid, CONFIG_ROCK_WIFI_SSID, sizeof(active_ssid));
         strlcpy(active_password, CONFIG_ROCK_WIFI_PASSWORD, sizeof(active_password));
         has_creds = true;
@@ -253,17 +325,11 @@ int rock_platform_init(void)
     if (esp_wifi_set_config(WIFI_IF_STA, &wifi) != ESP_OK) return -1;
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    // Connect to configured Wi-Fi AP
+    // Keep valid credentials through transient AP outages and retry with backoff.
     rock_ui_splash_status("Connecting to Wi-Fi...");
-    esp_wifi_connect();
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_events, WIFI_READY | WIFI_FAILED, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
-    if (!(bits & WIFI_READY)) {
-        ESP_LOGE(TAG, "Wi-Fi connection failed");
-        if (!creds_from_sdkconfig) {
-            ESP_LOGW(TAG, "Clearing invalid NVS credentials and restarting onboarding...");
-            rock_wifi_storage_clear();
-            rock_onboarding_run();
-        }
+    if (!wifi_connect_with_backoff(rock_uptime_ms() + 600000)) {
+        ESP_LOGW(TAG, "STA unavailable for 10 minutes; opening onboarding with credentials preserved");
+        rock_onboarding_run();
         return -1;
     }
 
@@ -271,6 +337,7 @@ int rock_platform_init(void)
     if (creds_from_sdkconfig) {
         rock_wifi_storage_save(active_ssid, active_password);
     }
+    if (xTaskCreate(wifi_reconnect_task, "wifi_retry", 3072, NULL, 4, NULL) != pdPASS) return -1;
     esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     if (esp_netif_sntp_init(&sntp) != ESP_OK || esp_netif_sntp_sync_wait(pdMS_TO_TICKS(2000)) != ESP_OK) {
         ESP_LOGW(TAG, "SNTP sync failed or timed out; continuing in background");
@@ -286,6 +353,10 @@ int rock_platform_init(void)
     }
 #endif
 
+    s_ws_queue = xQueueCreate(1, sizeof(int));
+    s_ws_events = xEventGroupCreate();
+    if (!s_ws_queue || !s_ws_events) return -1;
+
     if (CONFIG_ROCKSERVER_BASE_URL[0] != '\0') {
         char response[128] = {0};
         int status = 0;
@@ -293,16 +364,13 @@ int rock_platform_init(void)
         int ret = http_request("GET", "/health/ready", NULL, NULL, response, sizeof(response), &status);
         ESP_LOGI(TAG, "RockServer health result: ret=%d, status=%d, body='%s'", ret, status, response);
         if (ret < 0 || status / 100 != 2) {
-            ESP_LOGE(TAG, "RockServer health check failed!");
-            return -1;
+            ESP_LOGW(TAG, "RockServer health check failed; connection loop will retry");
         }
     } else {
         ESP_LOGI(TAG, "CONFIG_ROCKSERVER_BASE_URL not configured; skipping RockServer health check");
     }
 
-    s_ws_queue = xQueueCreate(1, sizeof(int));
-    s_ws_events = xEventGroupCreate();
-    return s_ws_queue && s_ws_events ? 0 : -1;
+    return 0;
 }
 
 int rock_identity_load(char *id, size_t id_cap, char *secret, size_t secret_cap)
@@ -362,6 +430,7 @@ int rock_ws_start(const char *access_token)
     };
     s_ws = esp_websocket_client_init(&cfg);
     if (!s_ws) return -1;
+    ESP_LOGI(TAG, "WSS start uptime_ms=%llu", (unsigned long long)(esp_timer_get_time() / 1000));
     esp_websocket_register_events(s_ws, WEBSOCKET_EVENT_ANY, websocket_event, NULL);
     xEventGroupClearBits(s_ws_events, WS_CONNECTED | WS_DISCONNECTED);
     if (esp_websocket_client_start(s_ws) != ESP_OK) {
@@ -372,12 +441,15 @@ int rock_ws_start(const char *access_token)
     EventBits_t bits = xEventGroupWaitBits(s_ws_events, WS_CONNECTED | WS_DISCONNECTED,
                                             pdTRUE, pdFALSE, pdMS_TO_TICKS(10000));
     if (bits & WS_CONNECTED) return 0;
+    ESP_LOGW(TAG, "WSS start failed bits=0x%lx uptime_ms=%llu", (unsigned long)bits,
+             (unsigned long long)(esp_timer_get_time() / 1000));
     rock_ws_stop();
     return -1;
 }
 
 void rock_ws_stop(void)
 {
+    ESP_LOGI(TAG, "WSS local stop uptime_ms=%llu", (unsigned long long)(esp_timer_get_time() / 1000));
     if (s_ws) { esp_websocket_client_stop(s_ws); esp_websocket_client_destroy(s_ws); s_ws = NULL; }
     memset(s_ws_headers, 0, sizeof(s_ws_headers));
     xQueueReset(s_ws_queue);
@@ -386,7 +458,9 @@ void rock_ws_stop(void)
 int rock_ws_send(const char *data, size_t len)
 {
     if (!s_ws || !esp_websocket_client_is_connected(s_ws) || len > ROCK_MAX_FRAME) return -1;
-    return esp_websocket_client_send_text(s_ws, data, len, pdMS_TO_TICKS(10000));
+    int sent = esp_websocket_client_send_text(s_ws, data, len, pdMS_TO_TICKS(10000));
+    ESP_LOGI(TAG, "WSS send type=%s result=%d", ws_frame_kind(data), sent);
+    return sent;
 }
 
 int rock_ws_receive(char *data, size_t cap, uint32_t timeout_ms)
@@ -397,7 +471,13 @@ int rock_ws_receive(char *data, size_t cap, uint32_t timeout_ms)
     if ((size_t)result >= cap) return -2;
     memcpy(data, s_ws_frame, result);
     data[result] = '\0';
+    ESP_LOGI(TAG, "WSS receive type=%s len=%d", ws_frame_kind(data), result);
     return result;
+}
+
+void rock_ws_log_heartbeat_timeout(uint64_t age_ms)
+{
+    ESP_LOGW(TAG, "WSS heartbeat ACK timeout age_ms=%llu", (unsigned long long)age_ms);
 }
 
 int rock_now_rfc3339(char *out, size_t cap)

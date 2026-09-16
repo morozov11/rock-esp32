@@ -54,6 +54,10 @@ pub fn hello(message_id: &str, sent_at: &str) -> Value {
     )
 }
 
+pub fn heartbeat(message_id: &str, sent_at: &str, sequence: u64) -> Value {
+    envelope(message_id, "device.heartbeat", sent_at, json!({"sequence": sequence}))
+}
+
 pub fn registration(message_id: &str, sent_at: &str, app_version: &str) -> Value {
     use super::display::{DISPLAY_MAX_ITEMS, DISPLAY_MAX_TEXT_LENGTH};
     envelope(

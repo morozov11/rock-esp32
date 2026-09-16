@@ -8,6 +8,7 @@
 #include "esp_netif.h"
 #include "esp_random.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,6 +27,32 @@ static httpd_handle_t s_httpd = NULL;
 static TaskHandle_t s_dns_task_handle = NULL;
 static bool s_dns_running = false;
 static char s_onboarding_pin[8] = {0};
+static wifi_ap_record_t s_scan_cache[30];
+static uint16_t s_scan_count;
+
+static wifi_scan_config_t onboarding_scan_config(void)
+{
+    return (wifi_scan_config_t) {
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time.active = {.min = 60, .max = 120},
+    };
+}
+
+static void scan_before_softap(void)
+{
+    wifi_scan_config_t cfg = onboarding_scan_config();
+    int64_t start = esp_timer_get_time();
+    esp_err_t err = esp_wifi_scan_start(&cfg, true);
+    uint16_t count = 0;
+    if (err == ESP_OK) err = esp_wifi_scan_get_ap_num(&count);
+    if (err == ESP_OK) {
+        count = count > 30 ? 30 : count;
+        if (count) err = esp_wifi_scan_get_ap_records(&count, s_scan_cache);
+    }
+    s_scan_count = err == ESP_OK ? count : 0;
+    ESP_LOGI(TAG, "STA pre-AP scan result=%s count=%u elapsed_ms=%lld",
+             esp_err_to_name(err), s_scan_count, (long long)((esp_timer_get_time() - start) / 1000));
+}
 
 static const char ONBOARDING_HTML[] =
 "<!DOCTYPE html>\n"
@@ -90,6 +117,7 @@ static const char ONBOARDING_HTML[] =
 "<button type=\"button\" class=\"eye-btn\" onclick=\"togglePwd()\">👁️</button>\n"
 "</div>\n"
 "<button type=\"submit\" id=\"sub-btn\" class=\"btn-submit\">Save and Connect</button>\n"
+"<button type=\"button\" class=\"scan-btn\" onclick=\"forgetNetwork()\">Forget saved network</button>\n"
 "</form>\n"
 "</div>\n"
 "<script>\n"
@@ -119,6 +147,15 @@ static const char ONBOARDING_HTML[] =
 "      sel.innerHTML = '<option value=\"__custom__\">Scan unavailable — enter manually</option>';\n"
 "      onNetworkChange('__custom__');\n"
 "    });\n"
+"}\n"
+"function forgetNetwork() {\n"
+"  const pin = document.getElementById('pin');\n"
+"  if (!pin.checkValidity()) { pin.reportValidity(); return; }\n"
+"  if (!confirm('Forget the saved Wi-Fi network?')) return;\n"
+"  fetch('/forget', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'pin=' + pin.value})\n"
+"    .then(r => { if (!r.ok) throw new Error('PIN or storage error'); return r.text(); })\n"
+"    .then(() => alert('Saved network forgotten. Choose a network to connect.'))\n"
+"    .catch(() => alert('Could not forget the network. Check the PIN and retry.'));\n"
 "}\n"
 "function onNetworkChange(val) {\n"
 "  const wrap = document.getElementById('custom-ssid-wrap');\n"
@@ -213,38 +250,26 @@ static int compare_ap_rssi(const void *a, const void *b)
 
 static esp_err_t scan_handler(httpd_req_t *req)
 {
-    wifi_scan_config_t scan_cfg = {
-        .ssid = NULL,
-        .bssid = NULL,
-        .channel = 0,
-        .show_hidden = false,
-        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
-        .scan_time = {
-            .active = {
-                .min = 100,
-                .max = 250,
-            },
-            .passive = 250,
-        },
-    };
-
+    wifi_scan_config_t scan_cfg = onboarding_scan_config();
+    int64_t start = esp_timer_get_time();
     esp_err_t err = esp_wifi_scan_start(&scan_cfg, true);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Wi-Fi scan failed: %s", esp_err_to_name(err));
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-        httpd_resp_send(req, "[]", HTTPD_RESP_USE_STRLEN);
-        return ESP_OK;
-    }
-
     uint16_t ap_count = 0;
-    esp_wifi_scan_get_ap_num(&ap_count);
-    ESP_LOGI(TAG, "Wi-Fi scan complete, found %u APs", ap_count);
-
+    if (err == ESP_OK) err = esp_wifi_scan_get_ap_num(&ap_count);
+    ESP_LOGI(TAG, "APSTA scan result=%s count=%u elapsed_ms=%lld",
+             esp_err_to_name(err), ap_count, (long long)((esp_timer_get_time() - start) / 1000));
     uint16_t fetch_count = ap_count > 30 ? 30 : ap_count;
-    wifi_ap_record_t *records = NULL;
-    if (fetch_count > 0) {
-        records = calloc(fetch_count, sizeof(wifi_ap_record_t));
+    wifi_ap_record_t *records = calloc(30, sizeof(wifi_ap_record_t));
+    if (records && err == ESP_OK && fetch_count) {
+        err = esp_wifi_scan_get_ap_records(&fetch_count, records);
+        if (err == ESP_OK && fetch_count) {
+            memcpy(s_scan_cache, records, fetch_count * sizeof(*records));
+            s_scan_count = fetch_count;
+        }
+    }
+    if (records && (err != ESP_OK || fetch_count == 0)) {
+        fetch_count = s_scan_count;
+        memcpy(records, s_scan_cache, fetch_count * sizeof(*records));
+        ESP_LOGW(TAG, "Using pre-AP scan results: count=%u", fetch_count);
     }
 
     size_t json_cap = 2048;
@@ -258,7 +283,7 @@ static esp_err_t scan_handler(httpd_req_t *req)
     size_t offset = 0;
     json[offset++] = '[';
 
-    if (records && esp_wifi_scan_get_ap_records(&fetch_count, records) == ESP_OK) {
+    if (records && fetch_count) {
         if (fetch_count > 1) {
             qsort(records, fetch_count, sizeof(wifi_ap_record_t), compare_ap_rssi);
         }
@@ -407,6 +432,24 @@ static esp_err_t connect_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t forget_handler(httpd_req_t *req)
+{
+    char body[32] = {0};
+    if (req->content_len < 10 || req->content_len >= sizeof(body) ||
+        httpd_req_recv(req, body, req->content_len) != req->content_len ||
+        strncmp(body, "pin=", 4) != 0 || strcmp(body + 4, s_onboarding_pin) != 0) {
+        httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Invalid setup PIN");
+        return ESP_OK;
+    }
+    if (!rock_wifi_storage_clear()) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "Saved Wi-Fi network forgotten by portal action");
+    httpd_resp_sendstr(req, "Network forgotten");
+    return ESP_OK;
+}
+
 static void dns_server_task(void *pvParameter)
 {
     (void)pvParameter;
@@ -472,10 +515,13 @@ esp_err_t rock_onboarding_run(void)
 {
     ESP_LOGI(TAG, "Entering Wi-Fi SoftAP onboarding mode");
 
+    // ESP-Hosted can scan in STA mode before SoftAP starts; retain this list if APSTA scan fails.
+    scan_before_softap();
+
     // Generate random 6-digit PIN for anti-hijack protection
     uint32_t rand_val = esp_random();
     snprintf(s_onboarding_pin, sizeof(s_onboarding_pin), "%06lu", (unsigned long)(rand_val % 1000000));
-    ESP_LOGI(TAG, "Onboarding setup PIN generated: %s", s_onboarding_pin);
+    ESP_LOGI(TAG, "Onboarding setup PIN generated");
 
     // Configure and start SoftAP
     esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
@@ -538,6 +584,9 @@ esp_err_t rock_onboarding_run(void)
 
         httpd_uri_t uri_post = { .uri = "/connect", .method = HTTP_POST, .handler = connect_handler, .user_ctx = NULL };
         httpd_register_uri_handler(s_httpd, &uri_post);
+
+        httpd_uri_t uri_forget = { .uri = "/forget", .method = HTTP_POST, .handler = forget_handler, .user_ctx = NULL };
+        httpd_register_uri_handler(s_httpd, &uri_forget);
 
         // Captive portal detection redirects
         httpd_uri_t uri_c1 = { .uri = "/generate_204", .method = HTTP_GET, .handler = captive_redirect_handler, .user_ctx = NULL };

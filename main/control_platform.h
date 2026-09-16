@@ -15,6 +15,7 @@ int rock_ws_start(const char *access_token);
 void rock_ws_stop(void);
 int rock_ws_send(const char *data, size_t len);
 int rock_ws_receive(char *data, size_t cap, uint32_t timeout_ms);
+void rock_ws_log_heartbeat_timeout(uint64_t age_ms);
 int rock_now_rfc3339(char *out, size_t cap);
 void rock_random_fill(uint8_t *out, size_t len);
 const char *rock_server_base_url(void);

@@ -159,7 +159,7 @@ fn load_catalog(token: &str, query: Option<&str>) {
 fn session(token: &str) -> Result<(), ()> {
     send(&device_control::hello(&message_id(), &platform::now()?))?;
     let mut frame = vec![0 as c_char; FRAME_CAPACITY];
-    let len = platform::ws_receive(&mut frame, 10_000);
+    let len = platform::ws_receive(&mut frame, 30_000);
     if len <= 0
         || device_control::parse_frame(unsafe {
             core::slice::from_raw_parts(frame.as_ptr() as *const u8, len as usize)
@@ -186,8 +186,25 @@ fn session(token: &str) -> Result<(), ()> {
     let mut pending: Option<(String, u64)> = None;
     let mut retry: Option<platform::GuiEvent> = None;
     let mut network_check = 0;
+    let mut next_heartbeat = platform::uptime_ms() + 20_000;
+    let mut last_heartbeat_ack = platform::uptime_ms();
+    let mut heartbeat_sequence = 0u64;
 
     loop {
+        let ack_age = platform::uptime_ms().saturating_sub(last_heartbeat_ack);
+        if ack_age > 45_000 {
+            platform::ws_log_heartbeat_timeout(ack_age);
+            return Err(());
+        }
+        if platform::uptime_ms() >= next_heartbeat {
+            send(&device_control::heartbeat(
+                &message_id(),
+                &platform::now()?,
+                heartbeat_sequence,
+            ))?;
+            heartbeat_sequence = heartbeat_sequence.wrapping_add(1);
+            next_heartbeat = platform::uptime_ms() + 20_000;
+        }
         while let Some(mut evt) = platform::gui_poll_event(0) {
             if matches!(evt, platform::GuiEvent::Retry) {
                 let Some(previous) = retry.clone() else {
@@ -272,6 +289,10 @@ fn session(token: &str) -> Result<(), ()> {
         }) else {
             continue;
         };
+        if inbound.kind == "device.heartbeat_ack" {
+            last_heartbeat_ack = platform::uptime_ms();
+            continue;
+        }
         if inbound.kind == "command.result" || inbound.kind == "protocol.error" {
             if let Some((id, _)) = &pending {
                 let matches = inbound.payload.get("command_id").and_then(Value::as_str) == Some(id)
