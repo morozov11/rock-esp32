@@ -176,7 +176,7 @@ Acceptance:
 ## Step 3: Implement the server enablement (rockserver)
 
 Step 2 freezes the words; this step makes them true. Without it, Steps 4, 6,
-and 7 of this plan are not executable.
+7, and 8 of this plan are not executable.
 
 1. Device-facing authenticated catalog endpoints (device-session bearer)
    returning station metadata without `stream_url`, reusing the existing
@@ -197,7 +197,7 @@ Acceptance:
 
 - every Step 2 contract is implemented and covered by RockServer contract
   tests, not fixture-only;
-- Steps 4, 6, and 7 of this plan are unblocked.
+- Steps 4, 6, 7, and 8 of this plan are unblocked.
 
 ## Step 4: Player MVP (rock-esp32) — needs Step 1 (audio) and Step 3 (RS-2, RS-3)
 
@@ -287,7 +287,49 @@ Acceptance:
 - no touch callback performs blocking network work inside the LVGL task;
 - malformed and oversized catalog pages do not mutate the visible model.
 
-## Step 7: Push-to-talk voice transport (rock-esp32) — needs Step 3 voice (RS-4), Step 6 screens
+## Step 7: Cast to Chromecast like RockCast (rockserver, rock-esp32, rockmobile)
+
+Owner decision 2026-09-16: the radio gains Chromecast casting with the
+same device-control architecture as RockCast desktop, before the voice
+steps. Contract first; the cast client itself lives in the firmware.
+
+1. (rockserver, RS-7) Promote the planned `chromecast.discover`,
+   `chromecast.connect(receiver_id)`, and `chromecast.disconnect`
+   commands to implemented contracts: validation (player role +
+   `media.chromecast` capability on the target), accepted/result
+   lifecycle with an asynchronous bounded result (discover returns the
+   receiver list found by the device), and device state fields for
+   casting (casting flag, receiver name). Extend the ESP32 fixtures
+   with `media.chromecast` and canonical command results. Gaps in the
+   frozen planned schemas — stop and report to the control center.
+2. (rock-esp32, RE-17) Implement the cast client on the device: mDNS
+   `_googlecast._tcp` discovery through the C6, a minimal CASTV2 client
+   (TLS :8009, CastMessage protobuf envelope, RECEIVER + MEDIA
+   namespaces, Default Media Receiver app) ported in spirit from the
+   RockCast desktop Rust implementation; on `chromecast.connect` load
+   the current station's stream URL on the receiver and silence the
+   local speaker; receiver volume; disconnect returns playback local.
+3. (rock-esp32) UI: a Cast action on Now-Playing with the receiver
+   list, connecting state, a "playing on <receiver>" badge, and
+   disconnect; a clean empty state when no receivers are found.
+4. (rockmobile, RM-3) Cast controls targeting the ESP32 through the
+   existing command models (`chromecast.*` wire names already exist in
+   rockmobile) and cast state display.
+5. Advertise `media.chromecast` in the device manifest only after the
+   handler passes its board test (existing truthfulness rule).
+
+Acceptance:
+
+- touching Cast on the radio lists receivers and starts casting the
+  current station while the local speaker goes silent;
+- Rockmobile can start and stop casting through RockServer;
+- disconnect returns playback to the local speaker deterministically;
+- no receivers, an unreachable receiver, and mid-cast network loss are
+  bounded, deterministic states;
+- no contract changes beyond the frozen `chromecast.*` schemas; stream
+  URIs never logged.
+
+## Step 8: Push-to-talk voice transport (rock-esp32) — needs Step 3 voice (RS-4), Step 6 screens
 
 Prove the end-to-end voice path before enabling continuous wake-word
 detection.
@@ -319,7 +361,7 @@ Initial radio-only scenarios:
 The later multi-domain sensor/actuator scenarios remain deferred with DC-019
 and DC-020.
 
-## Step 8: Continuous wake-word detection (rock-esp32)
+## Step 9: Continuous wake-word detection (rock-esp32)
 
 Use the official ESP-SR Audio Front End on ESP32-P4, at the version pinned by
 the Step 1 spike. Its input is interleaved signed 16-bit PCM at 16 kHz and it
@@ -370,7 +412,7 @@ Acceptance:
 - commands work while radio is playing at normal volume;
 - silence or timeout clears all voice buffers and returns to idle listening.
 
-## Step 9: OTA and Wi-Fi onboarding (rock-esp32) — scope defaults, owner may flip
+## Step 10: OTA and Wi-Fi onboarding (rock-esp32) — scope defaults, owner may flip
 
 1. Deliver OTA updates through `esp_https_ota` and the certificate bundle on
    the Step 1 partition layout, with rollback and truthful version reporting.
@@ -388,7 +430,7 @@ Acceptance:
 - a user with no sdkconfig credentials can join the device to Wi-Fi and
   complete pairing from the display.
 
-## Step 10: Integrate, harden, and soak
+## Step 11: Integrate, harden, and soak
 
 Run the complete scenarios on physical hardware:
 
@@ -403,7 +445,7 @@ Run the complete scenarios on physical hardware:
 9. Power cycle with safe restoration of settings but no automatic replay
    unless explicitly chosen as product behavior.
 10. Firmware update through OTA including a forced rollback.
-11. The Wi-Fi onboarding flow end to end (if Step 9 stays in scope).
+11. The Wi-Fi onboarding flow end to end (if Step 10 stays in scope).
 12. At least 24 hours of playback plus repeated wake-word commands while
     tracking heap, PSRAM, CPU, reconnects, decoder errors, underruns, and
     watchdog resets.
@@ -424,10 +466,11 @@ The implementation order is deliberately:
 5. Rockmobile station control (rockmobile);
 6. DC-018 closure and the native GUI (rock-esp32, design tokens from
    rockcast);
-7. push-to-talk voice (rock-esp32);
-8. exact `ESP` wake word and echo cancellation (rock-esp32);
-9. OTA and Wi-Fi onboarding (rock-esp32);
-10. integration soak.
+7. Chromecast casting (rockserver, rock-esp32, rockmobile);
+8. push-to-talk voice (rock-esp32);
+9. exact `ESP` wake word and echo cancellation (rock-esp32);
+10. OTA and Wi-Fi onboarding (rock-esp32);
+11. integration soak.
 
 The board de-risk runs first because it depends on no other repository and
 validates the highest hardware risk before contracts and server work are
