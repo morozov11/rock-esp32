@@ -77,6 +77,21 @@
 
 ## Журнал решений
 
+- **2026-09-17, центр управления.** Согласован и реализован локально малый
+  контракт **RS-9 / RC-4b** для ошибки видимого UUID в RockCast: после
+  server-side резолюции `play_station` target получает
+  `play_stream { station_id, station: { name, icon_url }, stream_uri }`.
+  `station_id` остаётся единственной идентичностью state, `name` служит только
+  локальному отображению; server пока честно отправляет `icon_url: null`, потому
+  что иконки каталога не хранит. Никакой список станций, raw stream URL в Mobile,
+  новый endpoint или persistence не добавлены. В будущем nullable URL пройдёт
+  server validation и существующую bounded очередь иконок RockCast. Порядок
+  выкладки обязателен: **сначала RC-4b, затем RS-9**, потому что старый строгий
+  RockCast не принимает новое поле; RC-4b принимает старую delivery без него.
+  Проверки: RockServer — full `cargo test`, fmt, strict Clippy; RockCast —
+  `cargo test` 131 unit + 2 integration /0, fmt, strict Clippy. Физическая
+  USB-приёмка новой доставки и иконки (ныне absence) ещё не выполнена.
+
 - **2026-09-17, центр управления.** RC-4/RM-4 реализована локально во всех трёх
   репозиториях по ТЗ с UX-ревизией **Station-First** (единый каталог → экран
   станции с селектором устройства вывода; решение владельца 2026-09-17: паузы
@@ -418,7 +433,7 @@
 | RM-2 | rockmobile | клиенты | Голос PTT на телефоне остаётся на легаси-флоу (продуктово верно: телефон — не player). Проверить после RS-6: голос работает, новые error-коды показываются вменяемо, не крашат парсер | RS-6 | done (2026-09-16) | Владелец подтвердил: голос в rockmobile работает после RS-6; полиш не потребовался |
 | RC-2 | rockcast | клиенты | Перевести голос rockcast на device-флоу: регистрация voice_endpoint+voice.main+voice.input, surface_id в start, обработка VoiceDeviceCommandResult; легаси-поиск — фоллбек для неаутентифицированных; синхронно фиксура в rockserver | RS-6; решение владельца 2026-09-16: переводим | done (2026-09-16) | 17e1297 + c9be704; ручная приёмка владельцем пройдена: голос «включи рок» играет через командный путь, ошибки — вменяемые, фоллбек работает |
 | RC-3 | rockcast + rockmobile | control acceptance | Диагностировать и восстановить live-состояние парного Windows RockCast, затем повторить одну bounded команду RockMobile → RockCast | живой Windows RockCast и USB RockMobile | done (2026-09-17) | Причина: manifest revision 2 conflict → `registration_rejected`; RockCast revision 4 online. Relay/Cast скрыты до RS-7. Явно выбранный target принял `playback.stop`; RockMobile: «Состояние плеера подтверждено.» |
-| RC-4 / RM-4 | rockserver + rockcast + rockmobile | live playback UX | Подтверждать выбранную станцию, playback и volume только fresh revisioned device state; дать единый now-playing UI и target-aware station flow | RC-3; contract audit OpenAPI/directory | in progress (2026-09-17: RS-8 + RC-4 + RM-4 implemented locally; Phase 4 USB-приёмка pending) | ТЗ (UX-ревизия Station-First 2026-09-17): `C:\repos\rockserver\docs\roadmap\rockmobile-rockcast-live-control.md`. RS-8: runtime_state в directory REST+WSS, absent-семантика, cargo 211/0. RC-4: полные статусы + сохранение station_id в error/stopped, cargo 129+2/0. RM-4: редьюсер §4.4 + StationPlayerScreen + LiveMiniPlayer, gradle 129/0 + lint. Пауза не поддерживается (решение 2026-09-17). No direct stream path, no Cast/relay before RS-7 |
+| RC-4 / RM-4 | rockserver + rockcast + rockmobile | live playback UX | Подтверждать выбранную станцию, playback и volume только fresh revisioned device state; дать единый now-playing UI и target-aware station flow | RC-3; contract audit OpenAPI/directory | in progress (локально RS-8/RS-9 + RC-4/RC-4b + RM-4; сначала deploy RC-4b, затем RS-9; Phase 4 USB-приёмка pending) | ТЗ (UX-ревизия Station-First 2026-09-17): `C:\repos\rockserver\docs\roadmap\rockmobile-rockcast-live-control.md`. RS-8: runtime_state в directory REST+WSS, absent-семантика. RS-9/RC-4b: target-only `station.name` убирает UUID из Now playing; nullable `icon_url` зарезервирован, пока server отправляет null; no catalog dump/new endpoint/raw URL. RC-4: полные статусы + сохранение station_id в error/stopped. RM-4: редьюсер §4.4 + StationPlayerScreen + LiveMiniPlayer. Пауза не поддерживается; Cast/relay ждут RS-7. |
 | RE-6 | rock-esp32 | 6 | Нативный GUI: browse, поиск с клавиатурой, now-playing, локальные состояния; + поглощённые проверки RE-1 (golden-виды на новых экранах, тач после power cycle, offline-переходы) + гигиена RE-13 (selftest-гейт) | RE-5, RS-2, RC-1 (все сняты) | done (2026-09-16; живая каталог-приёмка подтверждена владельцем после деплоя прода) | 7efd0b6 + системные фиксы (NVS-приоритет, ECDSA-sw, SNTP, повторный pairing, C6-recover); 14/14 host;golden-скрины; каталог/поиск/OTA живые; спектрограмма настоящая (FFT esp-dsp, 0.355% CPU) |
 | RE-17 | rock-esp32 | 7 | Каст-клиент в прошивке: mDNS _googlecast через C6, минимальный CASTV2 (TLS :8009, protobuf-конверт, RECEIVER+MEDIA, Default Media Receiver) по образцу Rust-реализации rockcast; connect грузит текущий stream URL на ресивер, локальный динамик замолкает; Cast-кнопка в Now-Playing (список ресиверов, бейдж «играет на …», disconnect); media.chromecast в манифест только после прохождения на плате | RS-7 | pending | |
 | RM-3 | rockmobile | 7 | Кнопки Cast на ESP32-таргет через существующие wire-модели chromecast.* + отображение cast-состояния | RS-7, RE-17 | pending | |
