@@ -605,11 +605,9 @@ int rock_ws_send(const char *data, size_t len)
 {
     if (!s_ws || !esp_websocket_client_is_connected(s_ws) || len > ROCK_MAX_FRAME) return -1;
     int sent = esp_websocket_client_send_text(s_ws, data, len, pdMS_TO_TICKS(10000));
-    const char *kind = ws_frame_kind(data);
-    ESP_LOGI(TAG, "WSS send type=%s result=%d", kind, sent);
-    if (strcmp(kind, "device.heartbeat") != 0) {
-        ESP_LOGI(TAG, "WSS tx: %s", data);
-    }
+    // Confidentiality: never log raw frames — device.command carries
+    // stream_uri with ?token=… (transport.rs contract).
+    ESP_LOGI(TAG, "WSS send type=%s result=%d", ws_frame_kind(data), sent);
     return sent;
 }
 
@@ -621,11 +619,9 @@ int rock_ws_receive(char *data, size_t cap, uint32_t timeout_ms)
     if ((size_t)result >= cap) return -2;
     memcpy(data, s_ws_frame, result);
     data[result] = '\0';
-    const char *kind = ws_frame_kind(data);
-    ESP_LOGI(TAG, "WSS receive type=%s len=%d", kind, result);
-    if (strcmp(kind, "device.heartbeat_ack") != 0) {
-        ESP_LOGI(TAG, "WSS rx: %s", data);
-    }
+    // Confidentiality: never log raw frames — device.command carries
+    // stream_uri with ?token=… (transport.rs contract).
+    ESP_LOGI(TAG, "WSS receive type=%s len=%d", ws_frame_kind(data), result);
     return result;
 }
 

@@ -146,7 +146,8 @@ static char s_station_id[130];
 static char s_stream_uri[2050];
 static char s_stream_authorization[600];
 static uint8_t s_volume = 35;
-static bool s_muted = false;
+// Atomic: read by the audio TX task without s_state_mutex (B5 fix).
+static atomic_bool s_muted = false;
 
 static atomic_uint_fast32_t s_stream_generation = 0;
 static atomic_bool s_stop_signal = false;
@@ -195,7 +196,7 @@ static void audio_tx_task(void *arg)
                 esp_codec_dev_handle_t codec = (esp_codec_dev_handle_t)rock_audio_codec_handle();
                 if (codec) {
                     esp_codec_dev_write(codec, pcm_chunk, (int)n);
-                    if (!s_muted) {
+                    if (!atomic_load(&s_muted)) {
                         rock_audio_pa_set(true);
                     }
                 }
@@ -230,6 +231,12 @@ static void stream_rx_task(void *arg)
 {
     (void)arg;
     uint32_t current_gen = atomic_load(&s_stream_generation);
+    esp_audio_dec_handle_t dec = NULL;
+    // Per-generation heap buffers: rock_player_play_stream joins the previous
+    // task for only ~600 ms, so two generations can overlap and must never
+    // share static buffers here.  Freed on every exit path (fail/cleanup).
+    uint8_t *in_buf = malloc(HTTP_CHUNK_SIZE * 2);
+    uint8_t *out_buf = malloc(DECODE_OUT_CAP);
 
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     char current_station[130];
@@ -238,6 +245,11 @@ static void stream_rx_task(void *arg)
 
     set_player_status(ROCK_PLAYER_STATUS_BUFFERING);
     rock_ui_show_now_playing(current_station, "BUFFERING", "Connecting to stream...");
+
+    if (!in_buf || !out_buf) {
+        ESP_LOGE(TAG, "Failed to allocate stream RX buffers");
+        goto fail;
+    }
 
     if (!rock_source_is_active()) {
         ESP_LOGE(TAG, "Stream source is not running");
@@ -248,7 +260,6 @@ static void stream_rx_task(void *arg)
     // source for Cast); the speaker consumes it directly without a decoder.
     // Compressed mode: decode locally like before, just from the ring.
     bool pcm_mode = rock_source_is_pcm();
-    esp_audio_dec_handle_t dec = NULL;
 
     if (!pcm_mode) {
         const char *content_type = rock_source_content_type();
@@ -276,8 +287,6 @@ static void stream_rx_task(void *arg)
         }
     }
 
-    static uint8_t in_buf[HTTP_CHUNK_SIZE * 2];
-    static uint8_t out_buf[DECODE_OUT_CAP];
     size_t in_len = 0;
     uint32_t current_fs = 0;
     uint8_t current_channels = 0;
@@ -300,7 +309,7 @@ static void stream_rx_task(void *arg)
             continue;
         }
 
-        int space = (int)(sizeof(in_buf) - in_len);
+        int space = (int)(HTTP_CHUNK_SIZE * 2 - in_len);
         if (!pcm_mode && space > HTTP_CHUNK_SIZE) space = HTTP_CHUNK_SIZE;
         int rlen = rock_source_read(in_buf + in_len, (size_t)space);
         if (rlen < 0) {
@@ -322,7 +331,7 @@ static void stream_rx_task(void *arg)
                 && pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
                 set_player_status(ROCK_PLAYER_STATUS_PLAYING);
                 rock_ui_show_now_playing(current_station, "PLAYING", "RockCast Radio");
-                if (!s_muted) {
+                if (!atomic_load(&s_muted)) {
                     rock_audio_pa_set(true);
                 }
                 ESP_LOGI(TAG, "Pre-roll reached (%u bytes); playback started",
@@ -341,7 +350,7 @@ static void stream_rx_task(void *arg)
             };
             esp_audio_dec_out_frame_t out_frame = {
                 .buffer = out_buf,
-                .len = sizeof(out_buf),
+                .len = DECODE_OUT_CAP,
                 .needed_size = 0,
                 .decoded_size = 0,
             };
@@ -374,7 +383,7 @@ static void stream_rx_task(void *arg)
                         pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
                         set_player_status(ROCK_PLAYER_STATUS_PLAYING);
                         rock_ui_show_now_playing(current_station, "PLAYING", "RockCast Radio");
-                        if (!s_muted) {
+                        if (!atomic_load(&s_muted)) {
                             rock_audio_pa_set(true);
                         }
                         ESP_LOGI(TAG, "Pre-roll reached (%u bytes); playback started", (unsigned)PREROLL_MIN_BYTES);
@@ -410,6 +419,8 @@ cleanup:
         esp_audio_dec_close(dec);
         dec = NULL;
     }
+    free(out_buf);
+    free(in_buf);
     s_rx_task = NULL;
     vTaskDelete(NULL);
 }
@@ -426,12 +437,12 @@ int rock_player_init(void)
     // Initialize low-level audio hardware (I2S, ES8311, PA)
     if (rock_audio_init() != 0) {
         ESP_LOGE(TAG, "Audio hardware initialization failed");
-        return -1;
+        goto fail;
     }
     // Reserve stereo DMA buffers before TLS and decoder allocations fragment internal RAM.
     if (rock_audio_reconfig(44100, 2) != 0) {
         ESP_LOGE(TAG, "Audio output initialization at 44.1 kHz stereo failed");
-        return -1;
+        goto fail;
     }
 
     // Register official esp_audio_codec decoders
@@ -441,26 +452,33 @@ int rock_player_init(void)
     // Allocate PSRAM PCM ring buffer
     if (pcm_ring_init(&s_pcm_ring, PCM_RING_CAPACITY) != 0) {
         ESP_LOGE(TAG, "PCM ring buffer initialization failed");
-        return -1;
+        goto fail;
     }
 
     // Set initial volume & mute
     esp_codec_dev_handle_t codec = (esp_codec_dev_handle_t)rock_audio_codec_handle();
     if (codec) {
         esp_codec_dev_set_out_vol(codec, s_volume);
-        esp_codec_dev_set_out_mute(codec, s_muted);
+        esp_codec_dev_set_out_mute(codec, atomic_load(&s_muted));
     }
     rock_audio_pa_set(false);
 
     // Create audio TX worker pinned to Core 1
     if (xTaskCreatePinnedToCore(audio_tx_task, "rock_au_tx", 4096, NULL, 6, &s_tx_task, 1) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create audio TX worker");
-        return -1;
+        goto fail;
     }
 
     ESP_LOGI(TAG, "Player initialized: PSRAM ring %u KiB, PA GPIO11, decoders: MP3+AAC",
              PCM_RING_CAPACITY / 1024);
     return 0;
+
+fail:
+    // Full teardown: leaving s_state_mutex alive would make every retry of
+    // rock_player_init "succeed" with a half-initialized player.
+    vSemaphoreDelete(s_state_mutex);
+    s_state_mutex = NULL;
+    return -1;
 }
 
 int rock_player_play_stream(const char *stream_uri, const char *station_id, const char *bearer)
@@ -529,7 +547,7 @@ int rock_player_play(void)
     rock_player_status_t st = get_player_status();
     if (st == ROCK_PLAYER_STATUS_PAUSED) {
         set_player_status(ROCK_PLAYER_STATUS_PLAYING);
-        if (!s_muted) rock_audio_pa_set(true);
+        if (!atomic_load(&s_muted)) rock_audio_pa_set(true);
         rock_ui_show_now_playing(s_station_id, "PLAYING", "RockCast Radio");
     }
     return 0;
@@ -583,9 +601,7 @@ int rock_player_set_volume(uint8_t volume)
 
 int rock_player_set_mute(bool muted)
 {
-    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-    s_muted = muted;
-    xSemaphoreGive(s_state_mutex);
+    atomic_store(&s_muted, muted);
 
     esp_codec_dev_handle_t codec = (esp_codec_dev_handle_t)rock_audio_codec_handle();
     if (codec) {
@@ -619,7 +635,7 @@ int rock_player_get_state(char *status_buf, size_t status_cap,
         strlcpy(station_buf, s_station_id, station_cap);
     }
     if (vol) *vol = s_volume;
-    if (muted) *muted = s_muted;
+    if (muted) *muted = atomic_load(&s_muted);
     xSemaphoreGive(s_state_mutex);
     return 0;
 }
@@ -722,7 +738,7 @@ static void player_bringup_task(void *arg)
                     playback_started = true;
                     set_player_status(ROCK_PLAYER_STATUS_PLAYING);
                     rock_ui_show_now_playing("bringup-station", "PLAYING", "RockCast Radio");
-                    if (!s_muted) rock_audio_pa_set(true);
+                    if (!atomic_load(&s_muted)) rock_audio_pa_set(true);
                     ESP_LOGI(TAG, "[TEST 2/5] Pre-roll buffer reached (%u bytes), PA GPIO11 active, playback PASS",
                              (unsigned)PREROLL_MIN_BYTES);
                     break;
@@ -744,10 +760,10 @@ static void player_bringup_task(void *arg)
 
     rock_player_set_mute(true);
     vTaskDelay(pdMS_TO_TICKS(200));
-    assert(s_muted == true);
+    assert(atomic_load(&s_muted) == true);
     rock_player_set_mute(false);
     vTaskDelay(pdMS_TO_TICKS(200));
-    assert(s_muted == false);
+    assert(atomic_load(&s_muted) == false);
 
     rock_player_pause();
     assert(get_player_status() == ROCK_PLAYER_STATUS_PAUSED);

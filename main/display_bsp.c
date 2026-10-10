@@ -339,7 +339,11 @@ bool rock_ui_splash_status(const char *status_text)
 
 void rock_ui_splash_dismiss(void)
 {
+    // Symmetric with rock_ui_splash_status: the label pointer is touched from
+    // the network task under the LVGL lock, so clearing it needs the same lock.
+    if (!lvgl_port_lock(500)) return;
     s_splash_status_lbl = NULL;
+    lvgl_port_unlock();
 }
 
 int rock_ui_clock_init(void)

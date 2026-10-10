@@ -85,6 +85,12 @@ static char s_upstream_uri[512] = {0};
 // Bearer for the RockServer station proxy; empty string means an anonymous
 // upstream. NEVER logged (confidentiality: same rule as s_upstream_uri).
 static char s_upstream_bearer[600] = {0};
+// Guards s_upstream_uri/s_upstream_bearer (B5 fix): written by the session
+// task in rock_source_start/update_bearer/stop, read by the feeder task in
+// upstream_connect when it forms the URL and Authorization header.
+// Created once in rock_source_start, the single entry point that can run
+// before any reader exists.
+static SemaphoreHandle_t s_config_lock = NULL;
 static atomic_bool s_relay_stop = false;
 static atomic_bool s_relay_running = false;
 static atomic_int s_client_count = 0;
@@ -618,7 +624,20 @@ static bool upstream_connect(relay_upstream_t *up)
         up->icy.until_metadata = 0;
         up->icy.metadata_remaining = 0;
 
-        esp_http_client_handle_t http = esp_http_client_init(&up->http_cfg);
+        // Snapshot the upstream URL/bearer under the config lock: the session
+        // task may refresh the bearer while the feeder reconnects.  The URL
+        // copy only lives across esp_http_client_init, which parses it
+        // synchronously into its own storage.
+        char uri[sizeof(s_upstream_uri)];
+        char bearer[sizeof(s_upstream_bearer)] = {0};
+        xSemaphoreTake(s_config_lock, portMAX_DELAY);
+        memcpy(uri, s_upstream_uri, sizeof(uri));
+        memcpy(bearer, s_upstream_bearer, sizeof(bearer));
+        xSemaphoreGive(s_config_lock);
+        esp_http_client_config_t http_cfg = up->http_cfg;
+        http_cfg.url = uri;
+
+        esp_http_client_handle_t http = esp_http_client_init(&http_cfg);
         if (!http) {
             ESP_LOGE(TAG, "Failed to initialize upstream HTTP client");
             return false;
@@ -626,9 +645,9 @@ static bool upstream_connect(relay_upstream_t *up)
         esp_http_client_set_header(http, "User-Agent", "RockCast/0.1");
         esp_http_client_set_header(http, "Accept", "*/*");
         esp_http_client_set_header(http, "Icy-MetaData", "1");
-        if (s_upstream_bearer[0]) {
-            char authorization[sizeof(s_upstream_bearer) + 16];
-            snprintf(authorization, sizeof(authorization), "Bearer %s", s_upstream_bearer);
+        if (bearer[0]) {
+            char authorization[sizeof(bearer) + 16];
+            snprintf(authorization, sizeof(authorization), "Bearer %s", bearer);
             esp_http_client_set_header(http, "Authorization", authorization);
         }
         if (esp_http_client_open(http, 0) != ESP_OK) {
@@ -1183,6 +1202,14 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
     s_tap_joined = false;
     s_tap_pos = 0;
 
+    if (!s_config_lock) {
+        s_config_lock = xSemaphoreCreateMutex();
+        if (!s_config_lock) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
     strncpy(s_upstream_uri, upstream_uri, sizeof(s_upstream_uri) - 1);
     s_upstream_uri[sizeof(s_upstream_uri) - 1] = '\0';
     if (bearer && bearer[0]) {
@@ -1191,11 +1218,14 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
     } else {
         s_upstream_bearer[0] = '\0';
     }
+    xSemaphoreGive(s_config_lock);
 
     if (!ring_init(&s_ring)) {
         ESP_LOGE(TAG, "Failed to allocate source ring");
+        xSemaphoreTake(s_config_lock, portMAX_DELAY);
         s_upstream_uri[0] = '\0';
         s_upstream_bearer[0] = '\0';
+        xSemaphoreGive(s_config_lock);
         return ESP_ERR_NO_MEM;
     }
 
@@ -1284,8 +1314,10 @@ fail_no_buffers:
     atomic_store(&s_relay_running, false);
     upstream_teardown(&s_upstream);
     ring_reset(&s_ring);
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
     s_upstream_uri[0] = '\0';
     s_upstream_bearer[0] = '\0';
+    xSemaphoreGive(s_config_lock);
     return ESP_FAIL;
 
 fail:
@@ -1295,8 +1327,10 @@ fail:
     free(wav);
     upstream_teardown(&s_upstream);
     ring_reset(&s_ring);
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
     s_upstream_uri[0] = '\0';
     s_upstream_bearer[0] = '\0';
+    xSemaphoreGive(s_config_lock);
     return ESP_FAIL;
 }
 
@@ -1306,8 +1340,15 @@ esp_err_t rock_source_update_bearer(const char *bearer)
         || strlen(bearer) >= sizeof(s_upstream_bearer)) {
         return ESP_ERR_INVALID_ARG;
     }
+    // No source session has ever started: the stored bearer is dead config
+    // that rock_source_start overwrites anyway, so there is nothing to refresh.
+    if (!s_config_lock) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
     strncpy(s_upstream_bearer, bearer, sizeof(s_upstream_bearer) - 1);
     s_upstream_bearer[sizeof(s_upstream_bearer) - 1] = '\0';
+    xSemaphoreGive(s_config_lock);
     return ESP_OK;
 }
 
@@ -1461,8 +1502,16 @@ void rock_source_stop(void)
     ring_reset(&s_ring);
     s_tap_joined = false;
     s_tap_pos = 0;
-    s_upstream_uri[0] = '\0';
-    s_upstream_bearer[0] = '\0';
+    // Clear the upstream config only when the feeder has exited: on a join
+    // timeout it may still read the buffers on a reconnect attempt.  A missed
+    // clear is harmless — rock_source_start overwrites both buffers before
+    // any new session can use them.
+    if (!atomic_load(&s_relay_running)) {
+        xSemaphoreTake(s_config_lock, portMAX_DELAY);
+        s_upstream_uri[0] = '\0';
+        s_upstream_bearer[0] = '\0';
+        xSemaphoreGive(s_config_lock);
+    }
     ESP_LOGI(TAG, "Stream source stopped");
 }
 

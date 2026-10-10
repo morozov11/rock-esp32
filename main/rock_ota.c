@@ -10,10 +10,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include <stdatomic.h>
 #include <string.h>
 
 static const char *TAG = "rock-ota";
-static bool s_ota_in_progress = false;
+static atomic_bool s_ota_in_progress = false;
 static TaskHandle_t s_ota_task_handle = NULL;
 
 typedef struct {
@@ -69,7 +70,7 @@ esp_err_t rock_ota_mark_invalid_and_rollback(void)
 
 bool rock_ota_is_in_progress(void)
 {
-    return s_ota_in_progress;
+    return atomic_load(&s_ota_in_progress);
 }
 
 #ifdef CONFIG_ROCK_OTA_TEST_CERT_PEM
@@ -127,7 +128,7 @@ static const char *get_test_ca_pem(void)
 static void ota_worker_task(void *pvParameter)
 {
     ota_task_param_t *params = (ota_task_param_t *)pvParameter;
-    s_ota_in_progress = true;
+    atomic_store(&s_ota_in_progress, true);
 
     ESP_LOGI(TAG, "Starting OTA update from URL: %s", params->url);
 
@@ -163,22 +164,26 @@ static void ota_worker_task(void *pvParameter)
     esp_err_t err = esp_https_ota_begin(&ota_config, &ota_handle);
     if (err != ESP_OK || !ota_handle) {
         ESP_LOGE(TAG, "esp_https_ota_begin failed: %s", esp_err_to_name(err));
-        s_ota_in_progress = false;
+        atomic_store(&s_ota_in_progress, false);
         free(params);
         s_ota_task_handle = NULL;
         vTaskDelete(NULL);
         return;
     }
 
-    esp_app_desc_t app_desc;
+    esp_app_desc_t app_desc = {0};
+    // Shown in the UI when the image descriptor cannot be read: app_desc is
+    // zeroed, so its version field must never reach %s formatting as garbage.
+    const char *fw_version = "unknown";
     err = esp_https_ota_get_img_desc(ota_handle, &app_desc);
     if (err == ESP_OK) {
+        fw_version = app_desc.version;
         const esp_app_desc_t *running_desc = esp_app_get_description();
         ESP_LOGI(TAG, "New firmware version: '%s', current version: '%s'", app_desc.version, running_desc->version);
         if (!params->force && strncmp(app_desc.version, running_desc->version, sizeof(app_desc.version)) == 0) {
             ESP_LOGI(TAG, "Firmware version matches running image; aborting update");
             esp_https_ota_abort(ota_handle);
-            s_ota_in_progress = false;
+            atomic_store(&s_ota_in_progress, false);
             free(params);
             s_ota_task_handle = NULL;
             vTaskDelete(NULL);
@@ -202,7 +207,7 @@ static void ota_worker_task(void *pvParameter)
             if (percent != last_reported_percent && (percent % 5 == 0 || percent == 100)) {
                 last_reported_percent = percent;
                 ESP_LOGI(TAG, "OTA progress: %d%% (%d / %d bytes)", percent, len_read, total_size);
-                rock_ui_ota_progress_show(app_desc.version, percent);
+                rock_ui_ota_progress_show(fw_version, percent);
             }
         }
 
@@ -214,7 +219,7 @@ static void ota_worker_task(void *pvParameter)
         err = esp_https_ota_finish(ota_handle);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "OTA update successfully written and verified! Rebooting in 2 seconds...");
-            rock_ui_ota_progress_show(app_desc.version, 100);
+            rock_ui_ota_progress_show(fw_version, 100);
             vTaskDelay(pdMS_TO_TICKS(2000));
             esp_restart();
         } else {
@@ -225,7 +230,7 @@ static void ota_worker_task(void *pvParameter)
         esp_https_ota_abort(ota_handle);
     }
 
-    s_ota_in_progress = false;
+    atomic_store(&s_ota_in_progress, false);
     free(params);
     s_ota_task_handle = NULL;
     vTaskDelete(NULL);
@@ -233,7 +238,7 @@ static void ota_worker_task(void *pvParameter)
 
 esp_err_t rock_ota_check_start(const char *url, bool force)
 {
-    if (s_ota_in_progress) {
+    if (atomic_load(&s_ota_in_progress)) {
         ESP_LOGW(TAG, "OTA check already in progress");
         return ESP_ERR_INVALID_STATE;
     }
