@@ -346,6 +346,16 @@ pub fn full_state_snapshot(player: &PlayerState, display: &DisplayState) -> Valu
     })
 }
 
+pub fn full_state_snapshot_with_output(
+    player: &PlayerState,
+    display: &DisplayState,
+    output: &crate::device_control::cast::OutputMode,
+) -> Value {
+    let mut val = full_state_snapshot(player, display);
+    val["output"] = output.to_snapshot_value();
+    val
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

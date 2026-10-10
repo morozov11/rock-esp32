@@ -40,7 +40,7 @@ fn re05_advertises_truthful_player_and_display_surface() {
     );
     assert_eq!(
         ours["payload"]["manifest"]["roles"],
-        json!(["display_surface", "player"])
+        json!(["display_surface", "player", "controller"])
     );
     let items = &ours["payload"]["manifest"]["capabilities"]["items"];
     assert_eq!(
@@ -721,4 +721,165 @@ fn catalog_limits_and_utf8_query_are_enforced() {
     assert!(catalog_path(Some(&"я".repeat(129))).is_err());
     assert!(catalog_path(Some(" \t")).is_err());
     assert!(catalog_path(Some("a\nb")).is_err());
+    assert_eq!(
+        station_stream_path("джаз/24").unwrap(),
+        "/api/v1/stations/%D0%B4%D0%B6%D0%B0%D0%B7%2F24/stream"
+    );
+    assert!(station_stream_path("").is_err());
+    assert!(station_stream_path("a\nb").is_err());
+    assert!(station_stream_path("..").is_err());
+}
+
+#[test]
+fn re17_cast_proto_roundtrip_and_framing() {
+    use rock_esp32::device_control::cast_proto::*;
+    let msg = CastMessage::string(
+        "sender-0",
+        "receiver-0",
+        "urn:x-cast:com.google.cast.tp.connection",
+        r#"{"type":"CONNECT"}"#,
+    );
+    let framed = msg.encode_framed();
+    assert!(framed.len() > 4);
+    let payload_len = u32::from_be_bytes(framed[0..4].try_into().unwrap()) as usize;
+    assert_eq!(payload_len, framed.len() - 4);
+
+    let decoded = CastMessage::decode(&framed[4..]).unwrap();
+    assert_eq!(decoded.source_id, "sender-0");
+    assert_eq!(decoded.destination_id, "receiver-0");
+    assert_eq!(decoded.namespace, "urn:x-cast:com.google.cast.tp.connection");
+    assert_eq!(
+        decoded.payload,
+        Payload::String(r#"{"type":"CONNECT"}"#.to_string())
+    );
+
+    let challenge = encode_auth_challenge();
+    assert_eq!(challenge, vec![0x0a, 0x00]);
+}
+
+#[test]
+fn re17_receiver_cache_ttl_and_sanitization() {
+    use rock_esp32::device_control::*;
+    let mut cache = ReceiverCache::new();
+    let devices = vec![
+        DiscoveredReceiver {
+            key: "uuid-1".into(),
+            name: "Kitchen \u{0007}Speaker".into(),
+            model: "Audio".into(),
+            host: "192.168.1.50".into(),
+            port: 8009,
+        },
+        DiscoveredReceiver {
+            key: "uuid-2".into(),
+            name: "   ".into(),
+            model: "CC".into(),
+            host: "192.168.1.51".into(),
+            port: 8009,
+        },
+    ];
+    let list = cache.replace(devices, 100);
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[0].display_name, "Chromecast");
+    assert_eq!(list[1].display_name, "Kitchen Speaker");
+
+    assert_eq!(safe_display_name(""), "Chromecast");
+    assert_eq!(safe_display_name("Room 1\0\r\n"), "Room 1");
+
+    assert!(cache.get_fresh(&list[0].receiver_id, 130).is_some());
+    assert!(cache.get_fresh(&list[0].receiver_id, 161).is_none());
+}
+
+#[test]
+fn re17_full_state_snapshot_with_output_conforms_to_contract() {
+    use rock_esp32::device_control::*;
+    let mut player = PlayerState::new();
+    player.apply_play_stream("station.rock");
+    player.set_playing();
+    player.apply_volume(VolumeAction::SetLevel(75));
+
+    let display = DisplayState::new();
+
+    let local_snap = full_state_snapshot_with_output(&player, &display, &OutputMode::Local);
+    assert_eq!(local_snap["playback"]["status"], "playing");
+    assert_eq!(local_snap["playback"]["station_id"], "station.rock");
+    assert_eq!(local_snap["volume"]["level"], 75);
+    assert_eq!(local_snap["output"]["mode"], "local");
+    assert!(local_snap["output"].get("receiver_id").is_none());
+
+    let cast_mode = OutputMode::Chromecast {
+        receiver_id: "rc-0001".into(),
+        receiver_name: "Living Room TV".into(),
+    };
+    let cast_snap = full_state_snapshot_with_output(&player, &display, &cast_mode);
+    assert_eq!(cast_snap["output"]["mode"], "chromecast");
+    assert_eq!(cast_snap["output"]["receiver_id"], "rc-0001");
+}
+
+#[test]
+fn re17_protocol_message_constructors_and_responses() {
+    use rock_esp32::device_control::*;
+    let conn = msg_connect("receiver-0");
+    assert_eq!(conn.destination_id, "receiver-0");
+    assert_eq!(conn.namespace, NS_CONNECTION);
+
+    let launch = msg_launch_dmr(1);
+    assert_eq!(launch.namespace, NS_RECEIVER);
+    assert!(match &launch.payload {
+        cast_proto::Payload::String(s) => s.contains(DEFAULT_MEDIA_RECEIVER),
+        _ => false,
+    });
+
+    let load = msg_load_stream(
+        2,
+        "transport-1",
+        "session-1",
+        "http://example.com/live.mp3",
+        "Rock FM",
+        "audio/wav",
+    );
+    assert_eq!(load.namespace, NS_MEDIA);
+    assert!(match &load.payload {
+        cast_proto::Payload::String(s) => {
+            s.contains("http://example.com/live.mp3")
+                && s.contains("Rock FM")
+                && s.contains("\"contentType\":\"audio/wav\"")
+        }
+        _ => false,
+    });
+
+    // rockcast parity: LOAD retries walk the content-type candidate list.
+    assert_eq!(CAST_LOAD_CONTENT_TYPES, ["audio/wav", "audio/mpeg"]);
+    let load_mpeg = msg_load_stream(
+        4,
+        "transport-1",
+        "session-1",
+        "http://example.com/live.mp3",
+        "Rock FM",
+        CAST_LOAD_CONTENT_TYPES[1],
+    );
+    assert!(match &load_mpeg.payload {
+        cast_proto::Payload::String(s) => s.contains("\"contentType\":\"audio/mpeg\""),
+        _ => false,
+    });
+
+    // Silent-live-stream nudge is a plain media PLAY for the loaded session.
+    let nudge = msg_play(5, "transport-1", 7);
+    assert_eq!(nudge.namespace, NS_MEDIA);
+    assert!(match &nudge.payload {
+        cast_proto::Payload::String(s) => {
+            s.contains("\"type\":\"PLAY\"") && s.contains("\"mediaSessionId\":7")
+        }
+        _ => false,
+    });
+
+    let vol = msg_set_volume(3, 0.5);
+    assert!(match &vol.payload {
+        cast_proto::Payload::String(s) => s.contains("0.5"),
+        _ => false,
+    });
+
+    let ping = msg_ping();
+    let pong = msg_pong();
+    assert_eq!(ping.namespace, NS_HEARTBEAT);
+    assert_eq!(pong.namespace, NS_HEARTBEAT);
 }

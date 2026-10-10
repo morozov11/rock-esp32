@@ -2,6 +2,7 @@
 #include "pcm_snapshot.h"
 #include "audio_bsp.h"
 #include "display_bsp.h"
+#include "relay_bsp.h"
 #include "test_mp3.h"
 
 #include <assert.h>
@@ -9,9 +10,7 @@
 #include "esp_mp3_dec.h"
 #include "esp_aac_dec.h"
 #include "esp_codec_dev.h"
-#include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
-#include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -27,11 +26,10 @@
 
 static const char *TAG = "rock-player";
 
-#define PCM_RING_CAPACITY (256 * 1024)   // 256 KiB in PSRAM (~1.5 s of 44.1 kHz stereo)
-#define PREROLL_MIN_BYTES (16 * 1024)    // 16 KiB pre-roll before starting playback (~100 ms)
+#define PCM_RING_CAPACITY (2 * 1024 * 1024) // PSRAM, ~12 s at 44.1 kHz stereo
+#define PREROLL_MIN_BYTES (512 * 1024)      // ~3 s to absorb relay and Wi-Fi jitter
 #define HTTP_CHUNK_SIZE   4096
 #define DECODE_OUT_CAP    8192
-#define MAX_REDIRECTS     5
 
 // External pure-Rust SSRF validator
 extern bool rock_validate_stream_uri(const char *uri);
@@ -146,6 +144,7 @@ static SemaphoreHandle_t s_state_mutex;
 static rock_player_status_t s_status = ROCK_PLAYER_STATUS_IDLE;
 static char s_station_id[130];
 static char s_stream_uri[2050];
+static char s_stream_authorization[600];
 static uint8_t s_volume = 35;
 static bool s_muted = false;
 
@@ -155,6 +154,10 @@ static atomic_bool s_stop_signal = false;
 static atomic_uint_fast32_t s_stat_underruns = 0;
 static atomic_uint_fast32_t s_stat_decode_errors = 0;
 static atomic_uint_fast32_t s_stat_net_reconnects = 0;
+static atomic_uint_fast32_t s_stat_net_bytes = 0;
+static atomic_uint_fast32_t s_stat_pcm_bytes = 0;
+static atomic_uint_fast32_t s_stat_zero_reads = 0;
+static atomic_uint_fast32_t s_stat_max_read_ms = 0;
 
 static TaskHandle_t s_rx_task = NULL;
 static TaskHandle_t s_tx_task = NULL;
@@ -182,7 +185,6 @@ static void audio_tx_task(void *arg)
 {
     (void)arg;
     static uint8_t pcm_chunk[1024];
-    int64_t last_underrun_log = 0;
 
     while (1) {
         rock_player_status_t st = get_player_status();
@@ -198,14 +200,12 @@ static void audio_tx_task(void *arg)
                     }
                 }
             } else {
-                // Underrun condition
+                // Pause output until the relay has refilled enough PCM to play smoothly.
                 atomic_fetch_add(&s_stat_underruns, 1);
-                int64_t now = esp_timer_get_time();
-                if (now - last_underrun_log > 5000000) { // log at most once per 5 s
-                    ESP_LOGW(TAG, "PCM ring underrun (total: %u)", (unsigned)atomic_load(&s_stat_underruns));
-                    last_underrun_log = now;
-                }
-                vTaskDelay(pdMS_TO_TICKS(10));
+                set_player_status(ROCK_PLAYER_STATUS_BUFFERING);
+                rock_audio_pa_set(false);
+                rock_ui_show_now_playing(s_station_id, "BUFFERING", "Waiting for stream...");
+                ESP_LOGW(TAG, "PCM ring underrun (total: %u)", (unsigned)atomic_load(&s_stat_underruns));
             }
         } else if (st == ROCK_PLAYER_STATUS_PAUSED) {
             rock_audio_pa_set(false);
@@ -219,16 +219,19 @@ static void audio_tx_task(void *arg)
 }
 
 // ---------------------------------------------------------------------------
-// HTTP Stream & Decode Worker (CPU 1, Priority 5)
+// Source Tap & Decode Worker (CPU 1, Priority 5)
+//
+// The unified stream source (relay_bsp) owns the single authorized RockServer
+// connection; this task is the speaker consumer: it reads the shared ring and
+// feeds the local decoder / PCM ring.  Cast clients read the same ring over
+// the relay listener, so switching outputs never reopens the upstream.
 // ---------------------------------------------------------------------------
 static void stream_rx_task(void *arg)
 {
     (void)arg;
     uint32_t current_gen = atomic_load(&s_stream_generation);
-    char active_url[2050];
 
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-    strlcpy(active_url, s_stream_uri, sizeof(active_url));
     char current_station[130];
     strlcpy(current_station, s_station_id, sizeof(current_station));
     xSemaphoreGive(s_state_mutex);
@@ -236,112 +239,59 @@ static void stream_rx_task(void *arg)
     set_player_status(ROCK_PLAYER_STATUS_BUFFERING);
     rock_ui_show_now_playing(current_station, "BUFFERING", "Connecting to stream...");
 
-    esp_http_client_handle_t http_client = NULL;
+    if (!rock_source_is_active()) {
+        ESP_LOGE(TAG, "Stream source is not running");
+        goto fail;
+    }
+
+    // PCM mode: the ring already holds 48 kHz stereo PCM (transcoded by the
+    // source for Cast); the speaker consumes it directly without a decoder.
+    // Compressed mode: decode locally like before, just from the ring.
+    bool pcm_mode = rock_source_is_pcm();
     esp_audio_dec_handle_t dec = NULL;
-    esp_audio_type_t codec_type = ESP_AUDIO_TYPE_UNSUPPORT;
 
-    int redirects = 0;
-    while (redirects <= MAX_REDIRECTS) {
-        if (atomic_load(&s_stop_signal) || atomic_load(&s_stream_generation) != current_gen) {
-            goto cleanup;
-        }
-
-        esp_http_client_config_t cfg = {
-            .url = active_url,
-            .timeout_ms = 10000,
-            .disable_auto_redirect = true,
-            .crt_bundle_attach = esp_crt_bundle_attach,
-            .buffer_size = 4096,
-            .buffer_size_tx = 1024,
-        };
-        http_client = esp_http_client_init(&cfg);
-        if (!http_client) {
-            ESP_LOGE(TAG, "Failed to initialize HTTP client");
-            goto fail;
-        }
-
-        esp_err_t err = esp_http_client_open(http_client, 0);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "HTTP open failed: %s", esp_err_to_name(err));
-            esp_http_client_cleanup(http_client);
-            http_client = NULL;
-            goto fail;
-        }
-
-        esp_http_client_fetch_headers(http_client);
-        int status = esp_http_client_get_status_code(http_client);
-        ESP_LOGI(TAG, "HTTP response status: %d", status);
-
-        if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
-            redirects++;
-            if (redirects > MAX_REDIRECTS) {
-                ESP_LOGE(TAG, "Too many HTTP redirects (> %d)", MAX_REDIRECTS);
-                goto fail;
-            }
-            char *location = NULL;
-            esp_http_client_get_header(http_client, "Location", &location);
-            if (!location || strlen(location) == 0) {
-                ESP_LOGE(TAG, "Redirect without Location header");
-                goto fail;
-            }
-            // Strict SSRF validation on redirect target
-            if (!rock_validate_stream_uri(location)) {
-                ESP_LOGE(TAG, "Redirect destination rejected by SSRF validation");
-                goto fail;
-            }
-            strlcpy(active_url, location, sizeof(active_url));
-            esp_http_client_close(http_client);
-            esp_http_client_cleanup(http_client);
-            http_client = NULL;
-            continue;
-        }
-
-        if (status != 200 && status != 206) {
-            ESP_LOGE(TAG, "HTTP non-200/206 status: %d", status);
-            goto fail;
-        }
-
-        // Content-Type validation without guessing
-        char *content_type = NULL;
-        esp_http_client_get_header(http_client, "Content-Type", &content_type);
-        if (!content_type) {
-            ESP_LOGE(TAG, "Missing Content-Type header; rejected");
-            goto fail;
-        }
-        ESP_LOGI(TAG, "Content-Type: %s", content_type);
-        if (strcasestr(content_type, "audio/mpeg") || strcasestr(content_type, "audio/mp3") || strcasestr(content_type, "audio/x-mpeg")) {
+    if (!pcm_mode) {
+        const char *content_type = rock_source_content_type();
+        esp_audio_type_t codec_type = ESP_AUDIO_TYPE_UNSUPPORT;
+        ESP_LOGI(TAG, "Source content-type: %s", content_type);
+        if (strcasestr(content_type, "audio/mpeg") || strcasestr(content_type, "audio/mp3")
+            || strcasestr(content_type, "audio/x-mpeg")
+            || strcasestr(content_type, "application/octet-stream")) {
             codec_type = ESP_AUDIO_TYPE_MP3;
-        } else if (strcasestr(content_type, "audio/aac") || strcasestr(content_type, "audio/aacp") ||
-                   strcasestr(content_type, "audio/x-aac") || strcasestr(content_type, "audio/mp4")) {
+        } else if (strcasestr(content_type, "audio/aac") || strcasestr(content_type, "audio/aacp")
+            || strcasestr(content_type, "audio/x-aac") || strcasestr(content_type, "audio/mp4")) {
             codec_type = ESP_AUDIO_TYPE_AAC;
         } else {
             ESP_LOGE(TAG, "Unsupported Content-Type (not MP3/AAC): %s", content_type);
             goto fail;
         }
-        break;
-    }
-
-    if (!http_client || codec_type == ESP_AUDIO_TYPE_UNSUPPORT) {
-        goto fail;
-    }
-
-    // Open audio decoder
-    esp_audio_dec_cfg_t dec_cfg = {
-        .type = codec_type,
-        .cfg = NULL,
-        .cfg_sz = 0,
-    };
-    if (esp_audio_dec_open(&dec_cfg, &dec) != ESP_AUDIO_ERR_OK) {
-        ESP_LOGE(TAG, "Failed to open audio decoder for type %d", codec_type);
-        goto fail;
+        esp_audio_dec_cfg_t dec_cfg = {
+            .type = codec_type,
+            .cfg = NULL,
+            .cfg_sz = 0,
+        };
+        if (esp_audio_dec_open(&dec_cfg, &dec) != ESP_AUDIO_ERR_OK) {
+            ESP_LOGE(TAG, "Failed to open audio decoder for type %d", codec_type);
+            goto fail;
+        }
     }
 
     static uint8_t in_buf[HTTP_CHUNK_SIZE * 2];
     static uint8_t out_buf[DECODE_OUT_CAP];
     size_t in_len = 0;
-    uint32_t current_fs = 16000;
-    uint8_t current_channels = 1;
-    bool playback_started = false;
+    uint32_t current_fs = 0;
+    uint8_t current_channels = 0;
+
+    if (pcm_mode) {
+        current_fs = 48000;
+        current_channels = 2;
+        if (rock_audio_reconfig(current_fs, current_channels) != 0) {
+            ESP_LOGE(TAG, "Audio reconfig to 48 kHz stereo failed");
+            goto fail;
+        }
+        atomic_store(&s_pcm_rate, current_fs);
+        atomic_store(&s_pcm_channels, current_channels);
+    }
 
     while (!atomic_load(&s_stop_signal) && atomic_load(&s_stream_generation) == current_gen) {
         // Flow control: wait if PCM ring buffer is getting full (> 85%)
@@ -350,29 +300,36 @@ static void stream_rx_task(void *arg)
             continue;
         }
 
-        // Read network chunk
         int space = (int)(sizeof(in_buf) - in_len);
-        if (space > HTTP_CHUNK_SIZE) space = HTTP_CHUNK_SIZE;
-        int rlen = esp_http_client_read(http_client, (char *)(in_buf + in_len), space);
+        if (!pcm_mode && space > HTTP_CHUNK_SIZE) space = HTTP_CHUNK_SIZE;
+        int rlen = rock_source_read(in_buf + in_len, (size_t)space);
         if (rlen < 0) {
-            ESP_LOGW(TAG, "HTTP read error %d; attempting reconnect backoff", rlen);
-            atomic_fetch_add(&s_stat_net_reconnects, 1);
-            // Reconnect attempt with backoff
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            if (atomic_load(&s_stop_signal) || atomic_load(&s_stream_generation) != current_gen) goto cleanup;
-            esp_http_client_close(http_client);
-            if (esp_http_client_open(http_client, 0) != ESP_OK) {
-                ESP_LOGE(TAG, "HTTP reconnect failed");
-                goto fail;
-            }
-            esp_http_client_fetch_headers(http_client);
-            continue;
-        } else if (rlen == 0) {
-            // End of stream or server paused
-            vTaskDelay(pdMS_TO_TICKS(20));
+            ESP_LOGW(TAG, "Stream source ended (%d)", rlen);
+            goto fail;
+        }
+        if (rlen == 0) {
+            atomic_fetch_add(&s_stat_zero_reads, 1);
+            vTaskDelay(pdMS_TO_TICKS(15));
             continue;
         }
+        atomic_fetch_add(&s_stat_net_bytes, (uint32_t)rlen);
         in_len += (size_t)rlen;
+
+        if (pcm_mode) {
+            atomic_fetch_add(&s_stat_pcm_bytes, (uint32_t)pcm_ring_write(&s_pcm_ring, in_buf, in_len));
+            in_len = 0;
+            if (get_player_status() == ROCK_PLAYER_STATUS_BUFFERING
+                && pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
+                set_player_status(ROCK_PLAYER_STATUS_PLAYING);
+                rock_ui_show_now_playing(current_station, "PLAYING", "RockCast Radio");
+                if (!s_muted) {
+                    rock_audio_pa_set(true);
+                }
+                ESP_LOGI(TAG, "Pre-roll reached (%u bytes); playback started",
+                    (unsigned)pcm_ring_fill(&s_pcm_ring));
+            }
+            continue;
+        }
 
         // Decode loop
         size_t in_pos = 0;
@@ -399,7 +356,10 @@ static void stream_rx_task(void *arg)
                         if (info.sample_rate != current_fs || info.channel != current_channels) {
                             ESP_LOGI(TAG, "Decoder format: %lu Hz, %u ch (reconfiguring codec)",
                                      (unsigned long)info.sample_rate, info.channel);
-                            rock_audio_reconfig(info.sample_rate, info.channel);
+                            if (rock_audio_reconfig(info.sample_rate, info.channel) != 0) {
+                                ESP_LOGE(TAG, "rock_audio_reconfig failed, aborting local decode");
+                                goto fail;
+                            }
                             atomic_store(&s_pcm_rate, info.sample_rate);
                             atomic_store(&s_pcm_channels, info.channel);
                             current_fs = info.sample_rate;
@@ -407,11 +367,11 @@ static void stream_rx_task(void *arg)
                         }
                     }
 
-                    pcm_ring_write(&s_pcm_ring, out_buf, out_frame.decoded_size);
+                    atomic_fetch_add(&s_stat_pcm_bytes, (uint32_t)pcm_ring_write(&s_pcm_ring, out_buf, out_frame.decoded_size));
 
                     // Pre-roll check
-                    if (!playback_started && pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
-                        playback_started = true;
+                    if (get_player_status() == ROCK_PLAYER_STATUS_BUFFERING &&
+                        pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
                         set_player_status(ROCK_PLAYER_STATUS_PLAYING);
                         rock_ui_show_now_playing(current_station, "PLAYING", "RockCast Radio");
                         if (!s_muted) {
@@ -421,7 +381,7 @@ static void stream_rx_task(void *arg)
                     }
                 }
             } else if (dret == ESP_AUDIO_ERR_DATA_LACK) {
-                // Need more data from network
+                // Need more data from the source
                 break;
             } else {
                 atomic_fetch_add(&s_stat_decode_errors, 1);
@@ -450,11 +410,6 @@ cleanup:
         esp_audio_dec_close(dec);
         dec = NULL;
     }
-    if (http_client) {
-        esp_http_client_close(http_client);
-        esp_http_client_cleanup(http_client);
-        http_client = NULL;
-    }
     s_rx_task = NULL;
     vTaskDelete(NULL);
 }
@@ -471,6 +426,11 @@ int rock_player_init(void)
     // Initialize low-level audio hardware (I2S, ES8311, PA)
     if (rock_audio_init() != 0) {
         ESP_LOGE(TAG, "Audio hardware initialization failed");
+        return -1;
+    }
+    // Reserve stereo DMA buffers before TLS and decoder allocations fragment internal RAM.
+    if (rock_audio_reconfig(44100, 2) != 0) {
+        ESP_LOGE(TAG, "Audio output initialization at 44.1 kHz stereo failed");
         return -1;
     }
 
@@ -503,9 +463,12 @@ int rock_player_init(void)
     return 0;
 }
 
-int rock_player_play_stream(const char *stream_uri, const char *station_id)
+int rock_player_play_stream(const char *stream_uri, const char *station_id, const char *bearer)
 {
-    if (!stream_uri || !station_id) return -1;
+    if (!stream_uri || !station_id || !bearer || !*bearer) return -1;
+    char authorization[sizeof(s_stream_authorization)];
+    int auth_len = snprintf(authorization, sizeof(authorization), "Bearer %s", bearer);
+    if (auth_len <= 7 || (size_t)auth_len >= sizeof(authorization) || strpbrk(bearer, "\r\n")) return -1;
 
     // SSRF gate on admission
     if (!rock_validate_stream_uri(stream_uri)) {
@@ -529,7 +492,13 @@ int rock_player_play_stream(const char *stream_uri, const char *station_id)
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     strlcpy(s_stream_uri, stream_uri, sizeof(s_stream_uri));
     strlcpy(s_station_id, station_id, sizeof(s_station_id));
+    strlcpy(s_stream_authorization, authorization, sizeof(s_stream_authorization));
     xSemaphoreGive(s_state_mutex);
+
+    atomic_store(&s_stat_net_bytes, 0);
+    atomic_store(&s_stat_pcm_bytes, 0);
+    atomic_store(&s_stat_zero_reads, 0);
+    atomic_store(&s_stat_max_read_ms, 0);
 
     atomic_store(&s_stop_signal, false);
 
@@ -540,6 +509,18 @@ int rock_player_play_stream(const char *stream_uri, const char *station_id)
         return -1;
     }
 
+    return 0;
+}
+
+int rock_player_update_bearer(const char *bearer)
+{
+    if (!s_state_mutex || !bearer || !*bearer || strpbrk(bearer, "\r\n")) return -1;
+    char authorization[sizeof(s_stream_authorization)];
+    int len = snprintf(authorization, sizeof(authorization), "Bearer %s", bearer);
+    if (len <= 7 || (size_t)len >= sizeof(authorization)) return -1;
+    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
+    strlcpy(s_stream_authorization, authorization, sizeof(s_stream_authorization));
+    xSemaphoreGive(s_state_mutex);
     return 0;
 }
 
@@ -573,6 +554,17 @@ int rock_player_stop(void)
     rock_audio_pa_set(false);
     set_player_status(ROCK_PLAYER_STATUS_STOPPED);
     return 0;
+}
+
+int rock_player_stop_and_wait(uint32_t timeout_ms)
+{
+    rock_player_stop();
+    uint32_t waited_ms = 0;
+    while (s_rx_task != NULL && waited_ms < timeout_ms) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        waited_ms += 20;
+    }
+    return s_rx_task == NULL ? 0 : -1;
 }
 
 int rock_player_set_volume(uint8_t volume)
@@ -637,6 +629,17 @@ void rock_player_get_stats(uint32_t *underruns, uint32_t *decode_errors, uint32_
     if (underruns) *underruns = (uint32_t)atomic_load(&s_stat_underruns);
     if (decode_errors) *decode_errors = (uint32_t)atomic_load(&s_stat_decode_errors);
     if (net_reconnects) *net_reconnects = (uint32_t)atomic_load(&s_stat_net_reconnects);
+}
+
+void rock_player_log_stream_metrics(void)
+{
+    ESP_LOGI(TAG, "stream metrics net=%lu pcm=%lu ring=%u zero_reads=%lu max_read_ms=%lu dma_largest=%u",
+             (unsigned long)atomic_load(&s_stat_net_bytes),
+             (unsigned long)atomic_load(&s_stat_pcm_bytes),
+             (unsigned)pcm_ring_fill(&s_pcm_ring),
+             (unsigned long)atomic_load(&s_stat_zero_reads),
+             (unsigned long)atomic_load(&s_stat_max_read_ms),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
 }
 
 // ---------------------------------------------------------------------------

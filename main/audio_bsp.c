@@ -59,7 +59,7 @@ static const char *TAG = "rock-audio";
 #define ROCK_LOOP_S 60
 #define ROCK_CHUNK_SAMPLES 1600 // 100 ms of mono 16 kHz
 #define ROCK_DMA_DESC_NUM 6
-#define ROCK_DMA_FRAME_NUM 480
+#define ROCK_DMA_FRAME_NUM 240
 #define ROCK_DMA_DEPTH_MS (ROCK_DMA_DESC_NUM * ROCK_DMA_FRAME_NUM / (ROCK_SAMPLE_RATE / 1000))
 #define ROCK_FADE_IN_SAMPLES (ROCK_SAMPLE_RATE / 33) // ~30 ms
 #define ROCK_FADE_OUT_SAMPLES (ROCK_SAMPLE_RATE / 3) // ~300 ms
@@ -520,6 +520,9 @@ void rock_audio_pa_set(bool on)
 int rock_audio_reconfig(uint32_t sample_rate, uint8_t channels)
 {
     if (!s_codec) return -1;
+    ESP_LOGI(TAG, "Reconfig audio: DMA free=%u largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
     esp_codec_dev_sample_info_t fs = {
         .bits_per_sample = 16,
         .channel = channels,

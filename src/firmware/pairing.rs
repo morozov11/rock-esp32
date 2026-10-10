@@ -24,6 +24,13 @@ pub(crate) fn credentials() -> Result<Credentials, ()> {
     }
 }
 
+pub(crate) fn fresh_access_token() -> Result<String, ()> {
+    let (id, secret) = platform::identity_load().ok_or(())?;
+    session(&id, &secret)
+        .map(|credentials| credentials.access_token)
+        .map_err(|_| ())
+}
+
 fn provision() -> Result<Credentials, ()> {
     let create = PairingCreate {
         device_display_name: "Rock ESP32",

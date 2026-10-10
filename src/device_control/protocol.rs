@@ -66,7 +66,7 @@ pub fn registration(message_id: &str, sent_at: &str, app_version: &str) -> Value
         sent_at,
         json!({
             "device_type": "esp32", "app_version": safe_firmware_version(app_version),
-            "manifest": { "manifest_revision": 1, "roles": ["display_surface", "player"],
+            "manifest": { "manifest_revision": 2, "roles": ["display_surface", "player", "controller"],
                 "capabilities": {"revision": 1, "items": [
                     { "name": "media.playback", "version": 1, "actions": ["play", "pause", "stop"] },
                     { "name": "media.station", "version": 1, "sources": ["rockserver_catalog"] },

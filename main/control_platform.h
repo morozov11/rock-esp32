@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -22,5 +23,7 @@ const char *rock_server_base_url(void);
 void rock_hosted_recover(void);
 int rock_wifi_scan_and_show(void);
 
+bool rock_wifi_is_connected(void);
 int rock_wifi_rssi(void);
+int rock_wifi_channel(void);
 uint64_t rock_uptime_ms(void);

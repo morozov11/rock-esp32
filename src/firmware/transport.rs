@@ -13,6 +13,7 @@ pub(crate) fn run(token: &str) -> Result<(), ()> {
     platform::ws_start(token)?;
     let result = session(token);
     platform::ws_stop();
+    platform::relay_stop();
     platform::gui_connectivity(false);
     platform::gui_mark_catalog_stale();
     result
@@ -51,46 +52,72 @@ fn message_id() -> String {
     )
 }
 
-fn current_revision(display: &DisplayState, player: &PlayerState) -> u64 {
-    display.revision() + player.revision() - 1
+static STATE_REVISION_COUNTER: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+fn next_state_revision(display: &DisplayState, player: &PlayerState) -> u64 {
+    let base = (display.revision() + player.revision() - 1) as u32;
+    let prev = STATE_REVISION_COUNTER.load(core::sync::atomic::Ordering::Relaxed);
+    let rev = if prev == 0 { base } else { base.max(prev + 1) };
+    STATE_REVISION_COUNTER.store(rev, core::sync::atomic::Ordering::Relaxed);
+    rev as u64
 }
 
-fn publish_state(display: &DisplayState, player: &PlayerState) -> Result<(), ()> {
+fn current_revision(display: &DisplayState, player: &PlayerState) -> u64 {
+    let cur = STATE_REVISION_COUNTER.load(core::sync::atomic::Ordering::Relaxed);
+    if cur == 0 {
+        display.revision() + player.revision() - 1
+    } else {
+        cur as u64
+    }
+}
+
+fn publish_state(
+    display: &DisplayState,
+    player: &PlayerState,
+    output: &device_control::OutputMode,
+) -> Result<(), ()> {
+    let rev = next_state_revision(display, player);
     send(&device_control::state_full(
         &message_id(),
         &platform::now()?,
-        current_revision(display, player),
+        rev,
         &platform::now()?,
-        device_control::full_state_snapshot(player, display),
+        device_control::full_state_snapshot_with_output(player, display, output),
     ))
 }
 
 /// Synchronize only observed hardware state, including after an offline interval.
 pub(crate) fn refresh_player(player: &mut PlayerState) -> bool {
+    refresh_player_with_cast(player, false)
+}
+
+pub(crate) fn refresh_player_with_cast(player: &mut PlayerState, is_casting: bool) -> bool {
     let Some((status, station, volume, muted)) = platform::player_get_full_state() else {
         return false;
     };
     let before = player.revision();
-    if !station.is_empty() && player.station_id() != Some(station.as_str()) {
-        player.apply_play_stream(&station);
-    }
-    match status.as_str() {
-        "buffering" => {
+    if !is_casting {
+        if !station.is_empty() && player.station_id() != Some(station.as_str()) {
             player.apply_play_stream(&station);
         }
-        "playing" => {
-            player.set_playing();
+        match status.as_str() {
+            "buffering" => {
+                player.apply_play_stream(&station);
+            }
+            "playing" => {
+                player.set_playing();
+            }
+            "paused" => {
+                player.set_paused();
+            }
+            "stopped" => {
+                player.set_stopped();
+            }
+            "error" => {
+                player.set_error();
+            }
+            _ => {}
         }
-        "paused" => {
-            player.set_paused();
-        }
-        "stopped" => {
-            player.set_stopped();
-        }
-        "error" => {
-            player.set_error();
-        }
-        _ => {}
     }
     player.apply_volume(VolumeAction::SetLevel(volume));
     player.apply_volume(VolumeAction::SetMute(muted));
@@ -167,6 +194,69 @@ fn load_catalog(token: &mut String, query: Option<&str>) {
     }
 }
 
+// Unified stream source: the board keeps ONE authorized connection to the
+// RockServer station proxy; the speaker and the Cast relay consume the same
+// ring, so switching outputs never reopens the upstream.
+struct SourceState {
+    station: Option<String>,
+}
+
+fn station_proxy_url(station_id: &str) -> Result<String, ()> {
+    let path = device_control::station_stream_path(station_id).map_err(|_| ())?;
+    Ok(format!("{}{}", platform::server_base_url(), path))
+}
+
+// Idempotent per station: when the source already serves this station, keep
+// it (and its ring) alive for gapless output switching.
+fn ensure_source(
+    station_id: &str,
+    token: &mut String,
+    source: &mut SourceState,
+) -> Result<(), ()> {
+    if source.station.as_deref() == Some(station_id) && platform::source_is_active() {
+        let _ = platform::source_update_bearer(token);
+        return Ok(());
+    }
+    platform::source_stop();
+    *token = super::pairing::fresh_access_token()?;
+    let url = station_proxy_url(station_id)?;
+    // Confidentiality: the proxy URL and bearer never appear in logs.
+    if !platform::source_start(&url, token) {
+        source.station = None;
+        return Err(());
+    }
+    source.station = Some(station_id.to_string());
+    Ok(())
+}
+
+fn play_local_station(
+    station_id: &str,
+    token: &mut String,
+    source: &mut SourceState,
+) -> Result<(), ()> {
+    ensure_source(station_id, token, source)?;
+    let url = station_proxy_url(station_id)?;
+    platform::player_play_stream(&url, station_id, token)
+}
+
+fn cast_play_stream(
+    cast_client: &mut super::cast_client::CastClient,
+    station_id: &str,
+    token: &mut String,
+    source: &mut SourceState,
+) -> Result<(), ()> {
+    // Detach the speaker tap only: the shared source keeps running.
+    let _ = platform::player_stop();
+    ensure_source(station_id, token, source)?;
+    let relay_url = platform::relay_listen().ok_or(())?;
+    let content_type = platform::source_content_type();
+    let res = cast_client.load_stream(&relay_url, station_id, &content_type);
+    if res.is_err() {
+        return Err(());
+    }
+    Ok(())
+}
+
 fn session(token: &str) -> Result<(), ()> {
     let mut token = token.to_string();
     send(&device_control::hello(&message_id(), &platform::now()?))?;
@@ -189,8 +279,14 @@ fn session(token: &str) -> Result<(), ()> {
     ))?;
     let mut display = DisplayState::new();
     let mut player = PlayerState::new();
-    refresh_player(&mut player);
-    publish_state(&display, &player)?;
+    let mut receiver_cache = device_control::ReceiverCache::new();
+    let mut cast_client = super::cast_client::CastClient::new();
+    let mut output_mode = device_control::OutputMode::Local;
+    let mut last_stream: Option<(String, String)> = None;
+    let mut source = SourceState { station: None };
+    let _ = platform::player_update_bearer(&token);
+    refresh_player_with_cast(&mut player, false);
+    publish_state(&display, &player, &output_mode)?;
     platform::gui_start()?;
     platform::gui_connectivity(true);
     update_gui(&player);
@@ -199,12 +295,28 @@ fn session(token: &str) -> Result<(), ()> {
     let mut retry: Option<platform::GuiEvent> = None;
     let mut network_check = 0;
     let mut next_heartbeat = platform::uptime_ms() + 20_000;
+    let mut next_token_refresh = platform::uptime_ms() + 10 * 60_000;
     let mut last_heartbeat_ack = platform::uptime_ms();
     let mut heartbeat_sequence = 0u64;
 
     loop {
+        if platform::uptime_ms() >= next_token_refresh {
+            if let Ok(fresh) = super::pairing::fresh_access_token() {
+                if platform::player_update_bearer(&fresh).is_ok() {
+                    // The long-lived stream source reconnects with the stored
+                    // bearer; keep it fresh alongside the player copy.
+                    let _ = platform::source_update_bearer(&fresh);
+                    token = fresh;
+                    next_token_refresh = platform::uptime_ms() + 10 * 60_000;
+                } else {
+                    next_token_refresh = platform::uptime_ms() + 60_000;
+                }
+            } else {
+                next_token_refresh = platform::uptime_ms() + 60_000;
+            }
+        }
         let ack_age = platform::uptime_ms().saturating_sub(last_heartbeat_ack);
-        if ack_age > 45_000 {
+        if ack_age > 75_000 {
             platform::ws_log_heartbeat_timeout(ack_age);
             return Err(());
         }
@@ -252,29 +364,142 @@ fn session(token: &str) -> Result<(), ()> {
                     load_catalog(&mut token, Some(&query));
                 }
                 platform::GuiEvent::PlaybackPlay => {
-                    let _ = platform::player_play();
+                    if cast_client.is_connected() {
+                        if let Some((st_id, _)) = &last_stream {
+                            if cast_play_stream(&mut cast_client, st_id, &mut token, &mut source)
+                                .is_ok()
+                            {
+                                player.set_playing();
+                                update_gui(&player);
+                            }
+                        }
+                    } else {
+                        let _ = platform::player_play();
+                    }
                 }
                 platform::GuiEvent::PlaybackPause => {
-                    let _ = platform::player_pause();
+                    if cast_client.is_connected() {
+                        let _ = cast_client.stop();
+                        player.set_paused();
+                        update_gui(&player);
+                    } else {
+                        let _ = platform::player_pause();
+                    }
                 }
                 platform::GuiEvent::PlaybackStop => {
                     pending = None;
+                    if cast_client.is_connected() {
+                        let _ = cast_client.stop();
+                        player.set_stopped();
+                        update_gui(&player);
+                    }
                     let _ = platform::player_stop();
+                    // Full stop tears the shared source down with it.
+                    platform::source_stop();
+                    source.station = None;
                 }
                 platform::GuiEvent::VolumeChange(delta) => {
                     let volume = (player.volume_level() as i32 + delta as i32).clamp(0, 100) as u8;
+                    if cast_client.is_connected() {
+                        let _ = cast_client.set_volume(volume);
+                    }
                     let _ = platform::player_set_volume(volume);
                 }
                 platform::GuiEvent::VolumeSet(volume) => {
+                    if cast_client.is_connected() {
+                        let _ = cast_client.set_volume(volume);
+                    }
                     let _ = platform::player_set_volume(volume);
+                }
+                platform::GuiEvent::CastBrowse => {
+                    let found = platform::cast_discover(2500);
+                    let active_list = receiver_cache.replace(found, platform::uptime_ms() / 1000);
+                    platform::gui_set_cast_devices(&active_list, cast_client.receiver_id());
+                    platform::gui_show_cast_menu(false);
+                }
+                platform::GuiEvent::CastSelect(rec_id) => {
+                    let now_sec = platform::uptime_ms() / 1000;
+                    if let Some(entry) = receiver_cache.get_entry(&rec_id, now_sec) {
+                        platform::gui_show_cast_menu(true);
+                        let local_stopped = last_stream.is_none()
+                            || platform::player_stop_and_wait(12_000).is_ok();
+                        if !local_stopped {
+                            platform::gui_dismiss_cast_menu();
+                            platform::gui_show_error("Не удалось освободить аудиоплеер");
+                        } else if cast_client.connect(&entry.receiver_id, &entry.device).is_ok() {
+                            output_mode = device_control::OutputMode::Chromecast {
+                                receiver_id: entry.receiver_id.clone(),
+                                receiver_name: entry.display_name.clone(),
+                            };
+                            platform::gui_update_cast_status(true, Some(&entry.display_name));
+                            platform::gui_dismiss_cast_menu();
+
+                            if let Some((st_id, _)) = &last_stream {
+                                let _ = send(&device_control::heartbeat(
+                                    &message_id(),
+                                    &platform::now()?,
+                                    heartbeat_sequence,
+                                ));
+                                heartbeat_sequence = heartbeat_sequence.wrapping_add(1);
+                                next_heartbeat = platform::uptime_ms() + 20_000;
+                                if cast_play_stream(&mut cast_client, st_id, &mut token, &mut source)
+                                    .is_ok()
+                                {
+                                    player.apply_play_stream(st_id);
+                                    player.set_playing();
+                                    update_gui(&player);
+                                }
+                            }
+                            publish_state(&display, &player, &output_mode)?;
+                        } else {
+                            platform::gui_dismiss_cast_menu();
+                            platform::gui_show_error("Не удалось подключиться к Chromecast");
+                            if let Some((st_id, _)) = &last_stream {
+                                let _ = play_local_station(st_id, &mut token, &mut source);
+                            }
+                        }
+                    }
+                }
+                platform::GuiEvent::CastDisconnect => {
+                    if cast_client.is_connected() {
+                        cast_client.disconnect();
+                    }
+                    output_mode = device_control::OutputMode::Local;
+                    platform::gui_update_cast_status(false, None);
+                    platform::gui_dismiss_cast_menu();
+
+                    // The shared source keeps running: the speaker re-joins
+                    // the same ring, no upstream reconnect, no gap.
+                    if let Some((st_id, _)) = &last_stream {
+                        let _ = play_local_station(st_id, &mut token, &mut source);
+                    }
+                    publish_state(&display, &player, &output_mode)?;
                 }
                 platform::GuiEvent::Retry => {}
             }
         }
-        if refresh_player(&mut player) {
-            publish_state(&display, &player)?;
+        if refresh_player_with_cast(&mut player, cast_client.is_connected()) {
+            publish_state(&display, &player, &output_mode)?;
             if player.status() == PlaybackStatus::Error {
                 platform::gui_show_error("Ошибка воспроизведения аудио");
+            }
+        }
+        if cast_client.is_connected() {
+            if cast_client.pump().is_err() {
+                if cast_client.reconnect().is_ok() {
+                    platform::cast_log("Cast connection restored after idle disconnect");
+                } else {
+                    cast_client.disconnect();
+                    output_mode = device_control::OutputMode::Local;
+                    platform::gui_update_cast_status(false, None);
+                    platform::gui_show_error("Связь с Chromecast потеряна");
+                    // Deterministic fallback: the shared source keeps running,
+                    // the speaker re-joins the ring without an upstream reconnect.
+                    if let Some((st_id, _)) = &last_stream {
+                        let _ = play_local_station(st_id, &mut token, &mut source);
+                    }
+                }
+                publish_state(&display, &player, &output_mode)?;
             }
         }
         if pending
@@ -287,7 +512,7 @@ fn session(token: &str) -> Result<(), ()> {
         }
         if platform::uptime_ms() >= network_check {
             platform::gui_connectivity(true);
-            network_check = platform::uptime_ms() + 1000;
+            network_check = platform::uptime_ms() + 15000;
         }
         let len = platform::ws_receive(&mut frame, 50);
         if len < 0 {
@@ -303,6 +528,10 @@ fn session(token: &str) -> Result<(), ()> {
         };
         if inbound.kind == "device.heartbeat_ack" {
             last_heartbeat_ack = platform::uptime_ms();
+            continue;
+        }
+        if inbound.kind == "device.resync_requested" {
+            publish_state(&display, &player, &output_mode)?;
             continue;
         }
         if inbound.kind == "command.result" || inbound.kind == "protocol.error" {
@@ -353,7 +582,7 @@ fn session(token: &str) -> Result<(), ()> {
                 if !crate::presentation::render(&command.view) {
                     return Err(());
                 }
-                publish_state(&display, &player)?;
+                publish_state(&display, &player, &output_mode)?;
             }
             send(&device_control::command_succeeded(
                 &message_id(),
@@ -388,38 +617,104 @@ fn session(token: &str) -> Result<(), ()> {
                 stream_uri,
                 ..
             } => {
-                if player.station_id() == Some(station_id.as_str())
-                    && matches!(
-                        player.status(),
-                        PlaybackStatus::Playing | PlaybackStatus::Buffering
-                    )
-                {
-                    Ok(())
+                last_stream = Some((station_id.clone(), stream_uri.clone()));
+                if cast_client.is_connected() {
+                    let _ = platform::player_stop();
+                    let res = cast_play_stream(&mut cast_client, &station_id, &mut token, &mut source);
+                    if res.is_ok() {
+                        player.apply_play_stream(&station_id);
+                        player.set_playing();
+                        update_gui(&player);
+                        Ok(())
+                    } else {
+                        platform::cast_log("Cast play_stream failed; remaining in Cast mode without starting local audio");
+                        player.set_stopped();
+                        update_gui(&player);
+                        Err(())
+                    }
                 } else {
-                    platform::player_play_stream(&stream_uri, &station_id)
+                    if player.station_id() == Some(station_id.as_str())
+                        && matches!(
+                            player.status(),
+                            PlaybackStatus::Playing | PlaybackStatus::Buffering
+                        )
+                    {
+                        Ok(())
+                    } else {
+                        play_local_station(&station_id, &mut token, &mut source)
+                    }
                 }
             }
-            PlayerCommand::Playback { action, .. } => match action {
-                PlaybackAction::Play => platform::player_play(),
-                PlaybackAction::Pause => platform::player_pause(),
-                PlaybackAction::Stop => platform::player_stop(),
-            },
+            PlayerCommand::Playback { action, .. } => {
+                if cast_client.is_connected() {
+                    match action {
+                        PlaybackAction::Play => {
+                            if let Some((st_id, _)) = &last_stream {
+                                let _ = cast_play_stream(
+                                    &mut cast_client,
+                                    st_id,
+                                    &mut token,
+                                    &mut source,
+                                );
+                            }
+                            player.set_playing();
+                            update_gui(&player);
+                            Ok(())
+                        }
+                        PlaybackAction::Pause => {
+                            let _ = cast_client.stop_media();
+                            player.set_paused();
+                            update_gui(&player);
+                            Ok(())
+                        }
+                        PlaybackAction::Stop => {
+                            let _ = cast_client.stop_media();
+                            player.set_stopped();
+                            update_gui(&player);
+                            // Full stop tears the shared source down with it.
+                            platform::source_stop();
+                            source.station = None;
+                            Ok(())
+                        }
+                    }
+                } else {
+                    match action {
+                        PlaybackAction::Play => platform::player_play(),
+                        PlaybackAction::Pause => platform::player_pause(),
+                        PlaybackAction::Stop => {
+                            let res = platform::player_stop();
+                            platform::source_stop();
+                            source.station = None;
+                            res
+                        }
+                    }
+                }
+            }
             PlayerCommand::Volume { action, .. } => match action {
-                VolumeAction::SetLevel(level) => platform::player_set_volume(level),
-                VolumeAction::Change(delta) => platform::player_set_volume(
-                    (player.volume_level() as i32 + delta).clamp(0, 100) as u8,
-                ),
+                VolumeAction::SetLevel(level) => {
+                    if cast_client.is_connected() {
+                        let _ = cast_client.set_volume(level);
+                    }
+                    platform::player_set_volume(level)
+                }
+                VolumeAction::Change(delta) => {
+                    let new_vol = (player.volume_level() as i32 + delta).clamp(0, 100) as u8;
+                    if cast_client.is_connected() {
+                        let _ = cast_client.set_volume(new_vol);
+                    }
+                    platform::player_set_volume(new_vol)
+                }
                 VolumeAction::SetMute(muted) => platform::player_set_mute(muted),
             },
         };
-        refresh_player(&mut player);
+        refresh_player_with_cast(&mut player, cast_client.is_connected());
         if pending.as_ref().is_some_and(|(command, _)| command == &id) {
             pending = None;
             update_gui(&player);
         }
         match result {
             Ok(()) => {
-                publish_state(&display, &player)?;
+                publish_state(&display, &player, &output_mode)?;
                 send(&device_control::command_succeeded(
                     &message_id(),
                     &platform::now()?,

@@ -289,6 +289,19 @@ Acceptance:
 
 ## Step 7: Cast to Chromecast like RockCast (rockserver, rock-esp32, rockmobile)
 
+Status 2026-10-10 (device side, RE-17): implemented and verified on the
+board with a **unified stream source** — one authorized RockServer proxy
+connection feeds a shared ring consumed by both the local speaker and the
+Cast relay, so output switching never reopens the upstream (owner
+architecture decision, details and verification in `cast-progress.md` §11).
+Full `test_cast_hw.py` run green (SomaFM MP3 passthrough, >300 KB
+continuous, receiver badge, no GUI artifacts), switch back to the speaker
+resumes in ~300 ms, the `vTaskDeleteWithCaps` stop-path panic is fixed.
+`media.chromecast` is still NOT in the manifest (truthfulness rule: pending
+owner acceptance). RS-7 (server command promotion) and RM-3 (RockMobile)
+remain open on their sides; local casting does not route through the
+server, so those are not blockers for local use.
+
 Owner decision 2026-09-16: the radio gains Chromecast casting with the
 same device-control architecture as RockCast desktop, before the voice
 steps. Contract first; the cast client itself lives in the firmware.

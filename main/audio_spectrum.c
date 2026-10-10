@@ -37,7 +37,7 @@ static void analyze(size_t count, uint8_t channels, float out[SPECTRUM_BANDS_COU
         s_fft[2 * i] = (sample / 32768.0f) * s_window[i];
         s_fft[2 * i + 1] = 0;
     }
-    dsps_fft2r_fc32(s_fft, FFT_N);
+    dsps_fft2r_fc32_ansi(s_fft, FFT_N);
     dsps_bit_rev_fc32(s_fft, FFT_N);
     for (int b = 0; b < SPECTRUM_BANDS_COUNT; b++) {
         float peak = 0;

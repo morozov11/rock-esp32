@@ -34,6 +34,24 @@ pub fn catalog_path(query: Option<&str>) -> Result<String, CatalogError> {
     }
 }
 
+/// Browser and native players use the same authenticated RockServer relay.
+pub fn station_stream_path(station_id: &str) -> Result<String, CatalogError> {
+    if station_id.is_empty() || station_id.len() > MAX_STATION_ID_LEN || station_id == "." || station_id == ".." || station_id.chars().any(char::is_control) {
+        return Err(CatalogError::Malformed);
+    }
+    let mut path = String::from("/api/v1/stations/");
+    use std::fmt::Write;
+    for b in station_id.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+            path.push(b as char);
+        } else {
+            write!(path, "%{b:02X}").unwrap();
+        }
+    }
+    path.push_str("/stream");
+    Ok(path)
+}
+
 fn valid_text(s: &str, max: usize) -> bool {
     s.len() <= max && !s.chars().any(char::is_control)
 }

@@ -31,7 +31,18 @@ typedef enum {
     ROCK_UI_EVT_CATALOG_BROWSE, // text: optional cursor
     ROCK_UI_EVT_CATALOG_SEARCH, // text: query (<=128 chars)
     ROCK_UI_EVT_RETRY,
+    ROCK_UI_EVT_CAST_BROWSE,
+    ROCK_UI_EVT_CAST_SELECT,    // text: receiver_id
+    ROCK_UI_EVT_CAST_DISCONNECT,
 } rock_ui_event_type_t;
+
+#define ROCK_GUI_MAX_CAST_DEVICES 16
+
+typedef struct {
+    char receiver_id[65];
+    char display_name[129];
+    bool is_active;
+} rock_gui_cast_item_t;
 
 typedef struct {
     rock_ui_event_type_t type;
@@ -120,6 +131,26 @@ int rock_gui_dump_screenshot(void);
  * 0 = Now Playing, 1 = Browse, 2 = Search
  */
 void rock_gui_switch_view(int view_index);
+
+/**
+ * Show audio output selection dialog / menu.
+ */
+void rock_gui_show_cast_menu(bool scanning);
+
+/**
+ * Update the list of discovered Chromecast devices in the cast menu.
+ */
+void rock_gui_set_cast_devices(const rock_gui_cast_item_t *items, size_t count);
+
+/**
+ * Close/dismiss the cast menu.
+ */
+void rock_gui_dismiss_cast_menu(void);
+
+/**
+ * Update cast badge and button state on Now-Playing.
+ */
+void rock_gui_update_cast_status(bool is_casting, const char *receiver_name);
 
 #ifdef __cplusplus
 }

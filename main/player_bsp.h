@@ -29,11 +29,13 @@ int rock_player_bringup_start(void);
  * Replaces any existing active stream (stopping and freeing old stream resources first).
  * Returns 0 on successful initiation, -1 on immediate rejection (e.g. SSRF violation).
  */
-int rock_player_play_stream(const char *stream_uri, const char *station_id);
+int rock_player_play_stream(const char *stream_uri, const char *station_id, const char *bearer);
+int rock_player_update_bearer(const char *bearer);
 
 int rock_player_play(void);
 int rock_player_pause(void);
 int rock_player_stop(void);
+int rock_player_stop_and_wait(uint32_t timeout_ms);
 
 int rock_player_set_volume(uint8_t volume);
 int rock_player_set_mute(bool muted);
@@ -50,6 +52,7 @@ int rock_player_get_state(char *status_buf, size_t status_cap,
  * Telemetry metrics: underruns, decode errors, reconnect counts.
  */
 void rock_player_get_stats(uint32_t *underruns, uint32_t *decode_errors, uint32_t *net_reconnects);
+void rock_player_log_stream_metrics(void);
 
 /**
  * Non-blocking read-only peek of recent decoded PCM samples from the ring buffer

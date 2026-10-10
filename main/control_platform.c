@@ -3,6 +3,7 @@
 #include "rock_ota.h"
 #include "rock_wifi_storage.h"
 #include "rock_onboarding.h"
+#include "relay_bsp.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_event.h"
@@ -23,6 +24,7 @@
 #include "nvs_flash.h"
 
 #include <stdio.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <time.h>
 
@@ -34,8 +36,14 @@
 #define ROCK_HTTP_TIMEOUT_MS 10000
 #define ROCK_C6_RESET_GPIO GPIO_NUM_54
 
+void rock_hosted_recover(void);
+
 static const char *TAG = "rock-control";
 static EventGroupHandle_t s_wifi_events;
+static atomic_int s_last_wifi_rssi = ATOMIC_VAR_INIT(-128);
+static atomic_int s_last_wifi_channel = ATOMIC_VAR_INIT(0);
+static uint64_t s_last_wifi_query_ms = 0;
+static uint32_t s_wifi_query_backoff_ms = 10000;
 static EventGroupHandle_t s_ws_events;
 static esp_websocket_client_handle_t s_ws;
 static QueueHandle_t s_ws_queue;
@@ -62,6 +70,17 @@ static const char *wifi_reason_desc(unsigned reason)
     }
 }
 
+static char s_sta_ip[32] = {0};
+
+int rock_get_local_ip(char *out, size_t cap)
+{
+    if (!out || cap == 0) return -1;
+    if (s_sta_ip[0] == '\0') return -1;
+    strncpy(out, s_sta_ip, cap - 1);
+    out[cap - 1] = '\0';
+    return 0;
+}
+
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg; (void)data;
@@ -70,6 +89,8 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         // Connected explicitly after boot Wi-Fi scan
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        s_sta_ip[0] = '\0';
+        atomic_store(&s_last_wifi_rssi, -128);
         const wifi_event_sta_disconnected_t *event = data;
         unsigned reason = event ? event->reason : 0;
         if (s_sta_associated) {
@@ -88,10 +109,12 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         xEventGroupSetBits(s_wifi_events, WIFI_READY);
         s_sta_associated = true;
         s_sta_since_ms = rock_uptime_ms();
+        esp_wifi_set_ps(WIFI_PS_NONE);
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)data;
         if (event) {
+            snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&event->ip_info.ip));
             char ip_buf[48];
-            snprintf(ip_buf, sizeof(ip_buf), "Connected! IP: " IPSTR, IP2STR(&event->ip_info.ip));
+            snprintf(ip_buf, sizeof(ip_buf), "Connected! IP: %s", s_sta_ip);
             rock_ui_splash_status(ip_buf);
         }
     }
@@ -169,15 +192,25 @@ static void wifi_rf_survey(void)
 static bool wifi_connect_with_backoff(uint64_t deadline_ms)
 {
     uint32_t backoff_ms = 0;
+    int fail_count = 0;
     do {
         xEventGroupClearBits(s_wifi_events, WIFI_FAILED);
         esp_err_t err = esp_wifi_connect();
         if (err == ESP_OK) {
             EventBits_t bits = xEventGroupWaitBits(s_wifi_events, WIFI_READY | WIFI_FAILED,
                                                    pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
-            if (bits & WIFI_READY) return true;
+            if (bits & WIFI_READY) {
+                esp_wifi_set_ps(WIFI_PS_NONE);
+                return true;
+            }
         } else {
             ESP_LOGW(TAG, "STA connect request failed: %s", esp_err_to_name(err));
+        }
+        fail_count++;
+        if (fail_count >= 5) {
+            ESP_LOGW(TAG, "STA failed %d times; resetting ESP32-C6 co-processor...", fail_count);
+            rock_hosted_recover();
+            fail_count = 0;
         }
         if (rock_uptime_ms() >= deadline_ms) break;
         wifi_rf_survey();
@@ -303,7 +336,8 @@ static const char *ws_frame_kind(const char *frame)
     static const char *const kinds[] = {
         "protocol.hello", "protocol.welcome", "protocol.error", "device.register",
         "device.registered", "device.state_full", "device.heartbeat",
-        "device.heartbeat_ack", "device.command", "command.result"
+        "device.heartbeat_ack", "device.command", "command.accepted", "command.result",
+        "device.resync_requested"
     };
     for (size_t i = 0; i < sizeof(kinds) / sizeof(kinds[0]); ++i) {
         char marker[64];
@@ -388,6 +422,7 @@ int rock_platform_init(void)
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event, NULL);
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event, NULL);
     if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK || esp_wifi_start() != ESP_OK) return -1;
+    esp_wifi_set_ps(WIFI_PS_NONE);
     // Allow scanning/operating on channels 12-13 (EU/RU 2.4 GHz band) so the
     // default 1-11 country cannot hide the target AP after a router channel change.
     esp_err_t country_err = esp_wifi_set_country_code("RU", true);
@@ -570,7 +605,11 @@ int rock_ws_send(const char *data, size_t len)
 {
     if (!s_ws || !esp_websocket_client_is_connected(s_ws) || len > ROCK_MAX_FRAME) return -1;
     int sent = esp_websocket_client_send_text(s_ws, data, len, pdMS_TO_TICKS(10000));
-    ESP_LOGI(TAG, "WSS send type=%s result=%d", ws_frame_kind(data), sent);
+    const char *kind = ws_frame_kind(data);
+    ESP_LOGI(TAG, "WSS send type=%s result=%d", kind, sent);
+    if (strcmp(kind, "device.heartbeat") != 0) {
+        ESP_LOGI(TAG, "WSS tx: %s", data);
+    }
     return sent;
 }
 
@@ -582,7 +621,11 @@ int rock_ws_receive(char *data, size_t cap, uint32_t timeout_ms)
     if ((size_t)result >= cap) return -2;
     memcpy(data, s_ws_frame, result);
     data[result] = '\0';
-    ESP_LOGI(TAG, "WSS receive type=%s len=%d", ws_frame_kind(data), result);
+    const char *kind = ws_frame_kind(data);
+    ESP_LOGI(TAG, "WSS receive type=%s len=%d", kind, result);
+    if (strcmp(kind, "device.heartbeat_ack") != 0) {
+        ESP_LOGI(TAG, "WSS rx: %s", data);
+    }
     return result;
 }
 
@@ -612,13 +655,39 @@ void rock_hosted_recover(void)
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
+bool rock_wifi_is_connected(void)
+{
+    return s_wifi_events != NULL && ((xEventGroupGetBits(s_wifi_events) & WIFI_READY) != 0);
+}
+
 int rock_wifi_rssi(void)
 {
-    wifi_ap_record_t ap_info;
-    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-        return ap_info.rssi;
+    if (!rock_wifi_is_connected()) return -128;
+    // When audio relay is active, NEVER query AP info over SDIO RPC.
+    // The concurrent upstream/downstream audio saturates the ESP32-C6 coprocessor,
+    // causing 5000 ms RPC timeouts that freeze the main loop and drop the WSS session.
+    if (rock_relay_is_active()) {
+        return atomic_load(&s_last_wifi_rssi);
     }
-    return -128;
+    uint64_t now = rock_uptime_ms();
+    if (now - s_last_wifi_query_ms >= s_wifi_query_backoff_ms) {
+        s_last_wifi_query_ms = now;
+        wifi_ap_record_t ap_info;
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            atomic_store(&s_last_wifi_rssi, ap_info.rssi);
+            atomic_store(&s_last_wifi_channel, ap_info.primary);
+            s_wifi_query_backoff_ms = 30000;
+            return ap_info.rssi;
+        } else {
+            s_wifi_query_backoff_ms = 60000;
+        }
+    }
+    return atomic_load(&s_last_wifi_rssi);
+}
+
+int rock_wifi_channel(void)
+{
+    return atomic_load(&s_last_wifi_channel);
 }
 
 uint64_t rock_uptime_ms(void)

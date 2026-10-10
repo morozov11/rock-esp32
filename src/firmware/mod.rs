@@ -1,5 +1,6 @@
 //! Firmware composition root: initializes ESP-IDF then owns reconnect policy.
 
+mod cast_client;
 mod pairing;
 mod platform;
 mod transport;
@@ -66,6 +67,9 @@ pub extern "C" fn rust_main() -> ! {
                         platform::gui_dismiss_state();
                         break 'backoff;
                     }
+                    platform::GuiEvent::CastBrowse
+                    | platform::GuiEvent::CastSelect(_)
+                    | platform::GuiEvent::CastDisconnect => {}
                 }
             }
             transport::refresh_player(&mut local_player);

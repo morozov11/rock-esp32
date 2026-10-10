@@ -1,6 +1,6 @@
 //! Narrow ESP-IDF FFI boundary; no protocol policy lives here.
 
-use core::ffi::{c_char, c_int};
+use core::ffi::{c_char, c_int, c_void};
 use serde::Serialize;
 use serde_json::Value;
 use std::ffi::{CStr, CString};
@@ -9,6 +9,7 @@ const RESPONSE_CAPACITY: usize = 65_537;
 
 unsafe extern "C" {
     fn rock_platform_init() -> c_int;
+    fn rock_wifi_is_connected() -> bool;
     fn rock_wifi_rssi() -> c_int;
     fn rock_uptime_ms() -> u64;
     fn rock_identity_load(
@@ -75,10 +76,12 @@ unsafe extern "C" {
         width: u16,
     ) -> bool;
     fn rock_delay_ms(milliseconds: u32);
-    fn rock_player_play_stream(stream_uri: *const c_char, station_id: *const c_char) -> c_int;
+    fn rock_player_play_stream(stream_uri: *const c_char, station_id: *const c_char, bearer: *const c_char) -> c_int;
+    fn rock_player_update_bearer(bearer: *const c_char) -> c_int;
     fn rock_player_play() -> c_int;
     fn rock_player_pause() -> c_int;
     fn rock_player_stop() -> c_int;
+    fn rock_player_stop_and_wait(timeout_ms: u32) -> c_int;
     fn rock_player_set_volume(volume: u8) -> c_int;
     fn rock_player_set_mute(muted: bool) -> c_int;
     fn rock_player_get_state(
@@ -89,6 +92,58 @@ unsafe extern "C" {
         vol: *mut u8,
         muted: *mut bool,
     ) -> c_int;
+    fn rock_cast_discover(
+        timeout_ms: u32,
+        out_devices: *mut RockCastDeviceRaw,
+        max_devices: usize,
+    ) -> c_int;
+    fn rock_cast_tls_open(host: *const c_char, port: u16, timeout_ms: u32) -> *mut c_void;
+    fn rock_cast_tls_send(
+        tls: *mut c_void,
+        data: *const u8,
+        len: usize,
+        timeout_ms: u32,
+    ) -> c_int;
+    fn rock_cast_tls_recv(
+        tls: *mut c_void,
+        data: *mut u8,
+        max_len: usize,
+        timeout_ms: u32,
+    ) -> c_int;
+    fn rock_cast_tls_close(tls: *mut c_void);
+    fn rock_cast_log(msg: *const c_char);
+
+    fn rock_gui_show_cast_menu(scanning: bool);
+    fn rock_gui_set_cast_devices(items: *const RockGuiCastItemRaw, count: usize);
+    fn rock_gui_dismiss_cast_menu();
+    fn rock_gui_update_cast_status(is_casting: bool, receiver_name: *const c_char);
+
+    fn rock_source_start(upstream_uri: *const c_char, bearer: *const c_char) -> c_int;
+    fn rock_source_update_bearer(bearer: *const c_char) -> c_int;
+    fn rock_source_stop();
+    fn rock_source_is_active() -> bool;
+    fn rock_source_content_type() -> *const c_char;
+    fn rock_relay_listen(out_url: *mut c_char, out_cap: usize) -> c_int;
+    fn rock_relay_stop();
+    fn rock_relay_is_active() -> bool;
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct RockCastDeviceRaw {
+    pub id: [c_char; 65],
+    pub name: [c_char; 129],
+    pub model: [c_char; 65],
+    pub host: [c_char; 65],
+    pub port: u16,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct RockGuiCastItemRaw {
+    pub receiver_id: [c_char; 65],
+    pub display_name: [c_char; 129],
+    pub is_active: bool,
 }
 
 #[repr(C)]
@@ -260,10 +315,20 @@ pub(crate) fn ws_log_heartbeat_timeout(age_ms: u64) {
     unsafe { rock_ws_log_heartbeat_timeout(age_ms) }
 }
 
-pub(crate) fn player_play_stream(stream_uri: &str, station_id: &str) -> Result<(), ()> {
+pub(crate) fn player_play_stream(stream_uri: &str, station_id: &str, bearer: &str) -> Result<(), ()> {
     let stream_uri = cstring(stream_uri)?;
     let station_id = cstring(station_id)?;
-    if unsafe { rock_player_play_stream(stream_uri.as_ptr(), station_id.as_ptr()) } == 0 {
+    let bearer = cstring(bearer)?;
+    if unsafe { rock_player_play_stream(stream_uri.as_ptr(), station_id.as_ptr(), bearer.as_ptr()) } == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
+pub(crate) fn player_update_bearer(bearer: &str) -> Result<(), ()> {
+    let bearer = cstring(bearer)?;
+    if unsafe { rock_player_update_bearer(bearer.as_ptr()) } == 0 {
         Ok(())
     } else {
         Err(())
@@ -288,6 +353,14 @@ pub(crate) fn player_pause() -> Result<(), ()> {
 
 pub(crate) fn player_stop() -> Result<(), ()> {
     if unsafe { rock_player_stop() } == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
+pub(crate) fn player_stop_and_wait(timeout_ms: u32) -> Result<(), ()> {
+    if unsafe { rock_player_stop_and_wait(timeout_ms) } == 0 {
         Ok(())
     } else {
         Err(())
@@ -350,6 +423,9 @@ pub(crate) enum GuiEvent {
     CatalogBrowse,
     CatalogSearch(String),
     Retry,
+    CastBrowse,
+    CastSelect(String),
+    CastDisconnect,
 }
 
 pub(crate) fn gui_poll_event(timeout_ms: u32) -> Option<GuiEvent> {
@@ -372,6 +448,9 @@ pub(crate) fn gui_poll_event(timeout_ms: u32) -> Option<GuiEvent> {
             7 => Some(GuiEvent::CatalogBrowse),
             8 => Some(GuiEvent::CatalogSearch(text)),
             9 => Some(GuiEvent::Retry),
+            10 => Some(GuiEvent::CastBrowse),
+            11 => Some(GuiEvent::CastSelect(text)),
+            12 => Some(GuiEvent::CastDisconnect),
             _ => None,
         }
     } else {
@@ -531,9 +610,194 @@ pub(crate) fn uptime_ms() -> u64 {
     unsafe { rock_uptime_ms() }
 }
 pub(crate) fn wifi_ready() -> bool {
-    unsafe { rock_wifi_rssi() != -128 }
+    unsafe { rock_wifi_is_connected() }
 }
 pub(crate) fn gui_connectivity(server: bool) {
     let rssi = unsafe { rock_wifi_rssi() };
     gui_update_connectivity(rssi, rssi != -128, server && rssi != -128);
+}
+
+pub(crate) fn cast_discover(timeout_ms: u32) -> Vec<crate::device_control::cast::DiscoveredReceiver> {
+    let mut raw = [RockCastDeviceRaw {
+        id: [0; 65],
+        name: [0; 129],
+        model: [0; 65],
+        host: [0; 65],
+        port: 0,
+    }; 16];
+    let count = unsafe { rock_cast_discover(timeout_ms, raw.as_mut_ptr(), raw.len()) };
+    if count <= 0 {
+        return Vec::new();
+    }
+    let count = (count as usize).min(raw.len());
+    let mut out = Vec::with_capacity(count);
+    for item in &raw[..count] {
+        let id = unsafe { CStr::from_ptr(item.id.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        let name = unsafe { CStr::from_ptr(item.name.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        let model = unsafe { CStr::from_ptr(item.model.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        let host = unsafe { CStr::from_ptr(item.host.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        let port = item.port;
+        if !host.is_empty() {
+            out.push(crate::device_control::cast::DiscoveredReceiver {
+                key: if !id.is_empty() { id } else { format!("{host}:{port}") },
+                name,
+                model,
+                host,
+                port,
+            });
+        }
+    }
+    out
+}
+
+pub(crate) struct CastTlsStream(*mut c_void);
+
+unsafe impl Send for CastTlsStream {}
+
+impl CastTlsStream {
+    pub(crate) fn connect(host: &str, port: u16, timeout_ms: u32) -> Option<Self> {
+        let host_c = cstring(host).ok()?;
+        let ptr = unsafe { rock_cast_tls_open(host_c.as_ptr(), port, timeout_ms) };
+        if ptr.is_null() {
+            None
+        } else {
+            Some(Self(ptr))
+        }
+    }
+
+    pub(crate) fn send(&mut self, data: &[u8], timeout_ms: u32) -> Result<(), ()> {
+        let ret = unsafe { rock_cast_tls_send(self.0, data.as_ptr(), data.len(), timeout_ms) };
+        if ret == data.len() as c_int {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub(crate) fn recv(&mut self, buf: &mut [u8], timeout_ms: u32) -> Result<usize, ()> {
+        let ret = unsafe { rock_cast_tls_recv(self.0, buf.as_mut_ptr(), buf.len(), timeout_ms) };
+        if ret > 0 {
+            Ok(ret as usize)
+        } else if ret == 0 {
+            Ok(0)
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl Drop for CastTlsStream {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { rock_cast_tls_close(self.0) };
+            self.0 = core::ptr::null_mut();
+        }
+    }
+}
+
+pub(crate) fn cast_log(msg: &str) {
+    if let Ok(c) = cstring(msg) {
+        unsafe { rock_cast_log(c.as_ptr()) };
+    }
+}
+
+pub(crate) fn gui_show_cast_menu(scanning: bool) {
+    unsafe { rock_gui_show_cast_menu(scanning) };
+}
+
+pub(crate) fn gui_dismiss_cast_menu() {
+    unsafe { rock_gui_dismiss_cast_menu() };
+}
+
+pub(crate) fn gui_set_cast_devices(
+    items: &[crate::device_control::cast::ChromecastReceiverInfo],
+    active_receiver_id: Option<&str>,
+) {
+    let mut raw = [RockGuiCastItemRaw {
+        receiver_id: [0; 65],
+        display_name: [0; 129],
+        is_active: false,
+    }; 16];
+    let count = items.len().min(raw.len());
+    for i in 0..count {
+        let rec = &items[i];
+        copy_str_to_buf(&rec.receiver_id, &mut raw[i].receiver_id);
+        copy_str_to_buf(&rec.display_name, &mut raw[i].display_name);
+        raw[i].is_active = active_receiver_id == Some(rec.receiver_id.as_str());
+    }
+    unsafe { rock_gui_set_cast_devices(raw.as_ptr(), count) };
+}
+
+pub(crate) fn gui_update_cast_status(is_casting: bool, receiver_name: Option<&str>) {
+    let name_c = receiver_name.and_then(|n| cstring(n).ok());
+    unsafe {
+        rock_gui_update_cast_status(
+            is_casting,
+            name_c.as_ref().map(|s| s.as_ptr()).unwrap_or(core::ptr::null()),
+        )
+    };
+}
+
+pub(crate) fn source_start(upstream_uri: &str, bearer: &str) -> bool {
+    let uri_c = match cstring(upstream_uri) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let bearer_c = match cstring(bearer) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    unsafe { rock_source_start(uri_c.as_ptr(), bearer_c.as_ptr()) == 0 }
+}
+
+pub(crate) fn source_update_bearer(bearer: &str) -> bool {
+    match cstring(bearer) {
+        Ok(c) => unsafe { rock_source_update_bearer(c.as_ptr()) == 0 },
+        Err(_) => false,
+    }
+}
+
+pub(crate) fn source_stop() {
+    unsafe { rock_source_stop() };
+}
+
+pub(crate) fn source_is_active() -> bool {
+    unsafe { rock_source_is_active() }
+}
+
+pub(crate) fn source_content_type() -> String {
+    unsafe { CStr::from_ptr(rock_source_content_type()) }
+        .to_string_lossy()
+        .into_owned()
+}
+
+pub(crate) fn relay_listen() -> Option<String> {
+    let mut buf = [0 as c_char; 128];
+    let ret = unsafe { rock_relay_listen(buf.as_mut_ptr(), buf.len()) };
+    if ret == 0 {
+        Some(
+            unsafe { CStr::from_ptr(buf.as_ptr()) }
+                .to_string_lossy()
+                .into_owned(),
+        )
+    } else {
+        None
+    }
+}
+
+pub(crate) fn relay_stop() {
+    unsafe { rock_relay_stop() };
+}
+
+#[allow(dead_code)]
+pub(crate) fn relay_is_active() -> bool {
+    unsafe { rock_relay_is_active() }
 }
