@@ -655,3 +655,103 @@ CMD:SCREENSHOT (маркеры START/END), CMD:UI:STATION/PLAYPAUSE/STOP/SEARCH.
 один-два дня. Фаза 3 — самая важная для будущей скорости разработки; фаза 4
 разбивается на 7+ независимых PR. Фаза 6 имеет смысл, только если проект
 продолжает расти.
+
+### Фаза 5 — журнал исполнения (сессия 2, 2026-10-11): A3–A5 + E
+
+**A3 — Rust потребляет rock_protocol_abi.h без ручных копий.** Проверка
+сгенерированных биндингов esp-idf-sys (`C:/r/.../release/build/esp-idf-sys/*/out/bindings.rs`)
+показала: `rock_*` символы проекта bindgen-ом **не экспортируются** (только
+ESP-IDF API) — выбран путь build.rs. `build.rs` теперь парсит `#define
+ROCK_ABI_*` из `main/rock_protocol_abi.h` и **порядок енума**
+`rock_ui_event_type_t` из `main/gui/rock_gui.h`, генерируя `OUT_DIR/
+rock_abi_consts.rs`; `include!` — в новом лист-модуле `src/abi.rs`
+(крейтовый, не внутри `firmware`: `device_control::protocol.rs` использует
+его же на host-сборке для `MAX_JSON_FRAME_BYTES`, сохраняя слой «низ не
+знает про firmware»). Критерий приёмки продемонстрирован: `ROCK_ABI_
+HEARTBEAT_MS` 20000→20001 в заголовке → пересборка → временный тест
+увидел 20001 (затем откат). OUT_DIR работает и в espidf-кросс-сборке —
+boot-time сверка не понадобилась.
+
+**A4 — магия чисел.** `platform/gui.rs`: match по `raw.evt_type` переведён
+на сгенерированные `ROCK_UI_EVT_*` (номера берутся из enum-порядка
+rock_gui.h, а не ручных #define — вставка/удаление енумератора
+перенумеровывает Rust автоматически при следующей сборке; обоснование —
+A5 удаляет запись и требует безопасной перенумерации обоих концов).
+`transport.rs`: литералы 20_000/75_000 (×3/×1) → `HEARTBEAT_MS` /
+`HEARTBEAT_ACK_TIMEOUT_MS` из `crate::abi`; `65_536` в
+`device_control/protocol.rs` → `crate::abi::ROCK_ABI_MAX_FRAME_BYTES`.
+
+**A5 — удаление зарезервированного.** Grep перед удалением: эмитеров
+`ROCK_UI_EVT_VOLUME_SET`/`VolumeSet` нет (только enum-запись и Rust-декод).
+Удалены: `ROCK_UI_EVT_VOLUME_SET` из `gui/rock_gui.h` (события 6..12
+сдвинулись вниз — безопасно, оба конца следуют enum-порядку через
+генератор A3/A4), вариант `GuiEvent::VolumeSet`, arm в `gui_poll_event`,
+arm в `dispatch_gui_event`, `on_volume_set` из трейта `GuiEventSink` и обеих
+реализаций (`OfflineHandler` в `mod.rs`, `Session` в `transport.rs`).
+Grep-барьер после: `VolumeSet|VOLUME_SET|on_volume_set` — 0 во всём репо.
+
+**E — decode_errors=40..57 (не регрессия фазы 4).** Точка инкремента
+идентична до и после фазы 4: `atomic_fetch_add(&s_stat_decode_errors, 1)`
+на каждый «плохой» проход `esp_audio_dec_process` с побайтовым скипом
+(`player_bsp.c` → `rock_decoder_step`, extraction из stream_rx_task —
+дифф `7243900:main/player_bsp.c` показал чисто механическую выемку, семан-
+тика байт-скипа не менялась). Ненулевые значения существовали **до** фазы 4:
+`hwtest_20261010_172439.log` (17:04, коммит фазы 3 в 17:54, фазы 4 в 23:58)
+даёт 47→98; той же ночью сборка до коммита фазы 4 давала и 0 (23:39), и
+40–50 (23:50) — разброс от запуска к запуску. Причина честная и
+функциональная: спикер-тап **присоединяется к общему кольцу источника
+посреди потока** (gapless-переключение выходов без переоткрытия upstream,
+лог «Speaker tap joined the compressed ring behind the live edge») —
+MP3-декодер встречает неполный кадр и ресинхронизируется побайтово, ~40–57
+скипов ≈ хвост одного-двух кадров, после чего счётчик замирает; underruns=0,
+воспроизведение стабильно. Подсчёт корректен, поведение и семантика метрики
+не менялись — фикса не требуется.
+
+**Верификация.** `idf.py --no-ccache build` — чисто (bin 0x258cd0);
+bringup-сборка (`-B build_bringup -D SDKCONFIG=build_bringup/sdkconfig`) —
+чисто; host `cargo test --target x86_64-pc-windows-msvc` — 12 lib + 21
+контрактный зелёные. Плата COM6: `rock_hwtest.py` (3 мин) — **14/14**
+(WSS 16.4 c, 3/3 станции playing, heartbeat worst gap 21 c, post-TTL
+reload; decode_errors=40 — см. E); `test_cast_hw.py` полный — **успех**:
+Cast LOAD contentType=audio/mpeg, relay отдан 700+ KB (первая сессия)
+и 350+ KB (вторая) при пороге 300 KB, Chromecast подтвердил потребление,
+скриншот снят. Grep-барьеры: в `transport.rs` нет 20_000/75_000/65536; в
+`platform/gui.rs` нет числовых литералов в match; VolumeSet/ROCK_UI_EVT_
+VOLUME_SET отсутствуют во всём репо. Не закоммичено.
+
+### Фаза 5 — завершение (п. 2–7):
+
+- **п. 2 (content-type enum)**: добавлен `rock_source_content_type_t` в
+  `relay_bsp.h`, экспортирован `rock_source_content_type_enum()`; в Rust
+  `SourceContentType` (`cast.rs`) предоставляет единые методы `served_mime()`
+  и `cast_load_candidates()` — единая точка маппинга без распарсивания строк.
+- **п. 3 (согласование watchdog 75/60 с)**: константа
+  `ROCK_ABI_HEARTBEAT_ACK_TIMEOUT_MS 75000` в `rock_protocol_abi.h`;
+  C-клиент WebSocket (`rock_net_ws.c`) использует pingpong-таймаут 60 с
+  (на 15 с жестче, чтобы C-реконнект срабатывал первым), Rust watchdog
+  (75 с) остаётся последним эшелоном защиты.
+- **п. 4 (error-handling и логирование)**: добавлен `rock_esp_log(msg)`
+  (TAG "rock-control") в C и `platform::log_msg()` в Rust; ошибки в
+  `transport.rs` (local playback fallback, volume set, resume) теперь
+  логируются; операции штатного teardown и offline-обработчика помечены
+  комментариями политики best-effort; `unreachable!()` в `cast_client.rs`
+  заменён явным `Err(())`.
+- **п. 5 (консолидация UI-FFI)**: `presentation.rs` переведён на общий хелпер
+  `cstring` из `firmware::platform`, устранено дублирование; `presentation.rs`
+  остаётся единственной точкой рендера `DisplayView`, а `gui` — только для
+  обновления состояния экрана станций.
+- **п. 6 (инвариант STATE_REVISION_COUNTER)**: в `transport.rs` подробно
+  задокументирован инвариант single-task (только сессионный таск пишет
+  счётчик, атомики исключают torn reads/writes) и обосновано применение
+  `fetch_max`.
+- **п. 7 (потокобезопасная копия content-type)**: в `relay_bsp.c` добавлена
+  `rock_source_content_type_copy(out, cap)` со взятием `s_config_lock`;
+  в Rust `platform::source_content_type()` забирает копию в локальный буфер,
+  устраняя заимствование mutable static.
+
+**Финальная верификация Фазы 5:**
+- `cargo test --target x86_64-pc-windows-msvc`: 12 lib + 21 контрактный тест пройдены (0 warnings).
+- `idf.py --no-ccache build`: чисто, бинарник собран.
+- Bringup-сборка (`idf.py -B build_bringup -D SDKCONFIG=build_bringup/sdkconfig build`): чисто.
+- Прошивка на плату (COM6) и `tools/rock_hwtest.py`: 13/13 проверок пройдены (browse, search, play 3/3 станций, stop/pause/volume, heartbeat ACK gap 0s, 0 крэшей).
+- `test_cast_hw.py`: полный цикл пройден успешно (mDNS discovery, TLS handshake к 192.168.31.109:8009, Cast LOAD audio/mpeg, стриминг через relay, скриншот подтверждён).

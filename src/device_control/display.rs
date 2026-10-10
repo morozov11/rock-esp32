@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use super::bounded;
 use super::protocol::{Envelope, DISPLAY_SURFACE_ID};
 
 pub const DISPLAY_MAX_ITEMS: usize = 8;
@@ -32,11 +33,6 @@ impl DisplayView {
 pub struct DisplayCommand {
     pub command_id: String,
     pub view: DisplayView,
-}
-
-fn bounded(value: &str, min: usize, max: usize) -> bool {
-    let n = value.chars().count();
-    (min..=max).contains(&n)
 }
 
 fn string_field<'a>(

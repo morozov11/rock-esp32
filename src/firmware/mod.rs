@@ -2,7 +2,9 @@
 
 mod cast_client;
 mod pairing;
-mod platform;
+/// pub(crate): presentation.rs reuses the single `cstring` helper instead of
+/// keeping its own CString conversion copy (phase 5).
+pub(crate) mod platform;
 mod transport;
 
 /// Link indicator policy (phase 4, moved out of the FFI layer): "Wi-Fi up"
@@ -22,7 +24,6 @@ pub(crate) trait GuiEventSink {
     fn on_playback_play(&mut self);
     fn on_playback_pause(&mut self);
     fn on_playback_stop(&mut self);
-    fn on_volume_set(&mut self, volume: u8);
     fn on_volume_change(&mut self, delta: i16);
     fn on_catalog_browse(&mut self);
     fn on_catalog_search(&mut self, query: String);
@@ -38,7 +39,6 @@ pub(crate) trait GuiEventSink {
             GuiEvent::PlaybackPlay => self.on_playback_play(),
             GuiEvent::PlaybackPause => self.on_playback_pause(),
             GuiEvent::PlaybackStop => self.on_playback_stop(),
-            GuiEvent::VolumeSet(volume) => self.on_volume_set(volume),
             GuiEvent::VolumeChange(delta) => self.on_volume_change(delta),
             GuiEvent::CatalogBrowse => self.on_catalog_browse(),
             GuiEvent::CatalogSearch(query) => self.on_catalog_search(query),
@@ -53,6 +53,12 @@ pub(crate) trait GuiEventSink {
 /// Offline backoff policy: transport controls act on the local player,
 /// anything needing the server shows the offline overlay, Retry aborts the
 /// backoff so the session retries immediately.
+///
+/// Swallowed-error policy (phase 5): every `let _ =` below is deliberately
+/// best-effort. There is no session to report to, the GUI shows the offline
+/// overlay already, and the online session re-syncs real hardware state via
+/// refresh_player once the connection is back — so logging these offline
+/// failures would only add noise.
 struct OfflineHandler {
     exit_backoff: bool,
 }
@@ -69,9 +75,6 @@ impl GuiEventSink for OfflineHandler {
     }
     fn on_playback_stop(&mut self) {
         let _ = platform::player_stop();
-    }
-    fn on_volume_set(&mut self, volume: u8) {
-        let _ = platform::player_set_volume(volume);
     }
     fn on_volume_change(&mut self, delta: i16) {
         let vol = platform::player_get_full_state().map(|s| s.2).unwrap_or(70);
@@ -99,6 +102,10 @@ pub extern "C" fn rust_main() -> ! {
     esp_idf_sys::restore_posix_stdio_fds();
 
     // Start Native Station GUI on boot
+    // Boot-path best-effort (phase 5 swallowed-error policy): a failed GUI
+    // start is retried by the session (Session::new calls gui_start again),
+    // and a failed platform init surfaces immediately after as a missing
+    // Wi-Fi/server connection in the same loop.
     let _ = platform::gui_start();
     update_link_indicator(false);
     let initial_volume = platform::player_get_full_state()
@@ -115,6 +122,8 @@ pub extern "C" fn rust_main() -> ! {
         if platform::wifi_ready() && !platform::server_base_url().is_empty() {
             if let Ok(credentials) = pairing::credentials() {
                 failures = 0;
+                // A dropped session is the normal reconnect cycle here, not a
+                // swallowed failure: the loop backs off and retries below.
                 let _ = transport::run(&credentials.access_token);
             } else {
                 failures = failures.saturating_add(1).min(5);

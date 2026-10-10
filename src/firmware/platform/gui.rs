@@ -13,7 +13,6 @@ pub(crate) enum GuiEvent {
     PlaybackPlay,
     PlaybackPause,
     PlaybackStop,
-    VolumeSet(u8),
     VolumeChange(i16),
     CatalogBrowse,
     CatalogSearch(String),
@@ -33,19 +32,20 @@ pub(crate) fn gui_poll_event(timeout_ms: u32) -> Option<GuiEvent> {
         let text = unsafe { CStr::from_ptr(raw.text.as_ptr()) }
             .to_string_lossy()
             .into_owned();
-        match raw.evt_type {
-            1 => Some(GuiEvent::PlayStation(text)),
-            2 => Some(GuiEvent::PlaybackPlay),
-            3 => Some(GuiEvent::PlaybackPause),
-            4 => Some(GuiEvent::PlaybackStop),
-            5 => Some(GuiEvent::VolumeSet(raw.value as u8)),
-            6 => Some(GuiEvent::VolumeChange(raw.value)),
-            7 => Some(GuiEvent::CatalogBrowse),
-            8 => Some(GuiEvent::CatalogSearch(text)),
-            9 => Some(GuiEvent::Retry),
-            10 => Some(GuiEvent::CastBrowse),
-            11 => Some(GuiEvent::CastSelect(text)),
-            12 => Some(GuiEvent::CastDisconnect),
+        // Event numbers are the generated mirror of rock_ui_event_type_t in
+        // main/gui/rock_gui.h (phase 5 A4) — no hand-copied literals.
+        match raw.evt_type as u64 {
+            crate::abi::ROCK_UI_EVT_PLAY_STATION => Some(GuiEvent::PlayStation(text)),
+            crate::abi::ROCK_UI_EVT_PLAYBACK_PLAY => Some(GuiEvent::PlaybackPlay),
+            crate::abi::ROCK_UI_EVT_PLAYBACK_PAUSE => Some(GuiEvent::PlaybackPause),
+            crate::abi::ROCK_UI_EVT_PLAYBACK_STOP => Some(GuiEvent::PlaybackStop),
+            crate::abi::ROCK_UI_EVT_VOLUME_CHANGE => Some(GuiEvent::VolumeChange(raw.value)),
+            crate::abi::ROCK_UI_EVT_CATALOG_BROWSE => Some(GuiEvent::CatalogBrowse),
+            crate::abi::ROCK_UI_EVT_CATALOG_SEARCH => Some(GuiEvent::CatalogSearch(text)),
+            crate::abi::ROCK_UI_EVT_RETRY => Some(GuiEvent::Retry),
+            crate::abi::ROCK_UI_EVT_CAST_BROWSE => Some(GuiEvent::CastBrowse),
+            crate::abi::ROCK_UI_EVT_CAST_SELECT => Some(GuiEvent::CastSelect(text)),
+            crate::abi::ROCK_UI_EVT_CAST_DISCONNECT => Some(GuiEvent::CastDisconnect),
             _ => None,
         }
     } else {

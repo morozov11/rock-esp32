@@ -21,7 +21,8 @@ pub(crate) use gui::{
     gui_update_connectivity, gui_update_playback, GuiEvent,
 };
 pub(crate) use http::{
-    get, post, ws_log_heartbeat_timeout, ws_log_rx_frame, ws_receive, ws_send, ws_start, ws_stop,
+    get, log_msg, post, ws_log_heartbeat_timeout, ws_log_rx_frame, ws_receive, ws_send, ws_start,
+    ws_stop,
 };
 pub(crate) use tls::CastTlsStream;
 
@@ -51,9 +52,6 @@ pub(crate) fn init() -> bool {
 }
 pub(crate) fn delay(ms: u32) {
     unsafe { rock_delay_ms(ms) }
-}
-pub(crate) fn recover() {
-    unsafe { rock_hosted_recover() }
 }
 
 pub(crate) fn random_fill(out: &mut [u8]) {
@@ -241,8 +239,26 @@ pub(crate) fn source_is_active() -> bool {
     unsafe { rock_source_is_active() }
 }
 
+/// Content-type enum straight from the C source domain (single source of
+/// truth; unknown values degrade to Unknown instead of guessing).
+pub(crate) fn source_content_type_enum() -> crate::device_control::SourceContentType {
+    match unsafe { rock_source_content_type_enum() } {
+        1 => crate::device_control::SourceContentType::Mpeg,
+        2 => crate::device_control::SourceContentType::Wav,
+        3 => crate::device_control::SourceContentType::Aac,
+        _ => crate::device_control::SourceContentType::Unknown,
+    }
+}
+
+#[allow(dead_code)]
 pub(crate) fn source_content_type() -> String {
-    unsafe { CStr::from_ptr(rock_source_content_type()) }
+    // Locked copy out of the C source domain: never borrows the mutable
+    // static behind the pointer-version accessor.
+    let mut buf = [0 as core::ffi::c_char; 128];
+    if unsafe { rock_source_content_type_copy(buf.as_mut_ptr(), buf.len()) } < 0 {
+        return String::new();
+    }
+    unsafe { CStr::from_ptr(buf.as_ptr()) }
         .to_string_lossy()
         .into_owned()
 }

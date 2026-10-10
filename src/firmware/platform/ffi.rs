@@ -62,10 +62,12 @@ unsafe extern "C" {
     pub(crate) fn rock_ws_receive(data: *mut c_char, cap: usize, timeout_ms: u32) -> c_int;
     pub(crate) fn rock_ws_log_heartbeat_timeout(age_ms: u64);
     pub(crate) fn rock_ws_log_rx_frame(kind: *const c_char);
+    pub(crate) fn rock_esp_log(msg: *const c_char);
     pub(crate) fn rock_now_rfc3339(out: *mut c_char, cap: usize) -> c_int;
     pub(crate) fn rock_random_fill(out: *mut u8, len: usize);
     pub(crate) fn rock_server_base_url() -> *const c_char;
-    pub(crate) fn rock_hosted_recover();
+    // rock_hosted_recover is deliberately NOT bound: the only caller is the
+    // C Wi-Fi event handler (rock_wifi_sta.c); the Rust wrapper was dead.
     pub(crate) fn rock_ui_pairing_show(
         short_code: *const c_char,
         phrase: *const c_char,
@@ -116,7 +118,10 @@ unsafe extern "C" {
     pub(crate) fn rock_source_update_bearer(bearer: *const c_char) -> c_int;
     pub(crate) fn rock_source_stop();
     pub(crate) fn rock_source_is_active() -> bool;
-    pub(crate) fn rock_source_content_type() -> *const c_char;
+    // Pointer version deliberately NOT bound from Rust (mutable static):
+    // C keeps it for its own serve loop; Rust uses the enum + locked copy.
+    pub(crate) fn rock_source_content_type_enum() -> c_int;
+    pub(crate) fn rock_source_content_type_copy(out: *mut c_char, cap: usize) -> c_int;
     pub(crate) fn rock_relay_listen(out_url: *mut c_char, out_cap: usize) -> c_int;
     pub(crate) fn rock_relay_stop();
     #[allow(dead_code)]

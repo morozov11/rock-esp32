@@ -105,3 +105,12 @@ pub(crate) fn ws_log_rx_frame(kind: &str) {
         unsafe { rock_ws_log_rx_frame(kind.as_ptr()) }
     }
 }
+
+/// Session-domain log line (TAG rock-control) for errors the session
+/// deliberately swallows instead of propagating. Same contract as the
+/// ws_log_* helpers: text only, never secrets or frame content.
+pub(crate) fn log_msg(msg: &str) {
+    if let Ok(msg) = cstring(msg) {
+        unsafe { rock_esp_log(msg.as_ptr()) }
+    }
+}

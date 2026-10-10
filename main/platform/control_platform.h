@@ -38,6 +38,10 @@ void rock_ws_log_heartbeat_timeout(uint64_t age_ms);
 /** Log a received frame's protocol kind (string like "device.command") from
  *  the Rust session loop. Kind only — never frame content. */
 void rock_ws_log_rx_frame(const char *kind);
+/** Generic session-domain log line from Rust (same pattern as the
+ *  rock_ws_log_* helpers above): observability for errors the session
+ *  deliberately swallows. Never pass secrets or frame content. */
+void rock_esp_log(const char *msg);
 int rock_now_rfc3339(char *out, size_t cap);
 void rock_random_fill(uint8_t *out, size_t len);
 const char *rock_server_base_url(void);

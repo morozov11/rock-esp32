@@ -65,7 +65,9 @@ impl CastClient {
             && matches!(&msg.payload, Payload::String(s) if s.contains("PING"))
     }
 
-    /// PONG back to the ping's source.
+    /// PONG back to the ping's source. Best-effort by design (phase 5
+    /// swallowed-error policy): a lost PONG surfaces later as a pump error,
+    /// which the session handles through the reconnect path.
     fn send_pong(stream: &mut CastTlsStream, msg: &CastMessage) {
         let _ = Self::send_msg(stream, &msg_pong_to(&msg.source_id));
     }
@@ -239,16 +241,11 @@ impl CastClient {
         &mut self,
         stream_url: &str,
         title: &str,
-        preferred_content_type: &str,
+        content: SourceContentType,
     ) -> Result<(), ()> {
         // rockcast parity (candidate_content_types): try the transport the
         // relay actually serves first, then the fallback ladder.
-        let mut candidates: Vec<&str> = vec![preferred_content_type];
-        for ct in CAST_LOAD_CONTENT_TYPES {
-            if !candidates.contains(&ct) {
-                candidates.push(ct);
-            }
-        }
+        let candidates = content.cast_load_candidates();
         let last = candidates[candidates.len() - 1];
         for content_type in candidates {
             match self.load_stream_attempt(stream_url, title, content_type) {
@@ -303,6 +300,7 @@ impl CastClient {
             if let Some(msg) = Self::read_msg(stream, &mut self.inbox, 1000)? {
                 // PONG addressed to the receiver (original behaviour of this
                 // loop, unlike the source-addressed pong elsewhere).
+                // Best-effort, see send_pong.
                 if Self::is_ping(&msg) {
                     let _ = Self::send_msg(stream, &msg_pong());
                     continue;
@@ -360,6 +358,8 @@ impl CastClient {
                             "Cast silent after LOAD; sending PLAY nudge req={} mid={}",
                             nudge_req, mid
                         ));
+                        // The nudge itself is best-effort: its outcome is
+                        // observed through the LOAD status loop below.
                         let nudge = msg_play(nudge_req, &transport_id, mid);
                         let _ = Self::send_msg(stream, &nudge);
                     }
@@ -379,6 +379,11 @@ impl CastClient {
         }
     }
 
+    /// Teardown cluster (phase 5 swallowed-error policy): stop_media/stop/
+    /// disconnect send their CLOSE/STOP frames best-effort — the socket is
+    /// about to be dropped anyway, and a receiver that misses them is
+    /// recovered by the next connect()'s DMR-reuse probe. No logging: the
+    /// ensuing state is "no cast session", which the UI already reflects.
     pub(crate) fn stop_media(&mut self) -> Result<(), ()> {
         let req = self.next_req();
         if let (Some(transport_id), Some(mid)) = (&self.transport_id, self.media_session_id) {
@@ -392,6 +397,7 @@ impl CastClient {
     }
 
     pub(crate) fn stop(&mut self) -> Result<(), ()> {
+        // Teardown cluster: best-effort sends, see stop_media's doc comment.
         let _ = self.stop_media();
         let req = self.next_req();
         let stop_receiver_msg = self.session_id.as_ref().map(|s| msg_stop_receiver(req, s));
@@ -422,6 +428,7 @@ impl CastClient {
     }
 
     pub(crate) fn disconnect(&mut self) {
+        // Teardown cluster: best-effort sends, see stop_media's doc comment.
         let _ = self.stop();
         self.stream = None;
         self.transport_id = None;
@@ -444,7 +451,10 @@ impl CastClient {
             return Ok(());
         };
 
-        // Send heartbeat ping every 5 seconds to receiver and active transport
+        // Send heartbeat ping every 5 seconds to receiver and active
+        // transport. Best-effort (phase 5 policy): a dead link is detected
+        // by the pump's read error, which triggers reconnect — a lost ping
+        // changes nothing about that outcome.
         if platform::uptime_ms() - self.last_ping >= CAST_HEARTBEAT_INTERVAL_MS {
             self.last_ping = platform::uptime_ms();
             let _ = Self::send_msg(stream, &msg_ping());

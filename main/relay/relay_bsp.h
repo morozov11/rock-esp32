@@ -79,6 +79,30 @@ bool rock_source_is_pcm(void);
 const char *rock_source_content_type(void);
 
 /**
+ * Same content type as a stable enum (phase 5): the string above feeds HTTP
+ * headers and logs; the enum is the cross-language single source that the
+ * Rust Cast LOAD logic maps to a MIME type. MPEG = passthrough ring; WAV is
+ * also what the relay serves for AAC/unknown upstreams (transcode mode).
+ */
+typedef enum rock_source_content_type_t {
+    ROCK_SOURCE_CT_UNKNOWN = 0,
+    ROCK_SOURCE_CT_MPEG,
+    ROCK_SOURCE_CT_WAV,
+    ROCK_SOURCE_CT_AAC,
+} rock_source_content_type_t;
+
+rock_source_content_type_t rock_source_content_type_enum(void);
+
+/**
+ * Thread-safe copy of the content-type string for FFI callers: snapshots
+ * under the source config lock into the caller's buffer, so Rust never
+ * borrows the mutable static behind rock_source_content_type().
+ *
+ * @return string length written, or -1 on a buffer/format error.
+ */
+int rock_source_content_type_copy(char *out, size_t cap);
+
+/**
  * Speaker consumer tap: read the next chunk at the live edge.
  * Joins the stream behind the live edge on the first call; clamps forward
  * if the reader falls behind the ring start.
@@ -105,12 +129,14 @@ esp_err_t rock_relay_listen(char *out_relay_url, size_t out_len);
  * Stop everything: source + Cast listeners.
  * \deprecated Alias of rock_source_stop(); removal in phase 6.
  */
+__attribute__((deprecated("alias of rock_source_stop(); removal in phase 6")))
 void rock_relay_stop(void);
 
 /**
  * Returns true while the source feeder is running.
  * \deprecated Alias of rock_source_is_active(); removal in phase 6.
  */
+__attribute__((deprecated("alias of rock_source_is_active(); removal in phase 6")))
 bool rock_relay_is_active(void);
 
 #ifdef __cplusplus

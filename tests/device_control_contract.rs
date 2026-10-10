@@ -847,15 +847,25 @@ fn re17_protocol_message_constructors_and_responses() {
         _ => false,
     });
 
-    // rockcast parity: LOAD retries walk the content-type candidate list.
-    assert_eq!(CAST_LOAD_CONTENT_TYPES, ["audio/wav", "audio/mpeg"]);
+    // rockcast parity: LOAD retries walk the content-type candidate list,
+    // derived from the shared source-content-type enum (one mapping point).
+    assert_eq!(
+        SourceContentType::Wav.cast_load_candidates(),
+        ["audio/wav", "audio/mpeg"]
+    );
+    assert_eq!(
+        SourceContentType::Mpeg.cast_load_candidates(),
+        ["audio/mpeg", "audio/wav"]
+    );
+    assert_eq!(SourceContentType::Mpeg.served_mime(), "audio/mpeg");
+    assert_eq!(SourceContentType::Aac.served_mime(), "audio/wav");
     let load_mpeg = msg_load_stream(
         4,
         "transport-1",
         "session-1",
         "http://example.com/live.mp3",
         "Rock FM",
-        CAST_LOAD_CONTENT_TYPES[1],
+        SourceContentType::Wav.cast_load_candidates()[1],
     );
     assert!(match &load_mpeg.payload {
         cast_proto::Payload::String(s) => s.contains("\"contentType\":\"audio/mpeg\""),

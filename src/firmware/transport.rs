@@ -17,6 +17,10 @@ use crate::presentation::ui_strings as tr;
 use core::ffi::c_char;
 use serde_json::Value;
 
+// Single source (phase 5 A3): generated from main/rock_protocol_abi.h.
+const HEARTBEAT_MS: u64 = crate::abi::ROCK_ABI_HEARTBEAT_MS;
+const HEARTBEAT_ACK_TIMEOUT_MS: u64 = crate::abi::ROCK_ABI_HEARTBEAT_ACK_TIMEOUT_MS;
+
 const FRAME_CAPACITY: usize = device_control::MAX_JSON_FRAME_BYTES + 1;
 
 pub(crate) fn run(token: &str) -> Result<(), ()> {
@@ -49,13 +53,26 @@ fn message_id() -> String {
     )
 }
 
+// State revision counter for the device.state-full protocol contract.
+//
+// Invariant: single Rust task. Only the session task (and its synchronous
+// GuiEvent handlers, which run inside the same task's drain_gui_events)
+// ever writes this counter; the offline loop between sessions only reads
+// freshly-reset state. There is no second concurrent writer, so the two
+// atomic ops below cannot interleave — they exist to keep every step of
+// the read-modify-write atomic (no torn load+store window if a reader is
+// ever added) rather than to synchronize two writers.
 static STATE_REVISION_COUNTER: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 fn next_state_revision(display: &DisplayState, player: &PlayerState) -> u64 {
     let base = (display.revision() + player.revision() - 1) as u32;
-    let prev = STATE_REVISION_COUNTER.load(core::sync::atomic::Ordering::Relaxed);
+    // fetch_max (not fetch_add): the revision must stay >= base after a
+    // display/player revision jump forward, while remaining strictly greater
+    // than any previously published value — fetch_add alone could re-issue
+    // an already published revision while the counter lags behind base.
+    let prev = STATE_REVISION_COUNTER.fetch_max(base, core::sync::atomic::Ordering::Relaxed);
     let rev = if prev == 0 { base } else { base.max(prev + 1) };
-    STATE_REVISION_COUNTER.store(rev, core::sync::atomic::Ordering::Relaxed);
+    STATE_REVISION_COUNTER.fetch_max(rev, core::sync::atomic::Ordering::Relaxed);
     rev as u64
 }
 
@@ -198,7 +215,11 @@ fn ensure_source(
     source: &mut SourceState,
 ) -> Result<(), ()> {
     if source.station.as_deref() == Some(station_id) && platform::source_is_active() {
-        let _ = platform::source_update_bearer(token);
+        // Swallowed-error policy (phase 5): a failed bearer refresh would
+        // leave reconnects on the stale token — log it, keep the session.
+        if !platform::source_update_bearer(token) {
+            platform::log_msg("Source bearer refresh failed on active source");
+        }
         return Ok(());
     }
     platform::source_stop();
@@ -229,12 +250,15 @@ fn cast_play_stream(
     token: &mut String,
     source: &mut SourceState,
 ) -> Result<(), ()> {
-    // Detach the speaker tap only: the shared source keeps running.
-    let _ = platform::player_stop();
+    // Detach the speaker tap only: the shared source keeps running. A failed
+    // detach would leave local audio playing over the Cast handoff — log it.
+    if platform::player_stop().is_err() {
+        platform::log_msg("Speaker detach failed before Cast playback");
+    }
     ensure_source(station_id, token, source)?;
     let relay_url = platform::relay_listen().ok_or(())?;
-    let content_type = platform::source_content_type();
-    let res = cast_client.load_stream(&relay_url, station_id, &content_type);
+    let content_type = platform::source_content_type_enum();
+    let res = cast_client.load_stream(&relay_url, station_id, content_type);
     if res.is_err() {
         return Err(());
     }
@@ -330,7 +354,7 @@ impl Session {
             pending: None,
             retry: None,
             network_check: 0,
-            next_heartbeat: platform::uptime_ms() + 20_000,
+            next_heartbeat: platform::uptime_ms() + HEARTBEAT_MS,
             next_token_refresh: platform::uptime_ms() + 10 * 60_000,
             last_heartbeat_ack: platform::uptime_ms(),
             heartbeat_sequence: 0,
@@ -371,7 +395,11 @@ impl Session {
             if let Ok(fresh) = super::pairing::fresh_access_token() {
                 // The long-lived stream source reconnects with the stored
                 // bearer; refresh it whenever the session token rotates.
-                let _ = platform::source_update_bearer(&fresh);
+                // A silent failure here desyncs the source token from the
+                // session token until the next rotation — log it.
+                if !platform::source_update_bearer(&fresh) {
+                    platform::log_msg("Source bearer refresh failed on token rotation");
+                }
                 self.token = fresh;
                 self.next_token_refresh = platform::uptime_ms() + 10 * 60_000;
             } else {
@@ -382,7 +410,7 @@ impl Session {
 
     fn check_heartbeat_watchdog(&self) -> Result<(), ()> {
         let ack_age = platform::uptime_ms().saturating_sub(self.last_heartbeat_ack);
-        if ack_age > 75_000 {
+        if ack_age > HEARTBEAT_ACK_TIMEOUT_MS {
             platform::ws_log_heartbeat_timeout(ack_age);
             return Err(());
         }
@@ -397,7 +425,7 @@ impl Session {
                 self.heartbeat_sequence,
             ))?;
             self.heartbeat_sequence = self.heartbeat_sequence.wrapping_add(1);
-            self.next_heartbeat = platform::uptime_ms() + 20_000;
+            self.next_heartbeat = platform::uptime_ms() + HEARTBEAT_MS;
         }
         Ok(())
     }
@@ -440,7 +468,9 @@ impl Session {
                 // Deterministic fallback: the shared source keeps running,
                 // the speaker re-joins the ring without an upstream reconnect.
                 if let Some((st_id, _)) = &self.last_stream {
-                    let _ = play_local_station(st_id, &mut self.token, &mut self.source);
+                    if play_local_station(st_id, &mut self.token, &mut self.source).is_err() {
+                        platform::log_msg("Local playback fallback failed after cast link lost");
+                    }
                 }
             }
             self.publish_state()?;
@@ -610,6 +640,8 @@ impl Session {
             } => {
                 self.last_stream = Some((station_id.clone(), stream_uri));
                 if self.cast_client.is_connected() {
+                    // Best-effort detach: cast_play_stream detaches again and
+                    // logs a failure there.
                     let _ = platform::player_stop();
                     let res = cast_play_stream(
                         &mut self.cast_client,
@@ -646,25 +678,33 @@ impl Session {
                     match action {
                         PlaybackAction::Play => {
                             if let Some((st_id, _)) = &self.last_stream {
-                                let _ = cast_play_stream(
+                                if cast_play_stream(
                                     &mut self.cast_client,
                                     st_id,
                                     &mut self.token,
                                     &mut self.source,
-                                );
+                                )
+                                .is_err()
+                                {
+                                    platform::log_msg("Cast resume failed; playback stays paused");
+                                }
                             }
                             self.player.set_playing();
                             update_gui(&self.player);
                             Ok(())
                         }
                         PlaybackAction::Pause => {
-                            let _ = self.cast_client.stop_media();
+                            if self.cast_client.stop_media().is_err() {
+                                platform::log_msg("Cast media stop failed on pause");
+                            }
                             self.player.set_paused();
                             update_gui(&self.player);
                             Ok(())
                         }
                         PlaybackAction::Stop => {
-                            let _ = self.cast_client.stop_media();
+                            if self.cast_client.stop_media().is_err() {
+                                platform::log_msg("Cast media stop failed on stop");
+                            }
                             self.player.set_stopped();
                             update_gui(&self.player);
                             // Full stop tears the shared source down with it.
@@ -688,10 +728,15 @@ impl Session {
             }
             PlayerCommand::Volume { action, .. } => match action {
                 VolumeAction::SetLevel(level) => {
+                    // Cast volume is a best-effort mirror: the local player is
+                    // the authority and is re-synced by refresh_player ticks.
                     if self.cast_client.is_connected() {
                         let _ = self.cast_client.set_volume(level);
                     }
-                    platform::player_set_volume(level)
+                    if platform::player_set_volume(level).is_err() {
+                        platform::log_msg("Player volume set failed");
+                    }
+                    Ok(())
                 }
                 VolumeAction::Change(delta) => {
                     let new_vol =
@@ -699,7 +744,10 @@ impl Session {
                     if self.cast_client.is_connected() {
                         let _ = self.cast_client.set_volume(new_vol);
                     }
-                    platform::player_set_volume(new_vol)
+                    if platform::player_set_volume(new_vol).is_err() {
+                        platform::log_msg("Player volume set failed");
+                    }
+                    Ok(())
                 }
                 VolumeAction::SetMute(muted) => platform::player_set_mute(muted),
             },
@@ -746,31 +794,38 @@ impl GuiEventSink for Session {
                 {
                     self.player.set_playing();
                     update_gui(&self.player);
+                } else {
+                    platform::log_msg("Cast resume failed; playback stays paused");
                 }
             }
-        } else {
-            let _ = platform::player_play();
+        } else if platform::player_play().is_err() {
+            platform::log_msg("Player resume failed");
         }
     }
 
     fn on_playback_pause(&mut self) {
         if self.cast_client.is_connected() {
+            // Cast teardown on pause is best-effort: a stuck receiver is
+            // caught by the pump/reconnect path, not by this send.
             let _ = self.cast_client.stop();
             self.player.set_paused();
             update_gui(&self.player);
-        } else {
-            let _ = platform::player_pause();
+        } else if platform::player_pause().is_err() {
+            platform::log_msg("Player pause failed");
         }
     }
 
     fn on_playback_stop(&mut self) {
         self.pending = None;
         if self.cast_client.is_connected() {
+            // Best-effort teardown (see on_playback_pause).
             let _ = self.cast_client.stop();
             self.player.set_stopped();
             update_gui(&self.player);
         }
-        let _ = platform::player_stop();
+        if platform::player_stop().is_err() {
+            platform::log_msg("Player stop failed");
+        }
         // Full stop tears the shared source down with it.
         platform::source_stop();
         self.source.station = None;
@@ -778,17 +833,13 @@ impl GuiEventSink for Session {
 
     fn on_volume_change(&mut self, delta: i16) {
         let volume = (self.player.volume_level() as i32 + delta as i32).clamp(0, 100) as u8;
+        // Cast volume is a best-effort mirror of the local volume state.
         if self.cast_client.is_connected() {
             let _ = self.cast_client.set_volume(volume);
         }
-        let _ = platform::player_set_volume(volume);
-    }
-
-    fn on_volume_set(&mut self, volume: u8) {
-        if self.cast_client.is_connected() {
-            let _ = self.cast_client.set_volume(volume);
+        if platform::player_set_volume(volume).is_err() {
+            platform::log_msg("Player volume set failed");
         }
-        let _ = platform::player_set_volume(volume);
     }
 
     fn on_catalog_browse(&mut self) {
@@ -844,7 +895,7 @@ impl GuiEventSink for Session {
                         self.heartbeat_sequence,
                     ));
                     self.heartbeat_sequence = self.heartbeat_sequence.wrapping_add(1);
-                    self.next_heartbeat = platform::uptime_ms() + 20_000;
+                    self.next_heartbeat = platform::uptime_ms() + HEARTBEAT_MS;
                     if cast_play_stream(
                         &mut self.cast_client,
                         st_id,
@@ -865,7 +916,9 @@ impl GuiEventSink for Session {
                 platform::gui_dismiss_cast_menu();
                 platform::gui_show_error(tr::CAST_CONNECT_FAILED);
                 if let Some((st_id, _)) = &self.last_stream {
-                    let _ = play_local_station(st_id, &mut self.token, &mut self.source);
+                    if play_local_station(st_id, &mut self.token, &mut self.source).is_err() {
+                        platform::log_msg("Local playback fallback failed after cast connect failed");
+                    }
                 }
             }
         }
@@ -882,7 +935,9 @@ impl GuiEventSink for Session {
         // The shared source keeps running: the speaker re-joins the same
         // ring, no upstream reconnect, no gap.
         if let Some((st_id, _)) = &self.last_stream {
-            let _ = play_local_station(st_id, &mut self.token, &mut self.source);
+            if play_local_station(st_id, &mut self.token, &mut self.source).is_err() {
+                platform::log_msg("Local playback fallback failed after cast disconnect");
+            }
         }
         if self.publish_state().is_err() {
             self.fatal = true;

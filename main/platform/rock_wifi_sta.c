@@ -289,7 +289,7 @@ int rock_wifi_rssi(void)
     // When audio relay is active, NEVER query AP info over SDIO RPC.
     // The concurrent upstream/downstream audio saturates the ESP32-C6 coprocessor,
     // causing 5000 ms RPC timeouts that freeze the main loop and drop the WSS session.
-    if (rock_relay_is_active()) {
+    if (rock_source_is_active()) {
         return atomic_load(&s_last_wifi_rssi);
     }
     uint64_t now = rock_uptime_ms();

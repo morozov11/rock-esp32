@@ -2,7 +2,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 pub const PROTOCOL_VERSION: u8 = 1;
-pub const MAX_JSON_FRAME_BYTES: usize = 65_536;
+/// Mirrors ROCK_ABI_MAX_FRAME_BYTES in main/rock_protocol_abi.h (phase 5 A3).
+pub const MAX_JSON_FRAME_BYTES: usize = crate::abi::ROCK_ABI_MAX_FRAME_BYTES as usize;
 pub const MAX_PAYLOAD_BYTES: usize = 61_440;
 pub const DISPLAY_SURFACE_ID: &str = "display.main";
 

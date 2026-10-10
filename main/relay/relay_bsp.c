@@ -73,6 +73,9 @@ static atomic_uint s_upstream_reconnects = 0;
 // exposes the same RelayTransport::Passthrough path.
 static bool s_passthrough = false;
 static char s_content_type[RELAY_CONTENT_TYPE_MAX] = "audio/mpeg";
+// Enum twin of s_content_type (phase 5): set by the same normalization below,
+// read cross-language without string parsing.
+static rock_source_content_type_t s_content_enum = ROCK_SOURCE_CT_MPEG;
 
 typedef struct {
     uint32_t source_rate;
@@ -905,8 +908,18 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
             if (!ct[0] || strcasecmp(ct, "application/octet-stream") == 0) {
                 snprintf(s_content_type, sizeof(s_content_type), "audio/mpeg");
             }
+            s_content_enum = ROCK_SOURCE_CT_MPEG;
         } else {
             snprintf(s_content_type, sizeof(s_content_type), "audio/wav");
+            // Transcode mode always serves WAV; keep the upstream family in
+            // the enum for logs/diagnostics.
+            if (strcasestr(ct, "wav")) {
+                s_content_enum = ROCK_SOURCE_CT_WAV;
+            } else if (strcasestr(ct, "aac")) {
+                s_content_enum = ROCK_SOURCE_CT_AAC;
+            } else {
+                s_content_enum = ROCK_SOURCE_CT_UNKNOWN;
+            }
         }
     }
     ESP_LOGI(TAG, "Source transport: %s (%s)", s_passthrough ? "passthrough" : "wav-pcm",
@@ -997,6 +1010,28 @@ bool rock_source_is_pcm(void)
 const char *rock_source_content_type(void)
 {
     return s_content_type;
+}
+
+rock_source_content_type_t rock_source_content_type_enum(void)
+{
+    return s_content_enum;
+}
+
+int rock_source_content_type_copy(char *out, size_t cap)
+{
+    if (!out || cap == 0) {
+        return -1;
+    }
+    // Snapshot under the config lock: the Rust session task may call this
+    // while a new source session is rewriting the string.
+    if (s_config_lock) {
+        xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    }
+    int n = snprintf(out, cap, "%s", s_content_type);
+    if (s_config_lock) {
+        xSemaphoreGive(s_config_lock);
+    }
+    return (n >= 0 && (size_t)n < cap) ? n : -1;
 }
 
 int rock_source_read(uint8_t *out, size_t cap)

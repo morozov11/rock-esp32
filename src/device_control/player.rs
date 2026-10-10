@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use super::bounded;
 use super::protocol::{validate_stream_uri, Envelope, DISPLAY_SURFACE_ID};
 use super::display::DisplayState;
 
@@ -64,11 +65,6 @@ impl PlayerCommand {
             PlayerCommand::Volume { command_id, .. } => command_id,
         }
     }
-}
-
-fn bounded(value: &str, min: usize, max: usize) -> bool {
-    let n = value.chars().count();
-    (min..=max).contains(&n)
 }
 
 /// Parses resolved stream, playback, and volume commands targeted at this player.

@@ -4,6 +4,7 @@
 
 #include "control_platform.h"
 #include "control_platform_internal.h"
+#include "rock_protocol_abi.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_event.h"
@@ -22,13 +23,12 @@ static const char *TAG = "rock-control";
 
 #define WS_CONNECTED BIT0
 #define WS_DISCONNECTED BIT1
-#define ROCK_MAX_FRAME 65536
 #define ROCK_HTTP_TIMEOUT_MS 10000
 
 static EventGroupHandle_t s_ws_events;
 static esp_websocket_client_handle_t s_ws;
 static QueueHandle_t s_ws_queue;
-static char s_ws_frame[ROCK_MAX_FRAME + 1];
+static char s_ws_frame[ROCK_ABI_MAX_FRAME_BYTES + 1];
 static size_t s_ws_length;
 static char s_ws_headers[640];
 
@@ -109,8 +109,8 @@ static void websocket_event(void *arg, esp_event_base_t base, int32_t id, void *
             xQueueOverwrite(s_ws_queue, &result);
             return;
         }
-        if (event->op_code != 1 || event->payload_len > ROCK_MAX_FRAME || event->payload_offset < 0 ||
-            event->data_len < 0 || event->payload_offset + event->data_len > ROCK_MAX_FRAME) {
+        if (event->op_code != 1 || event->payload_len > ROCK_ABI_MAX_FRAME_BYTES || event->payload_offset < 0 ||
+            event->data_len < 0 || event->payload_offset + event->data_len > ROCK_ABI_MAX_FRAME_BYTES) {
             ESP_LOGW(TAG, "WSS unsupported frame opcode=%u len=%d", event->op_code, event->payload_len);
             result = event->op_code == 1 ? -2 : -3;
             xQueueOverwrite(s_ws_queue, &result);
@@ -164,8 +164,14 @@ int rock_ws_start(const char *access_token)
     if (prefix <= 0 || (size_t)prefix >= sizeof(uri) || snprintf(s_ws_headers, sizeof(s_ws_headers), "Authorization: Bearer %s\r\n", access_token) >= (int)sizeof(s_ws_headers)) return -1;
     esp_websocket_client_config_t cfg = {
         .uri = uri, .disable_auto_reconnect = true, .task_stack = 8192, .buffer_size = 4096,
-        .headers = s_ws_headers, .network_timeout_ms = 10000, .ping_interval_sec = 20,
-        .pingpong_timeout_sec = 60, .crt_bundle_attach = esp_crt_bundle_attach,
+        .headers = s_ws_headers, .network_timeout_ms = 10000,
+        // Heartbeat cadence from rock_protocol_abi.h. The pingpong timeout is
+        // 15 s tighter than the Rust session watchdog, so the C client's own
+        // reconnect fires first; the Rust watchdog
+        // (ROCK_ABI_HEARTBEAT_ACK_TIMEOUT_MS) stays the last line of defence.
+        .ping_interval_sec = ROCK_ABI_HEARTBEAT_MS / 1000,
+        .pingpong_timeout_sec = (ROCK_ABI_HEARTBEAT_ACK_TIMEOUT_MS - 15000) / 1000,
+        .crt_bundle_attach = esp_crt_bundle_attach,
     };
     s_ws = esp_websocket_client_init(&cfg);
     if (!s_ws) return -1;
@@ -196,7 +202,7 @@ void rock_ws_stop(void)
 
 int rock_ws_send(const char *data, size_t len)
 {
-    if (!s_ws || !esp_websocket_client_is_connected(s_ws) || len > ROCK_MAX_FRAME) return -1;
+    if (!s_ws || !esp_websocket_client_is_connected(s_ws) || len > ROCK_ABI_MAX_FRAME_BYTES) return -1;
     int sent = esp_websocket_client_send_text(s_ws, data, len, pdMS_TO_TICKS(10000));
     // Confidentiality: never log raw frames — device.command carries
     // stream_uri with ?token=… (transport.rs contract). Frame-kind taxonomy

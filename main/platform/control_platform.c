@@ -221,3 +221,12 @@ uint64_t rock_uptime_ms(void)
 {
     return (uint64_t)(esp_timer_get_time() / 1000);
 }
+
+void rock_esp_log(const char *msg)
+{
+    // Session-domain observability for deliberately swallowed Rust errors;
+    // same contract as rock_ws_log_*: text only, never secrets or frames.
+    if (msg) {
+        ESP_LOGW(TAG, "%s", msg);
+    }
+}

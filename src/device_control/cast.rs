@@ -25,10 +25,39 @@ pub const CAST_LAUNCH_TIMEOUT_MS: u32 = 8_000;
 pub const CAST_LOAD_ATTEMPT_TIMEOUT_MS: u32 = 15_000;
 pub const CAST_HEARTBEAT_INTERVAL_MS: u64 = 5_000;
 
-/// LOAD content types in rockcast candidate order: some receiver firmware
-/// keeps a freshly loaded live `audio/wav` stream silently pending, while the
-/// same stream plays when loaded as `audio/mpeg`.
-pub const CAST_LOAD_CONTENT_TYPES: [&str; 2] = ["audio/wav", "audio/mpeg"];
+/// Content type of the unified stream source (phase 5): mirrors
+/// `rock_source_content_type_t` in relay_bsp.h — the single shared source
+/// both languages read instead of sniffed strings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceContentType {
+    Unknown,
+    Mpeg,
+    Wav,
+    Aac,
+}
+
+impl SourceContentType {
+    /// MIME the relay actually serves for this source: the passthrough ring
+    /// carries MP3; AAC/unknown upstreams are transcoded to WAV PCM just
+    /// like WAV ones. This is the one mapping point behind Cast LOAD.
+    pub fn served_mime(self) -> &'static str {
+        match self {
+            Self::Mpeg => "audio/mpeg",
+            Self::Wav | Self::Aac | Self::Unknown => "audio/wav",
+        }
+    }
+
+    /// Cast LOAD candidates in rockcast order: the transport the relay
+    /// actually serves first, then the fallback ladder (some receiver
+    /// firmware keeps a freshly loaded live `audio/wav` stream silently
+    /// pending, while the same stream plays when loaded as `audio/mpeg`).
+    pub fn cast_load_candidates(self) -> [&'static str; 2] {
+        match self {
+            Self::Mpeg => ["audio/mpeg", "audio/wav"],
+            Self::Wav | Self::Aac | Self::Unknown => ["audio/wav", "audio/mpeg"],
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscoveredReceiver {
