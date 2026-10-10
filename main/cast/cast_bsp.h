@@ -14,6 +14,11 @@ typedef struct {
     char model[65];     // model name (md TXT record)
     char host[65];      // IPv4 string
     uint16_t port;      // default 8009
+    // Raw eureka_info response body (subnet-scan devices only; empty for
+    // mDNS hits or failed HTTP probes). The Rust side decodes name/model/udn
+    // from it — no JSON parsing in C (added in phase 4; paired with
+    // RockCastDeviceRaw in src/firmware/platform.rs).
+    char eureka_json[1024];
 } rock_cast_device_t;
 
 /**

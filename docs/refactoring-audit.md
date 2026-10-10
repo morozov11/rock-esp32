@@ -422,6 +422,151 @@ rock-gui/rock_gui_log_debug_state), CMD:VIEW:BROWSE/NP и CMD:SCREENSHOT
 
 ### Фаза 4 — распил god objects (по одному файлу за PR)
 
+**Выполнено 2026-10-10** (шаги A–G + переорганизация main/ в подкаталоги
+модулей; 5 ABI-заголовков не тронуты, единственное ABI-изменение —
+аддитивное поле `eureka_json` в шаге E, парное C+Rust).
+
+**Карта модулей main/ (новая)**: корень — только композиция и общее
+(`main.c`, `board_bus.c/h`, `rock_ffi_exports.h`); `platform/` —
+`control_platform.c/h` + `control_platform_internal.h` + `rock_net_ws.c` +
+`rock_wifi_sta.c` + `rock_wifi_storage.*` + `rock_ota.*`; `audio/` —
+`audio_bsp.*`, `player_bsp.*`, `pcm_snapshot.h`, `audio_spectrum.*`,
+`test_mp3.h`; `relay/` — `relay_bsp.*`, `relay_internal.h`,
+`rock_relay_http.c`, `rock_ring.c/h`; `cast/` — `cast_bsp.*`; `display/` —
+`display_bsp.*`; `gui/` — `rock_gui.*`, `rock_gui_internal.h`,
+`rock_gui_widgets.c`, `rock_gui_keyboard.c`, `rock_gui_views_{now_playing,
+browse,search,cast}.c`, `rock_ui_screens.*`, `rock_serial.*`,
+`rock_screenshot.*`, `rockcast_tokens.h`, `fonts/`; `onboarding/` —
+`rock_onboarding.*`. Инклуды остались плоскими (`#include "x.h"`): все
+каталоги в INCLUDE_DIRS. Переезды — `git mv` (история сохранена).
+
+- **A. control_platform.c 703 → 223**: HTTP/WSS-обвязка → `rock_net_ws.c`
+  (233; http_event/http_request→rock_http_request, websocket_event, ws_*,
+  s_ws*), Wi-Fi STA-домен → `rock_wifi_sta.c` (314; wifi_event, RF-survey,
+  backoff-коннект, reconnect-таск, скан, is_connected/rssi/channel,
+  rock_get_local_ip). `control_platform.c` — композиция (rock_platform_init
+  вызывает rock_wifi_events_create/register_handlers/connect_with_backoff/
+  start_reconnect_task + rock_ws_init), identity, now/random/base_url/
+  hosted_recover/uptime, UI-колбеки (notify_* экспортированы как
+  rock_platform_notify_*). Приватный `control_platform_internal.h` (45).
+- **B. relay_bsp.c 1533 → 1089**: оба ринга → `relay/rock_ring.c/h`
+  (byte-ring rock_ring_* с broadcast-overwrite-семантикой + bounded-queue
+  rock_pcm_ring_* из player_bsp — сосуществование без унификации);
+  HTTP-сервер → `rock_relay_http.c` (352: листенер, read_request,
+  write_chunk, serve-петли, client task, rock_relay_listen, s_server_sock,
+  s_client_count); **serve-петли dedup**: WAV-ветка и passthrough сведены
+  в один параметризованный `relay_serve_stream` (чанкирование/выравнивание
+  MP3-кадра — флаги; заголовки и старт-логи остаются у вызывающих).
+  `relay_bsp.c` — source-домен (upstream, фильтры, ресемплер, pacing,
+  feeder, prefill, rock_source_*, send-хелперы relay_send_all/audio,
+  relay_make_wav_header, relay_find_mpeg_frame). Приватный
+  `relay_internal.h` (56; листенер: poll/close/wake/client_count/reset).
+  `relay_bsp.h` — только deprecated-комментарии на rock_relay_stop/
+  rock_relay_is_active.
+- **C. player_bsp.c 855 → 792**: pcm_ring уехал в rock_ring (подключён
+  rock_ring.h; публикация снапшота переехала в audio_tx_task после
+  rock_pcm_ring_read — та же точка аудиотракта); decode-шаг
+  stream_rx_task извлечён в статик `rock_decoder_step()` (process →
+  get_info → реконфиг кодека → pcm_ring_write → pre-roll переход;
+  -1 = фатальная ошибка реконфига). Bringup-петли НЕ переведены (другие
+  буферы/инварианты — не тривиально, по плану).
+- **D. rock_gui.c 1794 → 613** (фасад: shell, стейт, очередь, таймеры,
+  registry, публичный API, trigger, present, log_debug_state): виджеты →
+  `rock_gui_widgets.c` (329; gui_make_button — бойлерплейт ×~20,
+  оверлейный квартет show_loading/empty/offline/error → единый
+  `gui_overlay_set(kind,title,desc,buttons)` с таблицей видов, общий
+  station-row + gui_station_rows_fill — дубли set_browse/set_search ~30
+  строк); виды → `rock_gui_views_now_playing.c` (380, с транспорт-баром),
+  `_browse.c` (93), `_search.c` (204), `_cast.c` (286); клавиатура →
+  `rock_gui_keyboard.c` (55). **View-registry**: таблица {mode, build,
+  show, hide, section_label} — switch_view/rock_gui_switch_view/старт
+  ходят только через неё; новый экран = файл + строка таблицы. Межфайловые
+  декларации — `rock_gui_internal.h` (140); контракт сырого доступа:
+  gui_* без LVGL-лока (лок держат публичные обёртки фасада).
+  Зафиксированные inconsistencies квартета: error держит фиксированный
+  title («Ошибка воспроизведения») и кладёт message в desc; остальные —
+  наоборот; loading без иконки, offline=BOLT/warn, error=CROSS/error;
+  поиск логирует строки результатов, каталог — нет.
+- **E. cast_bsp.c 460 → 419 — единственная ABI-правка фазы**:
+  `rock_cast_device_t` += `char eureka_json[1024]` (парное зеркало
+  RockCastDeviceRaw в platform/ffi.rs); fetch_eureka_info кладёт сырой
+  BODY ответа (без HTTP-заголовков), три ручных JSON-парсера удалены;
+  name/id-фолбэки в C как раньше (instance/host:port для mDNS,
+  «Chromecast <host>»/host:port для subnet-scan); финальные name/model/id
+  Rust берёт из eureka_json через serde_json (`eureka_overrides`:
+  name; model_name|manufacturer; ssdp_udn|mac_address — приоритеты
+  прежних C-парсеров; пустой/битый документ → фолбэки). Дедуп
+  IP-форматирования ×2 → `format_ip4()`.
+- **F. platform.rs 800 → platform/** (mod 271, ffi 163 — все extern'ы и
+  repr(C)-зеркала; http 107 — REST+WSS; gui 227 — обёртки+GuiEvent-декод;
+  cast 91 — дискавери-конверсия; tls 50 — CastTlsStream RAII). Pub-интерфейс
+  `platform` неизменен (pub(crate) use реэкспорты), потребители не менялись.
+  **Доменная политика вынесена из FFI-слоя**: эвристика «wifi up»
+  (rssi != -128) → `update_link_indicator()` в firmware/mod.rs (platform
+  отдаёт сырой `wifi_rssi()`); деривация ключа приёмника (id vs host:port)
+  → `DiscoveredReceiver::from_discovery()` в device_control::cast
+  (host-тестируемый домен).
+- **G. transport.rs 736 → 891, session() 475 → 45 строк**: сессия —
+  структура `Session` (token/frame/state/cache/cast/source/pending/
+  heartbeat-учёт) + тик-методы (token refresh, heartbeat watchdog,
+  heartbeat, drain_gui_events, player refresh, cast pump, pending
+  deadline, network check) + handle_inbound/exec_display_command/
+  exec_player_command; GUI-обработчики — impl GuiEventSink (fatal-флаг
+  вместо `?`). **Русские UX-строки (15) → `presentation::ui_strings`**
+  (константы дословно; transport возвращает состояния, тексты живут в
+  presentation). **GuiEvent-диспетчер один**: трейт `GuiEventSink` в
+  firmware/mod.rs с единственным исчерпывающим match в
+  `dispatch_gui_event`; offline-луп (OfflineHandler) и session-луп
+  (Session) реализуют политику каждый своей стороной. cast_client.rs
+  471 → 465: PING/PONG ×5 → `is_ping()`+`send_pong()` (в load-петле pong
+  адресован RECEIVER_ID — сохранено, отличается от остальных сайтов);
+  receiver-status wait ×2 → `wait_dmr_session(budget)`; `unreachable!()`
+  → явный `Err(())` (panic=abort на борту).
+
+Дельта размеров (idf.py size-подобное, bin): дефолт 0x258ee0 (после фазы 3)
+→ 0x258a00 (**−1248**; дедуп кнопок/оверлеев/строк окупил новые
+гранулы+масштабирование таблиц). Bringup-сборка (изолированный
+`-D SDKCONFIG=build_bringup/sdkconfig`) — bin 0x25ee40, чисто.
+
+Верификация: после каждого шага A–G `idf.py --no-ccache build` — чисто,
+ровно 2 pre-existing Rust-варнинга (recover/rock_hosted_recover); host
+`cargo test --target x86_64-pc-windows-msvc` после A/B/D/E/F/G — 12 lib +
+21 контрактный зелёные (вкл. секретность). На плате (COM6, дефолт):
+`tools/rock_hwtest.py` полный прогон **14/14** (WSS за 19.1 с, browse/
+search 200, 3/3 станции playing, pause/resume/stop/volume, heartbeat worst
+gap 21 s, post-TTL reload; в логе 0 stream_uri/WSS-кадров, 72 kind-лога
+«WSS receive type=», TAG rock-control сохранён); быстрый прогон на финальном
+бинде 13/13 (14-я — строка country-RU — пропущена только из-за позднего
+attach). `test_cast_hw.py` на финальном билде — полный успех: discovery 1
+устройство (mDNS), TLS к 192.168.31.109:8009, Cast LOAD ready, relay отдал
+347+ KB аудио Chromecast, метрики и скриншоты на месте; CMD:SELFTEST
+(disabled), CMD:METRICS (обе строки), CMD:VIEW:NP/BROWSE/SEARCH
+(registry-переключение 0→1→2→0 подтверждено логом ui view=N),
+CMD:SCREENSHOT (маркеры START/END), CMD:UI:STATION/PLAYPAUSE/STOP/SEARCH.
+
+Отклонения и находки:
+
+- **Порядок сохранён, тексты логов/ТАГи идентичны**: TAG «rock-control»
+  оставлен во всех трёх файлах platform/, «rock_relay» — в обоих relay/;
+  исключение — новый TAG «rock_ring» для единственного лога ошибки
+  аллокации PCM-ринга (бывший rock-player, error-path).
+- **Два дефекта, найденных платой** (обе починены в фазе): (1)
+  `RockCastDeviceRaw[16]` на стеке после добавления eureka_json (+16 КБ)
+  валит таск стек-протекцией — массив переведён в кучу (vec!, как
+  HTTP-буферы); (2) bringup-сборка с `-D SDKCONFIG_DEFAULTS` молча
+  регенерирует корневой sdkconfig и теряет локальные флаги —
+  `CONFIG_ESP_TLS_INSECURE`+`CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY`
+  (cast-TLS без verify) восстановлены; bringup теперь собирается с
+  изолированным `-D SDKCONFIG=build_bringup/sdkconfig`.
+- Мелкие поведенческие дельты (наблюдаемо эквивалентны): start-лог WAV-
+  serve читает preroll до join (раньше после — сдвиг микросекунд);
+  overlay present-ветка rock_gui_present реализована как
+  gui_overlay_set(EMPTY) (идентичная последовательность флагов);
+  «SEARCH»-триггер сериала зовёт switch_view напрямую вместо синтетического
+  клика кнопки (callback делает то же самое); bringup-харнессы плеера не
+  переведены на rock_decoder_step (другие буферы).
+
+
 Порядок — от наиболее механического к наиболее тонкому:
 
 1. **`control_platform.c` (696)** → внутри разделить на `rock_wifi_sta.c`
@@ -502,7 +647,7 @@ rock-gui/rock_gui_log_debug_state), CMD:VIEW:BROWSE/NP и CMD:SCREENSHOT
 | 1 баги+секрет | низкий | высокий | точечные патчи, делать сразу — выполнено 2026-10-10 |
 | 2 мёртвый код | очень низкий | высокий | механика, минус флеш/память — выполнено 2026-10-10 |
 | 3 инверсия зависимостей | средний | высокий | главное архитектурное улучшение — выполнено 2026-10-10 |
-| 4 распил файлов | средний | высокий | по одному PR, каждый собирается |
+| 4 распил файлов | средний | высокий | по одному PR, каждый собирается — выполнено 2026-10-10 |
 | 5 кросс-языковая DRY | низкий | средний | ABI-заголовок — первый шаг |
 | 6 компоненты/переименования | высокий | средний | только после стабилизации 1–5 |
 

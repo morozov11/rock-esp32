@@ -5,12 +5,25 @@
 # the Rust static library is the actual consumer. esp_lcd/esp_lvgl_port are
 # also genuinely linked: display_bsp.c owns the display bring-up, while the
 # Rust side drives the clock UI through the display_bsp facade.
+# Module layout (phase 4): main/ keeps only the composition root and shared
+# board plumbing; feature modules live in subdirectories. Headers stay flat
+# (#include "x.h"): every module dir is on the include path.
 idf_component_register(
-    SRCS "main.c" "display_bsp.c" "control_platform.c" "board_bus.c" "audio_bsp.c" "player_bsp.c"
-         "rock_wifi_storage.c" "rock_ota.c" "rock_onboarding.c" "audio_spectrum.c" "rock_gui.c"
-         "rock_ui_screens.c" "rock_serial.c" "rock_screenshot.c"
-         "font_inter_14.c" "font_inter_18.c" "font_inter_24.c" "font_hack_16.c" "cast_bsp.c" "relay_bsp.c"
-    INCLUDE_DIRS "."
+    SRCS "main.c" "board_bus.c"
+         "platform/control_platform.c" "platform/rock_wifi_sta.c" "platform/rock_net_ws.c"
+         "platform/rock_wifi_storage.c" "platform/rock_ota.c"
+         "audio/audio_bsp.c" "audio/audio_spectrum.c" "audio/player_bsp.c"
+         "relay/rock_ring.c" "relay/relay_bsp.c" "relay/rock_relay_http.c"
+         "cast/cast_bsp.c"
+         "display/display_bsp.c"
+         "gui/rock_gui.c" "gui/rock_gui_widgets.c" "gui/rock_gui_keyboard.c"
+         "gui/rock_gui_views_now_playing.c" "gui/rock_gui_views_browse.c"
+         "gui/rock_gui_views_search.c" "gui/rock_gui_views_cast.c"
+         "gui/rock_ui_screens.c" "gui/rock_serial.c" "gui/rock_screenshot.c"
+         "gui/fonts/font_inter_14.c" "gui/fonts/font_inter_18.c" "gui/fonts/font_inter_24.c"
+         "gui/fonts/font_hack_16.c"
+         "onboarding/rock_onboarding.c"
+    INCLUDE_DIRS "." "platform" "audio" "relay" "cast" "display" "gui" "gui/fonts" "onboarding"
     PRIV_REQUIRES
         "heap"
         "pthread"

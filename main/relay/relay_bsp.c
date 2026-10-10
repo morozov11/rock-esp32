@@ -1,5 +1,12 @@
+// Unified stream source, phase-4 split: this file owns the SOURCE domain —
+// the single authorized upstream connection, ICY filtering, MP3 sync,
+// decode, resampling to 48 kHz stereo, pacing and the shared ring. The
+// Cast-side listener and serve loops live in rock_relay_http.c; ring buffers
+// in rock_ring.c. Public ABI: relay_bsp.h; shared plumbing: relay_internal.h.
+
 #include "relay_bsp.h"
 #include "control_platform.h"
+#include "relay_internal.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
@@ -12,11 +19,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
-#include <arpa/inet.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -24,7 +27,6 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
-#include <unistd.h>
 
 static const char *TAG = "rock_relay";
 
@@ -33,8 +35,6 @@ static const char *TAG = "rock_relay";
 // 1 s of 48 kHz stereo PCM pushed to the ring before the listener starts.
 #define RELAY_PREFILL_BYTES (48 * 1000 * 2 * 2)
 #define RELAY_PREFILL_WAIT_MS 25000
-// Ring sized like the desktop relay fanout (2 MiB ~= 10 s of PCM).
-#define RELAY_RING_BYTES (2 * 1024 * 1024)
 // Bytes to keep behind the live edge when a Cast client joins:
 // 144 KB (~0.75 s) for 48 kHz stereo PCM; 16 KB (~1.0 s) for compressed MP3.
 #define RELAY_JOIN_CUSHION_BYTES_PCM (144 * 1024)
@@ -43,42 +43,14 @@ static const char *TAG = "rock_relay";
 #define RELAY_READ_CHUNK_BYTES 4096
 #define RELAY_PCM_CHUNK_BYTES 8192
 #define RELAY_WAV_CHUNK_BYTES 16384
-#define RELAY_CLIENT_READ_BYTES 8192
 #define RELAY_PCM_BYTES_PER_SEC (48u * 1000u * 2u * 2u)
 // Pacing slice, mirrors the desktop relay's pace_pcm_chunk() granularity.
 #define RELAY_PACE_SLICE_MS 20
 #define RELAY_STOP_JOIN_MS 12000
-#define RELAY_MAX_CLIENTS 3
 // Passthrough prefill before the listener starts (rockcast min_bytes for
 // non-WAV transports).
 #define RELAY_PASSTHROUGH_PREFILL_BYTES (4 * 1024)
 #define RELAY_CONTENT_TYPE_MAX 96
-
-static const char RELAY_WAV_RESPONSE_HEADERS[] =
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: audio/wav\r\n"
-    "Content-Length: 4294967339\r\n"
-    "Cache-Control: no-cache, no-store\r\n"
-    "Pragma: no-cache\r\n"
-    "Connection: keep-alive\r\n"
-    "Access-Control-Allow-Origin: *\r\n"
-    "Accept-Ranges: none\r\n"
-    "X-Audio-Sample-Rate: 48000\r\n"
-    "X-Audio-Channels: 2\r\n"
-    "X-Audio-Byte-Rate: 192000\r\n"
-    "\r\n";
-
-// Chunked passthrough response, mirroring the desktop stream_response_headers.
-static const char RELAY_FORMAT_PASSTHROUGH_HEADERS[] =
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: %s\r\n"
-    "Cache-Control: no-cache, no-store\r\n"
-    "Pragma: no-cache\r\n"
-    "Connection: keep-alive\r\n"
-    "Transfer-Encoding: chunked\r\n"
-    "Access-Control-Allow-Origin: *\r\n"
-    "Accept-Ranges: none\r\n"
-    "\r\n";
 
 static char s_upstream_uri[512] = {0};
 // Bearer for the RockServer station proxy; empty string means an anonymous
@@ -92,11 +64,9 @@ static char s_upstream_bearer[600] = {0};
 static SemaphoreHandle_t s_config_lock = NULL;
 static atomic_bool s_relay_stop = false;
 static atomic_bool s_relay_running = false;
-static atomic_int s_client_count = 0;
 // Successful reconnects of a dropped upstream; reset by rock_source_start
 // (the primary connect is not counted). Exposed for player telemetry.
 static atomic_uint s_upstream_reconnects = 0;
-static int s_server_sock = -1;
 // Passthrough mode: forward compressed MP3 as-is instead of transcoding to
 // PCM WAV.  The radio link (RSSI ~-77 dBm) cannot carry 192 KB/s of WAV plus
 // upstream reliably; 32 KB/s of MP3 restores inbound ACK flow.  rockcast
@@ -138,179 +108,47 @@ typedef struct {
     bool mp3_synced;
 } relay_upstream_t;
 
-// Byte ring shared by the feeder and all Cast clients.  Positions are
-// monotonic uint64 offsets; the physical slot is pos & (cap - 1).
-typedef struct {
-    uint8_t *buf;
-    size_t cap;
-    uint64_t start;
-    uint64_t end;
-    SemaphoreHandle_t lock;
-} relay_ring_t;
-
 static relay_upstream_t s_upstream = {0};
-static relay_ring_t s_ring = {0};
+static rock_ring_t s_ring = {0};
 // Speaker consumer tap: ring position once it has joined the live edge.
 // Ring itself is persistent (allocated once, reset on source restart) so a
 // consumer can never touch a freed buffer.
 static bool s_tap_joined = false;
 static uint64_t s_tap_pos = 0;
 
-static bool relay_stopped(void)
+bool relay_stopped(void)
 {
     return atomic_load(&s_relay_stop);
 }
 
-// ---------------------------------------------------------------- ring ---
-
-static bool ring_init(relay_ring_t *r)
+bool relay_is_running(void)
 {
-    if (r->buf && r->lock) {
-        // Persistent ring: reuse the allocation across source restarts.
-        xSemaphoreTake(r->lock, portMAX_DELAY);
-        r->start = 0;
-        r->end = 0;
-        xSemaphoreGive(r->lock);
-        return true;
-    }
-    memset(r, 0, sizeof(*r));
-    r->buf = heap_caps_malloc(RELAY_RING_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    r->lock = xSemaphoreCreateMutex();
-    if (!r->buf || !r->lock) {
-        if (r->lock) {
-            vSemaphoreDelete(r->lock);
-        }
-        free(r->buf);
-        r->buf = NULL;
-        return false;
-    }
-    r->cap = RELAY_RING_BYTES;
-    return true;
+    return atomic_load(&s_relay_running);
 }
 
-// Reset ring contents under the lock; the buffers stay allocated.
-static void ring_reset(relay_ring_t *r)
+bool relay_is_passthrough(void)
 {
-    if (!r->lock) {
-        return;
-    }
-    xSemaphoreTake(r->lock, portMAX_DELAY);
-    r->start = 0;
-    r->end = 0;
-    xSemaphoreGive(r->lock);
+    return s_passthrough;
 }
 
-// Feeder push; drops the oldest whole PCM frames on overflow (rockcast
-// fanout::push semantics).
-static void ring_push(relay_ring_t *r, const uint8_t *data, size_t len)
+const char *relay_content_type(void)
 {
-    if (len == 0 || !r->buf) {
-        return;
-    }
-    xSemaphoreTake(r->lock, portMAX_DELAY);
-    if (r->end - r->start + len > r->cap) {
-        uint64_t drop = r->end - r->start + len - r->cap;
-        drop = ((drop + 3) / 4) * 4;
-        if (drop > r->end - r->start) {
-            drop = r->end - r->start;
-        }
-        r->start += drop;
-    }
-    uint64_t pos = r->end;
-    size_t first = (size_t)(r->cap - (pos & (r->cap - 1)));
-    if (first > len) {
-        first = len;
-    }
-    memcpy(r->buf + (size_t)(pos & (r->cap - 1)), data, first);
-    if (len > first) {
-        memcpy(r->buf, data + first, len - first);
-    }
-    r->end = pos + len;
-    xSemaphoreGive(r->lock);
+    return s_content_type;
 }
 
-static size_t ring_buffered(relay_ring_t *r)
-{
-    xSemaphoreTake(r->lock, portMAX_DELAY);
-    size_t len = (size_t)(r->end - r->start);
-    xSemaphoreGive(r->lock);
-    return len;
-}
-
-typedef enum {
-    RING_READ_OK = 0,
-    RING_READ_EMPTY,
-    RING_READ_OVERRUN,
-} ring_read_result_t;
-
-// Copy up to cap bytes at pos (two-segment wrap copy) under the lock.
-static ring_read_result_t ring_read(relay_ring_t *r, uint64_t pos, uint8_t *out, size_t cap, size_t *out_len)
-{
-    ring_read_result_t result = RING_READ_OK;
-    xSemaphoreTake(r->lock, portMAX_DELAY);
-    if (pos < r->start) {
-        result = RING_READ_OVERRUN;
-        *out_len = 0;
-    } else if (pos >= r->end) {
-        result = RING_READ_EMPTY;
-        *out_len = 0;
-    } else {
-        size_t available = (size_t)(r->end - pos);
-        size_t n = cap < available ? cap : available;
-        size_t off = (size_t)(pos & (r->cap - 1));
-        size_t first = r->cap - off;
-        if (first > n) {
-            first = n;
-        }
-        memcpy(out, r->buf + off, first);
-        if (n > first) {
-            memcpy(out + first, r->buf, n - first);
-        }
-        *out_len = n;
-    }
-    xSemaphoreGive(r->lock);
-    return result;
-}
-
-static size_t relay_cushion_bytes(void)
+size_t relay_cushion_bytes(void)
 {
     return s_passthrough ? RELAY_JOIN_CUSHION_BYTES_PASSTHROUGH : RELAY_JOIN_CUSHION_BYTES_PCM;
 }
 
-// Position a fresh Cast client joins at: behind the live edge by the cushion.
-static uint64_t ring_join_position(relay_ring_t *r)
+rock_ring_t *relay_ring(void)
 {
-    xSemaphoreTake(r->lock, portMAX_DELAY);
-    size_t len = (size_t)(r->end - r->start);
-    size_t max_cushion = relay_cushion_bytes();
-    size_t cushion = max_cushion < len ? max_cushion : len;
-    uint64_t pos = r->end - cushion;
-    xSemaphoreGive(r->lock);
-    return pos & ~3ULL;
-}
-
-// Clamp an overrun reader back to the live edge minus cushion (rockcast
-// read_at: cushion = JOIN_CUSHION.min(len/2)).
-static uint64_t ring_clamp_position(relay_ring_t *r, uint64_t pos)
-{
-    xSemaphoreTake(r->lock, portMAX_DELAY);
-    size_t len = (size_t)(r->end - r->start);
-    size_t max_cushion = relay_cushion_bytes();
-    size_t cushion = max_cushion < (len / 2) ? max_cushion : (len / 2);
-    uint64_t clamped = r->end - cushion;
-    if (pos < r->start) {
-        pos = clamped;
-    }
-    if (pos > r->end) {
-        pos = r->end;
-    }
-    xSemaphoreGive(r->lock);
-    return pos & ~3ULL;
+    return &s_ring;
 }
 
 // --------------------------------------------------------------- utils ---
 
-static bool send_all(int sock, const void *buf, size_t len)
+bool relay_send_all(int sock, const void *buf, size_t len)
 {
     const uint8_t *data = buf;
     bool backpressure_logged = false;
@@ -351,7 +189,7 @@ static bool send_all(int sock, const void *buf, size_t len)
     return true;
 }
 
-static bool send_audio(
+bool relay_send_audio(
     int sock,
     const uint8_t *data,
     size_t len,
@@ -364,7 +202,7 @@ static bool send_audio(
     // Chromecast's ACKs and window updates got dropped and the stream died in
     // a zero-window deadlock.  Big writes let lwip segment at full MSS.
     while (len > 0) {
-        if (!send_all(sock, data, len)) {
+        if (!relay_send_all(sock, data, len)) {
             return false;
         }
         *total_bytes += len;
@@ -411,7 +249,7 @@ static void put_le32(uint8_t *dst, uint32_t value)
     put_le16(dst + 2, (uint16_t)(value >> 16));
 }
 
-static void make_wav_header(uint8_t header[44])
+void relay_make_wav_header(uint8_t header[44])
 {
     memset(header, 0, 44);
     memcpy(header, "RIFF", 4);
@@ -511,7 +349,7 @@ static size_t mpeg_frame_size(const uint8_t *data, size_t len)
     return ((version != 3 && layer == 1 ? 72 : 144) * bitrate * 1000 / sample_rate) + padding;
 }
 
-static size_t find_mpeg_frame(const uint8_t *data, size_t len)
+size_t relay_find_mpeg_frame(const uint8_t *data, size_t len)
 {
     for (size_t i = 0; i + 4 < len; ++i) {
         size_t frame_size = mpeg_frame_size(data + i, len - i);
@@ -522,6 +360,8 @@ static size_t find_mpeg_frame(const uint8_t *data, size_t len)
     }
     return len;
 }
+
+// ----------------------------------------------------------- upstream ---
 
 static esp_err_t on_upstream_http_event(esp_http_client_event_t *event)
 {
@@ -760,7 +600,7 @@ static int upstream_decode_chunk(
 )
 {
     if (!up->mp3_synced && up->dec_type == ESP_AUDIO_TYPE_MP3 && up->raw_len >= 4) {
-        size_t offset = find_mpeg_frame(up->raw, up->raw_len);
+        size_t offset = relay_find_mpeg_frame(up->raw, up->raw_len);
         if (offset < up->raw_len) {
             if (offset > 0) {
                 ESP_LOGI(TAG, "Skipped %u non-audio bytes before first frame", (unsigned)offset);
@@ -821,193 +661,6 @@ static int upstream_decode_chunk(
     return (int)produced;
 }
 
-// ---------------------------------------------------------- client side ---
-
-static bool relay_read_request(int client_sock, char *req_buf, size_t req_cap, bool *is_head, bool *is_get)
-{
-    int req_len = 0;
-    *is_head = false;
-    *is_get = false;
-    while (req_len < (int)req_cap - 1 && !relay_stopped()) {
-        int n = recv(client_sock, req_buf + req_len, req_cap - 1 - req_len, 0);
-        if (n <= 0) {
-            return false;
-        }
-        req_len += n;
-        req_buf[req_len] = '\0';
-        if (strstr(req_buf, "\r\n\r\n")) {
-            *is_head = (strncmp(req_buf, "HEAD ", 5) == 0);
-            *is_get = (strncmp(req_buf, "GET ", 4) == 0);
-            return true;
-        }
-    }
-    return false;
-}
-
-// Chunked-transfer writer for passthrough clients (rockcast write_chunk).
-static bool relay_write_chunk(
-    int sock,
-    const uint8_t *data,
-    size_t len,
-    size_t *total_bytes,
-    size_t *last_log_bytes
-)
-{
-    if (len == 0) {
-        return true;
-    }
-    char prefix[16];
-    int prefix_len = snprintf(prefix, sizeof(prefix), "%X\r\n", (unsigned)len);
-    static const char suffix[] = "\r\n";
-    return send_all(sock, prefix, (size_t)prefix_len)
-        && send_audio(sock, data, len, total_bytes, last_log_bytes)
-        && send_all(sock, suffix, sizeof(suffix) - 1);
-}
-
-// Serve one Cast client with the compressed stream (rockcast passthrough:
-// join behind the live edge, align to the next MP3 frame, chunked framing).
-static void relay_serve_passthrough(int client_sock, uint8_t *chunk)
-{
-    char headers[256];
-    int headers_len = snprintf(headers, sizeof(headers),
-        RELAY_FORMAT_PASSTHROUGH_HEADERS, s_content_type);
-    if (!send_all(client_sock, headers, (size_t)headers_len)) {
-        return;
-    }
-    ESP_LOGI(TAG, "Starting relay streaming (content-type: %s, passthrough)",
-        s_content_type);
-
-    uint64_t pos = ring_join_position(&s_ring);
-    size_t n = 0;
-    if (ring_read(&s_ring, pos, chunk, RELAY_CLIENT_READ_BYTES, &n) == RING_READ_OK
-        && n >= 4) {
-        size_t offset = find_mpeg_frame(chunk, n);
-        pos += offset;
-    }
-
-    size_t total_bytes = 0;
-    size_t last_log_bytes = 0;
-    while (!relay_stopped()) {
-        n = 0;
-        ring_read_result_t r = ring_read(&s_ring, pos, chunk, RELAY_CLIENT_READ_BYTES, &n);
-        if (r == RING_READ_OVERRUN) {
-            pos = ring_clamp_position(&s_ring, pos);
-            continue;
-        }
-        if (r == RING_READ_EMPTY || n == 0) {
-            vTaskDelay(pdMS_TO_TICKS(20));
-            continue;
-        }
-        if (!relay_write_chunk(client_sock, chunk, n, &total_bytes, &last_log_bytes)) {
-            break;
-        }
-        pos += n;
-    }
-    ESP_LOGI(TAG, "Relay stream session closed (total: %u bytes)", (unsigned)total_bytes);
-}
-
-// Serve one connected Cast client from the shared ring (rockcast
-// handle_client: join behind the live edge, clamp on overrun).
-static void relay_serve_client(int client_sock)
-{
-    // The receiver may open its fetch socket seconds before it actually
-    // sends GET (desktop relay allows 12 s); a short timeout here kills the
-    // real player connection and leaves LOAD silently pending.
-    struct timeval tv_rcv = { .tv_sec = 12, .tv_usec = 0 };
-    struct timeval tv_snd = { .tv_sec = 2, .tv_usec = 0 };
-    setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, &tv_rcv, sizeof(tv_rcv));
-    setsockopt(client_sock, SOL_SOCKET, SO_SNDTIMEO, &tv_snd, sizeof(tv_snd));
-
-    char *req_buf = heap_caps_malloc(1024, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    uint8_t *chunk = heap_caps_malloc(RELAY_CLIENT_READ_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!req_buf || !chunk) {
-        ESP_LOGE(TAG, "Failed to allocate relay client buffers");
-        free(req_buf);
-        free(chunk);
-        close(client_sock);
-        return;
-    }
-
-    bool is_head = false;
-    bool is_get = false;
-    if (!relay_read_request(client_sock, req_buf, 1024, &is_head, &is_get)) {
-        ESP_LOGW(TAG, "Incomplete HTTP request from client");
-        goto out;
-    }
-    if (!is_head && !is_get) {
-        static const char not_found[] = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
-        send(client_sock, not_found, strlen(not_found), 0);
-        goto out;
-    }
-    if (is_head) {
-        if (s_passthrough) {
-            char headers[256];
-            int headers_len = snprintf(headers, sizeof(headers),
-                RELAY_FORMAT_PASSTHROUGH_HEADERS, s_content_type);
-            send_all(client_sock, headers, (size_t)headers_len);
-        } else {
-            send_all(client_sock, RELAY_WAV_RESPONSE_HEADERS,
-                strlen(RELAY_WAV_RESPONSE_HEADERS));
-        }
-        ESP_LOGI(TAG, "Responded to HEAD /stream with content-type %s", s_content_type);
-        goto out;
-    }
-
-    if (s_passthrough) {
-        relay_serve_passthrough(client_sock, chunk);
-        goto out;
-    }
-
-    if (!send_all(client_sock, RELAY_WAV_RESPONSE_HEADERS, strlen(RELAY_WAV_RESPONSE_HEADERS))) {
-        goto out;
-    }
-
-    {
-        uint8_t wav_header[44];
-        make_wav_header(wav_header);
-        if (!send_all(client_sock, wav_header, sizeof(wav_header))) {
-            goto out;
-        }
-
-        uint64_t pos = ring_join_position(&s_ring);
-        size_t total_bytes = 0;
-        size_t last_log_bytes = 0;
-        ESP_LOGI(TAG, "Starting relay streaming (content-type: audio/wav, 48000 Hz, 2 ch; preroll=%u)",
-            (unsigned)ring_buffered(&s_ring));
-
-        while (!relay_stopped()) {
-            size_t n = 0;
-            ring_read_result_t r = ring_read(&s_ring, pos, chunk, RELAY_CLIENT_READ_BYTES, &n);
-            if (r == RING_READ_OVERRUN) {
-                // Reader fell behind the ring start: jump to the live edge.
-                pos = ring_clamp_position(&s_ring, pos);
-                continue;
-            }
-            if (r == RING_READ_EMPTY || n == 0) {
-                vTaskDelay(pdMS_TO_TICKS(20));
-                continue;
-            }
-            if (!send_audio(client_sock, chunk, n, &total_bytes, &last_log_bytes)) {
-                break;
-            }
-            pos += n;
-        }
-        ESP_LOGI(TAG, "Relay stream session closed (total: %u bytes)", (unsigned)total_bytes);
-    }
-
-out:
-    free(req_buf);
-    free(chunk);
-    close(client_sock);
-}
-
-static void relay_client_task(void *pv)
-{
-    relay_serve_client((int)(intptr_t)pv);
-    atomic_fetch_sub(&s_client_count, 1);
-    vTaskDelete(NULL);
-}
-
 // --------------------------------------------------------------- tasks ---
 
 // Feeder: keep the ring filled from the single upstream connection at media
@@ -1036,32 +689,7 @@ static void relay_task(void *pvParameters)
     while (!relay_stopped()) {
         // Poll for new Cast clients without ever blocking the media pace.
         // Speaker-only sessions never attach a listener.
-        if (s_server_sock >= 0) {
-            struct sockaddr_in client_addr;
-            socklen_t client_len = sizeof(client_addr);
-            int client_sock = accept(s_server_sock, (struct sockaddr *)&client_addr, &client_len);
-            if (client_sock >= 0) {
-                if (atomic_load(&s_client_count) >= RELAY_MAX_CLIENTS) {
-                    static const char busy[] = "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n";
-                    send(client_sock, busy, strlen(busy), 0);
-                    close(client_sock);
-                } else {
-                    char client_ip[INET_ADDRSTRLEN] = {0};
-                    inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
-                    ESP_LOGI(TAG, "Relay client connected from %s:%d",
-                        client_ip, ntohs(client_addr.sin_port));
-
-                    atomic_fetch_add(&s_client_count, 1);
-                    BaseType_t ok = xTaskCreatePinnedToCore(relay_client_task, "rock_rc", 4096,
-                        (void *)(intptr_t)client_sock, 5, NULL, 1);
-                    if (ok != pdPASS) {
-                        ESP_LOGE(TAG, "Failed to spawn relay client task");
-                        close(client_sock);
-                        atomic_fetch_sub(&s_client_count, 1);
-                    }
-                }
-            }
-        }
+        relay_listener_poll();
 
         if (s_passthrough) {
             // Upstream sets the pace; the ring absorbs bursts (no transcode
@@ -1072,7 +700,7 @@ static void relay_task(void *pvParameters)
                 break;
             }
             if (pumped > 0) {
-                ring_push(&s_ring, s_upstream.raw, s_upstream.raw_len);
+                rock_ring_push(&s_ring, s_upstream.raw, s_upstream.raw_len);
                 s_upstream.raw_len = 0;
             } else {
                 vTaskDelay(pdMS_TO_TICKS(15));
@@ -1089,7 +717,7 @@ static void relay_task(void *pvParameters)
             if (!pace_before_push(pushed, (size_t)produced, feed_start_us)) {
                 break;
             }
-            ring_push(&s_ring, wav, (size_t)produced);
+            rock_ring_push(&s_ring, wav, (size_t)produced);
             pushed += (size_t)produced;
             continue;
         }
@@ -1110,10 +738,7 @@ static void relay_task(void *pvParameters)
     free(wav);
 
 exit:
-    if (s_server_sock >= 0) {
-        close(s_server_sock);
-        s_server_sock = -1;
-    }
+    relay_listener_close();
     upstream_teardown(&s_upstream);
     atomic_store(&s_relay_running, false);
     ESP_LOGI(TAG, "Relay task exited");
@@ -1138,7 +763,7 @@ static bool relay_prefill_ring(
     size_t want = s_passthrough ? RELAY_PASSTHROUGH_PREFILL_BYTES : RELAY_PREFILL_BYTES;
     int64_t start_us = esp_timer_get_time();
     uint64_t deadline_ms = (uint64_t)start_us / 1000 + RELAY_PREFILL_WAIT_MS;
-    while (ring_buffered(&s_ring) < want && !relay_stopped()
+    while (rock_ring_buffered(&s_ring) < want && !relay_stopped()
         && (uint64_t)esp_timer_get_time() / 1000 < deadline_ms) {
         if (s_passthrough) {
             int pumped = upstream_pump(up, scratch, filtered);
@@ -1146,7 +771,7 @@ static bool relay_prefill_ring(
                 return false;
             }
             if (pumped > 0) {
-                ring_push(&s_ring, up->raw, up->raw_len);
+                rock_ring_push(&s_ring, up->raw, up->raw_len);
                 up->raw_len = 0;
             } else {
                 vTaskDelay(pdMS_TO_TICKS(15));
@@ -1158,7 +783,7 @@ static bool relay_prefill_ring(
             return false;
         }
         if (produced > 0) {
-            ring_push(&s_ring, wav, (size_t)produced);
+            rock_ring_push(&s_ring, wav, (size_t)produced);
             continue;
         }
         int pumped = upstream_pump(up, scratch, filtered);
@@ -1169,7 +794,7 @@ static bool relay_prefill_ring(
             vTaskDelay(pdMS_TO_TICKS(15));
         }
     }
-    size_t buffered = ring_buffered(&s_ring);
+    size_t buffered = rock_ring_buffered(&s_ring);
     if (buffered == 0) {
         ESP_LOGE(TAG, "Relay prefill failed: no audio within %d ms", RELAY_PREFILL_WAIT_MS);
         return false;
@@ -1222,7 +847,7 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
     }
     xSemaphoreGive(s_config_lock);
 
-    if (!ring_init(&s_ring)) {
+    if (!rock_ring_init(&s_ring)) {
         ESP_LOGE(TAG, "Failed to allocate source ring");
         xSemaphoreTake(s_config_lock, portMAX_DELAY);
         s_upstream_uri[0] = '\0';
@@ -1297,7 +922,7 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
     free(pcm);
     free(wav);
 
-    atomic_store(&s_client_count, 0);
+    relay_clients_reset();
     atomic_store(&s_relay_running, true);
 
     BaseType_t ret = xTaskCreatePinnedToCore(relay_task, "rock_relay", 6144, NULL, 5,
@@ -1315,7 +940,7 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
 fail_no_buffers:
     atomic_store(&s_relay_running, false);
     upstream_teardown(&s_upstream);
-    ring_reset(&s_ring);
+    rock_ring_reset(&s_ring);
     xSemaphoreTake(s_config_lock, portMAX_DELAY);
     s_upstream_uri[0] = '\0';
     s_upstream_bearer[0] = '\0';
@@ -1328,7 +953,7 @@ fail:
     free(pcm);
     free(wav);
     upstream_teardown(&s_upstream);
-    ring_reset(&s_ring);
+    rock_ring_reset(&s_ring);
     xSemaphoreTake(s_config_lock, portMAX_DELAY);
     s_upstream_uri[0] = '\0';
     s_upstream_bearer[0] = '\0';
@@ -1352,72 +977,6 @@ esp_err_t rock_source_update_bearer(const char *bearer)
     s_upstream_bearer[sizeof(s_upstream_bearer) - 1] = '\0';
     xSemaphoreGive(s_config_lock);
     return ESP_OK;
-}
-
-esp_err_t rock_relay_listen(char *out_relay_url, size_t out_len)
-{
-    if (!out_relay_url || out_len < 32) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (!atomic_load(&s_relay_running)) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (s_server_sock >= 0) {
-        char local_ip[32] = {0};
-        if (rock_get_local_ip(local_ip, sizeof(local_ip)) == 0) {
-            snprintf(out_relay_url, out_len, "http://%s:%d/stream", local_ip, ROCK_RELAY_PORT);
-            return ESP_OK;
-        }
-        return ESP_FAIL;
-    }
-
-    char local_ip[32] = {0};
-    if (rock_get_local_ip(local_ip, sizeof(local_ip)) != 0) {
-        ESP_LOGE(TAG, "Cannot start relay listener: local IP unavailable");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    s_server_sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (s_server_sock < 0) {
-        ESP_LOGE(TAG, "Failed to create relay socket: errno %d", errno);
-        return ESP_FAIL;
-    }
-
-    int opt = 1;
-    setsockopt(s_server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    // Non-blocking listener: the feeder polls accept() between decode
-    // iterations and must never stall the media pace.
-    int flags = fcntl(s_server_sock, F_GETFL, 0);
-    fcntl(s_server_sock, F_SETFL, flags | O_NONBLOCK);
-
-    struct sockaddr_in saddr = { 0 };
-    saddr.sin_family = AF_INET;
-    saddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    saddr.sin_port = htons(ROCK_RELAY_PORT);
-
-    if (bind(s_server_sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
-        ESP_LOGE(TAG, "Failed to bind relay socket on port %d: errno %d", ROCK_RELAY_PORT, errno);
-        goto fail_socket;
-    }
-
-    if (listen(s_server_sock, 4) < 0) {
-        ESP_LOGE(TAG, "Failed to listen on relay socket: errno %d", errno);
-        goto fail_socket;
-    }
-
-    atomic_store(&s_client_count, 0);
-
-    snprintf(out_relay_url, out_len, "http://%s:%d/stream", local_ip, ROCK_RELAY_PORT);
-    ESP_LOGI(TAG, "Relay listener attached: %s", out_relay_url);
-    return ESP_OK;
-
-fail_socket:
-    if (s_server_sock >= 0) {
-        close(s_server_sock);
-        s_server_sock = -1;
-    }
-    return ESP_FAIL;
 }
 
 bool rock_source_is_active(void)
@@ -1449,18 +1008,18 @@ int rock_source_read(uint8_t *out, size_t cap)
         return -1;
     }
     if (!s_tap_joined) {
-        s_tap_pos = ring_join_position(&s_ring);
+        s_tap_pos = rock_ring_join_position(&s_ring, relay_cushion_bytes());
         s_tap_joined = true;
         ESP_LOGI(TAG, "Speaker tap joined the %s ring behind the live edge",
             s_passthrough ? "compressed" : "PCM");
     }
     size_t n = 0;
-    ring_read_result_t r = ring_read(&s_ring, s_tap_pos, out, cap, &n);
-    if (r == RING_READ_OVERRUN) {
-        s_tap_pos = ring_clamp_position(&s_ring, s_tap_pos);
+    rock_ring_read_result_t r = rock_ring_read(&s_ring, s_tap_pos, out, cap, &n);
+    if (r == ROCK_RING_READ_OVERRUN) {
+        s_tap_pos = rock_ring_clamp_position(&s_ring, s_tap_pos, relay_cushion_bytes());
         return 0;
     }
-    if (r == RING_READ_EMPTY) {
+    if (r == ROCK_RING_READ_EMPTY) {
         // Distinguish "nothing yet" from "source died between checks".
         if (!atomic_load(&s_relay_running)) {
             return -1;
@@ -1491,7 +1050,7 @@ void rock_source_stop(void)
     // Client tasks stream from the ring: they must be gone before it is
     // reset.  They exit within ~2 s of the stop flag (send timeout bound).
     int client_wait_ms = 0;
-    while (atomic_load(&s_client_count) > 0 && client_wait_ms < 3000) {
+    while (relay_client_count() > 0 && client_wait_ms < 3000) {
         vTaskDelay(pdMS_TO_TICKS(50));
         client_wait_ms += 50;
     }
@@ -1499,14 +1058,11 @@ void rock_source_stop(void)
     // Wake a lingering accept() without closing the fd: the feeder owns it
     // and closes it on exit (observing s_relay_running == false implies the
     // close already happened), which avoids fd-reuse races.
-    int fd = s_server_sock;
-    if (fd >= 0 && atomic_load(&s_relay_running)) {
-        shutdown(fd, 0);
-    }
+    relay_listener_wake();
 
     // Persistent ring: reset contents, keep the allocation for the next
     // source session so late consumers can never touch freed memory.
-    ring_reset(&s_ring);
+    rock_ring_reset(&s_ring);
     s_tap_joined = false;
     s_tap_pos = 0;
     // Clear the upstream config only when the feeder has exited: on a join

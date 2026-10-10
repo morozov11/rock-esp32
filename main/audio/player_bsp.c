@@ -2,6 +2,7 @@
 #include "pcm_snapshot.h"
 #include "audio_bsp.h"
 #include "relay_bsp.h"
+#include "rock_ring.h"
 #include "rock_ffi_exports.h"
 #if CONFIG_ROCK_BRINGUP_TESTS
 #include "test_mp3.h"
@@ -34,100 +35,14 @@ static const char *TAG = "rock-player";
 #define DECODE_OUT_CAP    8192
 
 // ---------------------------------------------------------------------------
-// Thread-safe PSRAM PCM Ring Buffer
+// Thread-safe PSRAM PCM ring: implementation in rock_ring.c (phase 4); the
+// player only owns the tap snapshot published on every speaker read.
 // ---------------------------------------------------------------------------
-typedef struct {
-    uint8_t *buffer;
-    size_t capacity;
-    size_t head;
-    size_t tail;
-    size_t fill;
-    SemaphoreHandle_t lock;
-} pcm_ring_t;
-
-static pcm_ring_t s_pcm_ring;
+static rock_pcm_ring_t s_pcm_ring;
 static rock_pcm_snapshot_t s_pcm_tap;
 static atomic_uint s_pcm_rate = 44100;
 static atomic_uint s_pcm_channels = 2;
 static atomic_bool s_spectrum_playing;
-
-static int pcm_ring_init(pcm_ring_t *r, size_t capacity)
-{
-    r->buffer = heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!r->buffer) {
-        ESP_LOGE(TAG, "Failed to allocate %u bytes in PSRAM for PCM ring buffer", (unsigned)capacity);
-        return -1;
-    }
-    r->capacity = capacity;
-    r->head = 0;
-    r->tail = 0;
-    r->fill = 0;
-    r->lock = xSemaphoreCreateMutex();
-    return r->lock ? 0 : -1;
-}
-
-static size_t pcm_ring_write(pcm_ring_t *r, const uint8_t *data, size_t len)
-{
-    if (!r || !r->buffer || !data || len == 0) return 0;
-    xSemaphoreTake(r->lock, portMAX_DELAY);
-    size_t free_space = r->capacity - r->fill;
-    size_t to_write = len < free_space ? len : free_space;
-    if (to_write > 0) {
-        size_t part1 = r->capacity - r->head;
-        if (to_write <= part1) {
-            memcpy(r->buffer + r->head, data, to_write);
-            r->head = (r->head + to_write) % r->capacity;
-        } else {
-            memcpy(r->buffer + r->head, data, part1);
-            memcpy(r->buffer, data + part1, to_write - part1);
-            r->head = to_write - part1;
-        }
-        r->fill += to_write;
-    }
-    xSemaphoreGive(r->lock);
-    return to_write;
-}
-
-static size_t pcm_ring_read(pcm_ring_t *r, uint8_t *out, size_t max_len)
-{
-    if (!r || !r->buffer || !out || max_len == 0) return 0;
-    xSemaphoreTake(r->lock, portMAX_DELAY);
-    size_t to_read = max_len < r->fill ? max_len : r->fill;
-    if (to_read > 0) {
-        size_t part1 = r->capacity - r->tail;
-        if (to_read <= part1) {
-            memcpy(out, r->buffer + r->tail, to_read);
-            r->tail = (r->tail + to_read) % r->capacity;
-        } else {
-            memcpy(out, r->buffer + r->tail, part1);
-            memcpy(out + part1, r->buffer, to_read - part1);
-            r->tail = to_read - part1;
-        }
-        r->fill -= to_read;
-    }
-    xSemaphoreGive(r->lock);
-    rock_pcm_publish(&s_pcm_tap, out, to_read, atomic_load(&s_pcm_rate), atomic_load(&s_pcm_channels));
-    return to_read;
-}
-
-static size_t pcm_ring_fill(pcm_ring_t *r)
-{
-    if (!r || !r->lock) return 0;
-    xSemaphoreTake(r->lock, portMAX_DELAY);
-    size_t fill = r->fill;
-    xSemaphoreGive(r->lock);
-    return fill;
-}
-
-static void pcm_ring_clear(pcm_ring_t *r)
-{
-    if (!r || !r->lock) return;
-    xSemaphoreTake(r->lock, portMAX_DELAY);
-    r->head = 0;
-    r->tail = 0;
-    r->fill = 0;
-    xSemaphoreGive(r->lock);
-}
 
 size_t rock_player_copy_pcm_snapshot(int16_t *out_samples, size_t max_samples,
                                      uint32_t *sample_rate, uint8_t *channels)
@@ -201,7 +116,8 @@ static void audio_tx_task(void *arg)
         rock_player_status_t st = get_player_status();
 
         if (st == ROCK_PLAYER_STATUS_PLAYING) {
-            size_t n = pcm_ring_read(&s_pcm_ring, pcm_chunk, sizeof(pcm_chunk));
+            size_t n = rock_pcm_ring_read(&s_pcm_ring, pcm_chunk, sizeof(pcm_chunk));
+            rock_pcm_publish(&s_pcm_tap, pcm_chunk, n, atomic_load(&s_pcm_rate), atomic_load(&s_pcm_channels));
             if (n > 0) {
                 esp_codec_dev_handle_t codec = (esp_codec_dev_handle_t)rock_audio_codec_handle();
                 if (codec) {
@@ -227,6 +143,77 @@ static void audio_tx_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(50));
         }
     }
+}
+
+// One decode pass over the staged compressed input (phase-4 extraction from
+// stream_rx_task): run esp_audio_dec frames, reconfigure the codec on format
+// changes, push PCM into the speaker ring and flip BUFFERING→PLAYING once
+// the pre-roll threshold is reached.  Decoder errors skip a byte to
+// resynchronize.  Returns consumed bytes, or -1 when a codec reconfig failed
+// and the stream must be dropped.
+static int rock_decoder_step(esp_audio_dec_handle_t dec,
+                             const char *station_id,
+                             uint8_t *in_buf, size_t in_len,
+                             uint8_t *out_buf,
+                             uint32_t *current_fs, uint8_t *current_channels)
+{
+    size_t in_pos = 0;
+    while (in_len > in_pos && !atomic_load(&s_stop_signal)) {
+        esp_audio_dec_in_raw_t raw = {
+            .buffer = in_buf + in_pos,
+            .len = (uint32_t)(in_len - in_pos),
+            .consumed = 0,
+        };
+        esp_audio_dec_out_frame_t out_frame = {
+            .buffer = out_buf,
+            .len = DECODE_OUT_CAP,
+            .needed_size = 0,
+            .decoded_size = 0,
+        };
+
+        esp_audio_err_t dret = esp_audio_dec_process(dec, &raw, &out_frame);
+        if (dret == ESP_AUDIO_ERR_OK || dret == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
+            in_pos += raw.consumed;
+            if (out_frame.decoded_size > 0) {
+                // Check sample info dynamically
+                esp_audio_dec_info_t info;
+                if (esp_audio_dec_get_info(dec, &info) == ESP_AUDIO_ERR_OK) {
+                    if (info.sample_rate != *current_fs || info.channel != *current_channels) {
+                        ESP_LOGI(TAG, "Decoder format: %lu Hz, %u ch (reconfiguring codec)",
+                                 (unsigned long)info.sample_rate, info.channel);
+                        if (rock_audio_reconfig(info.sample_rate, info.channel) != 0) {
+                            ESP_LOGE(TAG, "rock_audio_reconfig failed, aborting local decode");
+                            return -1;
+                        }
+                        atomic_store(&s_pcm_rate, info.sample_rate);
+                        atomic_store(&s_pcm_channels, info.channel);
+                        *current_fs = info.sample_rate;
+                        *current_channels = info.channel;
+                    }
+                }
+
+                atomic_fetch_add(&s_stat_pcm_bytes, (uint32_t)rock_pcm_ring_write(&s_pcm_ring, out_buf, out_frame.decoded_size));
+
+                // Pre-roll check
+                if (get_player_status() == ROCK_PLAYER_STATUS_BUFFERING &&
+                    rock_pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
+                    set_player_status(ROCK_PLAYER_STATUS_PLAYING);
+                    notify_ui(station_id, ROCK_PLAYER_UI_PLAYING);
+                    if (!atomic_load(&s_muted)) {
+                        rock_audio_pa_set(true);
+                    }
+                    ESP_LOGI(TAG, "Pre-roll reached (%u bytes); playback started", (unsigned)PREROLL_MIN_BYTES);
+                }
+            }
+        } else if (dret == ESP_AUDIO_ERR_DATA_LACK) {
+            // Need more data from the source
+            break;
+        } else {
+            atomic_fetch_add(&s_stat_decode_errors, 1);
+            in_pos++; // skip byte to resynchronize
+        }
+    }
+    return (int)in_pos;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,7 +301,7 @@ static void stream_rx_task(void *arg)
 
     while (!atomic_load(&s_stop_signal) && atomic_load(&s_stream_generation) == current_gen) {
         // Flow control: wait if PCM ring buffer is getting full (> 85%)
-        if (pcm_ring_fill(&s_pcm_ring) > (PCM_RING_CAPACITY * 85 / 100)) {
+        if (rock_pcm_ring_fill(&s_pcm_ring) > (PCM_RING_CAPACITY * 85 / 100)) {
             vTaskDelay(pdMS_TO_TICKS(15));
             continue;
         }
@@ -335,78 +322,28 @@ static void stream_rx_task(void *arg)
         in_len += (size_t)rlen;
 
         if (pcm_mode) {
-            atomic_fetch_add(&s_stat_pcm_bytes, (uint32_t)pcm_ring_write(&s_pcm_ring, in_buf, in_len));
+            atomic_fetch_add(&s_stat_pcm_bytes, (uint32_t)rock_pcm_ring_write(&s_pcm_ring, in_buf, in_len));
             in_len = 0;
             if (get_player_status() == ROCK_PLAYER_STATUS_BUFFERING
-                && pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
+                && rock_pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
                 set_player_status(ROCK_PLAYER_STATUS_PLAYING);
                 notify_ui(current_station, ROCK_PLAYER_UI_PLAYING);
                 if (!atomic_load(&s_muted)) {
                     rock_audio_pa_set(true);
                 }
                 ESP_LOGI(TAG, "Pre-roll reached (%u bytes); playback started",
-                    (unsigned)pcm_ring_fill(&s_pcm_ring));
+                    (unsigned)rock_pcm_ring_fill(&s_pcm_ring));
             }
             continue;
         }
 
         // Decode loop
-        size_t in_pos = 0;
-        while (in_len > in_pos && !atomic_load(&s_stop_signal)) {
-            esp_audio_dec_in_raw_t raw = {
-                .buffer = in_buf + in_pos,
-                .len = (uint32_t)(in_len - in_pos),
-                .consumed = 0,
-            };
-            esp_audio_dec_out_frame_t out_frame = {
-                .buffer = out_buf,
-                .len = DECODE_OUT_CAP,
-                .needed_size = 0,
-                .decoded_size = 0,
-            };
-
-            esp_audio_err_t dret = esp_audio_dec_process(dec, &raw, &out_frame);
-            if (dret == ESP_AUDIO_ERR_OK || dret == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
-                in_pos += raw.consumed;
-                if (out_frame.decoded_size > 0) {
-                    // Check sample info dynamically
-                    esp_audio_dec_info_t info;
-                    if (esp_audio_dec_get_info(dec, &info) == ESP_AUDIO_ERR_OK) {
-                        if (info.sample_rate != current_fs || info.channel != current_channels) {
-                            ESP_LOGI(TAG, "Decoder format: %lu Hz, %u ch (reconfiguring codec)",
-                                     (unsigned long)info.sample_rate, info.channel);
-                            if (rock_audio_reconfig(info.sample_rate, info.channel) != 0) {
-                                ESP_LOGE(TAG, "rock_audio_reconfig failed, aborting local decode");
-                                goto fail;
-                            }
-                            atomic_store(&s_pcm_rate, info.sample_rate);
-                            atomic_store(&s_pcm_channels, info.channel);
-                            current_fs = info.sample_rate;
-                            current_channels = info.channel;
-                        }
-                    }
-
-                    atomic_fetch_add(&s_stat_pcm_bytes, (uint32_t)pcm_ring_write(&s_pcm_ring, out_buf, out_frame.decoded_size));
-
-                    // Pre-roll check
-                    if (get_player_status() == ROCK_PLAYER_STATUS_BUFFERING &&
-                        pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
-                        set_player_status(ROCK_PLAYER_STATUS_PLAYING);
-                        notify_ui(current_station, ROCK_PLAYER_UI_PLAYING);
-                        if (!atomic_load(&s_muted)) {
-                            rock_audio_pa_set(true);
-                        }
-                        ESP_LOGI(TAG, "Pre-roll reached (%u bytes); playback started", (unsigned)PREROLL_MIN_BYTES);
-                    }
-                }
-            } else if (dret == ESP_AUDIO_ERR_DATA_LACK) {
-                // Need more data from the source
-                break;
-            } else {
-                atomic_fetch_add(&s_stat_decode_errors, 1);
-                in_pos++; // skip byte to resynchronize
-            }
+        int consumed = rock_decoder_step(dec, current_station, in_buf, in_len, out_buf,
+                                         &current_fs, &current_channels);
+        if (consumed < 0) {
+            goto fail;
         }
+        size_t in_pos = (size_t)consumed;
 
         // Shift unconsumed bytes to beginning
         if (in_pos < in_len) {
@@ -460,7 +397,7 @@ int rock_player_init(void)
     esp_aac_dec_register();
 
     // Allocate PSRAM PCM ring buffer
-    if (pcm_ring_init(&s_pcm_ring, PCM_RING_CAPACITY) != 0) {
+    if (rock_pcm_ring_init(&s_pcm_ring, PCM_RING_CAPACITY) != 0) {
         ESP_LOGE(TAG, "PCM ring buffer initialization failed");
         goto fail;
     }
@@ -511,7 +448,7 @@ int rock_player_play_stream(const char *stream_uri, const char *station_id, cons
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 
-    pcm_ring_clear(&s_pcm_ring);
+    rock_pcm_ring_clear(&s_pcm_ring);
     rock_audio_pa_set(false);
 
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
@@ -560,7 +497,7 @@ int rock_player_stop(void)
 {
     atomic_store(&s_stop_signal, true);
     atomic_fetch_add(&s_stream_generation, 1);
-    pcm_ring_clear(&s_pcm_ring);
+    rock_pcm_ring_clear(&s_pcm_ring);
     rock_audio_pa_set(false);
     set_player_status(ROCK_PLAYER_STATUS_STOPPED);
     return 0;
@@ -644,7 +581,7 @@ void rock_player_log_stream_metrics(void)
     ESP_LOGI(TAG, "stream metrics net=%lu pcm=%lu ring=%u zero_reads=%lu dma_largest=%u",
              (unsigned long)atomic_load(&s_stat_net_bytes),
              (unsigned long)atomic_load(&s_stat_pcm_bytes),
-             (unsigned)pcm_ring_fill(&s_pcm_ring),
+             (unsigned)rock_pcm_ring_fill(&s_pcm_ring),
              (unsigned long)atomic_load(&s_stat_zero_reads),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
 }
@@ -730,8 +667,8 @@ static void player_bringup_task(void *arg)
                         current_channels = info.channel;
                     }
                 }
-                pcm_ring_write(&s_pcm_ring, out_buf, out_frame.decoded_size);
-                if (!playback_started && pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
+                rock_pcm_ring_write(&s_pcm_ring, out_buf, out_frame.decoded_size);
+                if (!playback_started && rock_pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
                     playback_started = true;
                     set_player_status(ROCK_PLAYER_STATUS_PLAYING);
                     notify_ui("bringup-station", ROCK_PLAYER_UI_PLAYING);
@@ -780,7 +717,7 @@ static void player_bringup_task(void *arg)
     int last_logged_sec = 0;
     while ((xTaskGetTickCount() - start_tick) < pdMS_TO_TICKS(soak_seconds * 1000)) {
         // Feed decoder
-        if (pcm_ring_fill(&s_pcm_ring) < (PCM_RING_CAPACITY * 70 / 100)) {
+        if (rock_pcm_ring_fill(&s_pcm_ring) < (PCM_RING_CAPACITY * 70 / 100)) {
             if (loop_pos >= s_test_mp3_len) loop_pos = 0;
             esp_audio_dec_in_raw_t raw = {
                 .buffer = (uint8_t *)(s_test_mp3_data + loop_pos),
@@ -797,7 +734,7 @@ static void player_bringup_task(void *arg)
             if (dret == ESP_AUDIO_ERR_OK || dret == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
                 loop_pos += raw.consumed;
                 if (out_frame.decoded_size > 0) {
-                    pcm_ring_write(&s_pcm_ring, out_buf, out_frame.decoded_size);
+                    rock_pcm_ring_write(&s_pcm_ring, out_buf, out_frame.decoded_size);
                 }
             } else {
                 loop_pos++;
@@ -831,7 +768,7 @@ static void player_bringup_task(void *arg)
     ESP_LOGI(TAG, "[TEST 5/5] Stop & decoder resilience...");
     rock_player_stop();
     assert(get_player_status() == ROCK_PLAYER_STATUS_STOPPED);
-    assert(pcm_ring_fill(&s_pcm_ring) == 0);
+    assert(rock_pcm_ring_fill(&s_pcm_ring) == 0);
     ESP_LOGI(TAG, "[TEST 5/5] Stop verified");
 
     // Close bring-up decoder

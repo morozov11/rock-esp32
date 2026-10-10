@@ -30,8 +30,11 @@ struct rock_cast_tls {
 // HTTP eureka_info Reader (Port 8008)
 // ---------------------------------------------------------------------------
 
-static bool fetch_eureka_info(const char *ip_str, char *out_name, size_t name_len,
-                              char *out_model, size_t model_len, char *out_id, size_t id_len)
+// Fetch the raw eureka_info document into dev->eureka_json. No JSON parsing
+// in C (project convention): the Rust side decodes the document and resolves
+// name/model/udn from it; an empty field means the probe failed and the
+// caller's fallbacks stay in effect.
+static bool fetch_eureka_info(const char *ip_str, rock_cast_device_t *dev)
 {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) return false;
@@ -65,57 +68,23 @@ static bool fetch_eureka_info(const char *ip_str, char *out_name, size_t name_le
     if (n <= 0) return false;
     buf[n] = '\0';
 
-    // Parse "name":"..."
-    char *p = strstr(buf, "\"name\":");
-    if (p) {
-        p += 7;
-        while (*p == ' ' || *p == '\"') p++;
-        char *end = strchr(p, '\"');
-        if (end) {
-            size_t len = end - p;
-            if (len > name_len - 1) len = name_len - 1;
-            strncpy(out_name, p, len);
-            out_name[len] = '\0';
-        }
-    }
-
-    // Parse "ssdp_udn":"..." or "mac_address":"..."
-    p = strstr(buf, "\"ssdp_udn\":");
-    if (!p) p = strstr(buf, "\"mac_address\":");
-    if (p) {
-        p = strchr(p, ':');
-        if (p) {
-            p++;
-            while (*p == ' ' || *p == '\"') p++;
-            char *end = strchr(p, '\"');
-            if (end) {
-                size_t len = end - p;
-                if (len > id_len - 1) len = id_len - 1;
-                strncpy(out_id, p, len);
-                out_id[len] = '\0';
-            }
-        }
-    }
-
-    // Parse model_name or manufacturer
-    p = strstr(buf, "\"model_name\":");
-    if (!p) p = strstr(buf, "\"manufacturer\":");
-    if (p) {
-        p = strchr(p, ':');
-        if (p) {
-            p++;
-            while (*p == ' ' || *p == '\"') p++;
-            char *end = strchr(p, '\"');
-            if (end) {
-                size_t len = end - p;
-                if (len > model_len - 1) len = model_len - 1;
-                strncpy(out_model, p, len);
-                out_model[len] = '\0';
-            }
-        }
-    }
-
+    // Store the body only: response headers would defeat the serde_json
+    // decode on the Rust side.
+    const char *body = strstr(buf, "\r\n\r\n");
+    body = body ? body + 4 : buf;
+    strncpy(dev->eureka_json, body, sizeof(dev->eureka_json) - 1);
+    dev->eureka_json[sizeof(dev->eureka_json) - 1] = '\0';
     return true;
+}
+
+// Format a host-byte-order IPv4 address (subnet-scan targets).
+static void format_ip4(uint32_t ip, char *out, size_t cap)
+{
+    snprintf(out, cap, "%u.%u.%u.%u",
+             (unsigned)((ip >> 24) & 0xFF),
+             (unsigned)((ip >> 16) & 0xFF),
+             (unsigned)((ip >> 8) & 0xFF),
+             (unsigned)(ip & 0xFF));
 }
 
 // ---------------------------------------------------------------------------
@@ -173,11 +142,7 @@ static size_t cast_subnet_scan(rock_cast_device_t *out_devices, size_t max_devic
         for (size_t b = 0; b < BATCH_SIZE && (i + b) < num_hosts; b++) {
             uint32_t target_ip = subnet | hosts[i + b];
             char target_str[16];
-            snprintf(target_str, sizeof(target_str), "%u.%u.%u.%u",
-                     (unsigned)((target_ip >> 24) & 0xFF),
-                     (unsigned)((target_ip >> 16) & 0xFF),
-                     (unsigned)((target_ip >> 8) & 0xFF),
-                     (unsigned)(target_ip & 0xFF));
+            format_ip4(target_ip, target_str, sizeof(target_str));
 
             bool already = false;
             for (size_t d = 0; d < count; d++) {
@@ -225,15 +190,9 @@ static size_t cast_subnet_scan(rock_cast_device_t *out_devices, size_t max_devic
                             rock_cast_device_t *dev = &out_devices[count];
                             memset(dev, 0, sizeof(*dev));
                             dev->port = 8009;
-                            snprintf(dev->host, sizeof(dev->host), "%u.%u.%u.%u",
-                                     (unsigned)((ips[b] >> 24) & 0xFF),
-                                     (unsigned)((ips[b] >> 16) & 0xFF),
-                                     (unsigned)((ips[b] >> 8) & 0xFF),
-                                     (unsigned)(ips[b] & 0xFF));
+                            format_ip4(ips[b], dev->host, sizeof(dev->host));
 
-                            fetch_eureka_info(dev->host, dev->name, sizeof(dev->name),
-                                              dev->model, sizeof(dev->model),
-                                              dev->id, sizeof(dev->id));
+                            fetch_eureka_info(dev->host, dev);
 
                             if (dev->name[0] == '\0') {
                                 snprintf(dev->name, sizeof(dev->name), "Chromecast %.48s", dev->host);

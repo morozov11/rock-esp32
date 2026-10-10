@@ -39,6 +39,16 @@ pub struct DiscoveredReceiver {
     pub port: u16,
 }
 
+impl DiscoveredReceiver {
+    /// Receiver identity policy (phase 4, moved out of the firmware FFI
+    /// layer): the canonical key is the device's own id when present,
+    /// otherwise host:port.
+    pub fn from_discovery(id: String, name: String, model: String, host: String, port: u16) -> Self {
+        let key = if id.is_empty() { format!("{host}:{port}") } else { id };
+        Self { key, name, model, host, port }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct ChromecastReceiverInfo {
     pub receiver_id: String,

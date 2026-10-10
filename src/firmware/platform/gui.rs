@@ -1,0 +1,227 @@
+//! GUI FFI wrappers: state updates, catalogs, overlays, cast menu, and the
+//! GuiEvent decoding from the C event queue.
+
+use super::copy_str_to_buf;
+use super::ffi::*;
+use super::cstring;
+
+use std::ffi::CStr;
+
+#[derive(Clone, Debug)]
+pub(crate) enum GuiEvent {
+    PlayStation(String),
+    PlaybackPlay,
+    PlaybackPause,
+    PlaybackStop,
+    VolumeSet(u8),
+    VolumeChange(i16),
+    CatalogBrowse,
+    CatalogSearch(String),
+    Retry,
+    CastBrowse,
+    CastSelect(String),
+    CastDisconnect,
+}
+
+pub(crate) fn gui_poll_event(timeout_ms: u32) -> Option<GuiEvent> {
+    let mut raw = RockUiEvent {
+        evt_type: 0,
+        text: [0; 513],
+        value: 0,
+    };
+    if unsafe { rock_gui_poll_event(&mut raw, timeout_ms) } {
+        let text = unsafe { CStr::from_ptr(raw.text.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        match raw.evt_type {
+            1 => Some(GuiEvent::PlayStation(text)),
+            2 => Some(GuiEvent::PlaybackPlay),
+            3 => Some(GuiEvent::PlaybackPause),
+            4 => Some(GuiEvent::PlaybackStop),
+            5 => Some(GuiEvent::VolumeSet(raw.value as u8)),
+            6 => Some(GuiEvent::VolumeChange(raw.value)),
+            7 => Some(GuiEvent::CatalogBrowse),
+            8 => Some(GuiEvent::CatalogSearch(text)),
+            9 => Some(GuiEvent::Retry),
+            10 => Some(GuiEvent::CastBrowse),
+            11 => Some(GuiEvent::CastSelect(text)),
+            12 => Some(GuiEvent::CastDisconnect),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+pub(crate) fn gui_start() -> Result<(), ()> {
+    if unsafe { rock_gui_start() } == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
+
+pub(crate) fn gui_update_playback(
+    status: i32,
+    station_id: &str,
+    title: &str,
+    subtitle: &str,
+    volume: u8,
+    muted: bool,
+) {
+    let st_c = cstring(station_id).ok();
+    let ti_c = cstring(title).ok();
+    let su_c = cstring(subtitle).ok();
+    unsafe {
+        rock_gui_update_playback(
+            status,
+            st_c.as_ref()
+                .map(|s| s.as_ptr())
+                .unwrap_or(core::ptr::null()),
+            ti_c.as_ref()
+                .map(|s| s.as_ptr())
+                .unwrap_or(core::ptr::null()),
+            su_c.as_ref()
+                .map(|s| s.as_ptr())
+                .unwrap_or(core::ptr::null()),
+            volume,
+            muted,
+        );
+    }
+}
+
+pub(crate) fn gui_update_connectivity(rssi: i32, wifi: bool, server: bool) {
+    unsafe { rock_gui_update_connectivity(rssi, wifi, server) };
+}
+
+pub(crate) fn gui_set_browse_stations(
+    stations: &[crate::device_control::catalog::DeviceStationDto],
+    next_cursor: Option<&str>,
+) {
+    let mut items = [RockGuiStationItem {
+        id: [0; 129],
+        name: [0; 129],
+        tags: [0; 64],
+        codec: [0; 16],
+        bitrate_kbps: 0,
+        is_playing: false,
+    }; 20];
+    let count = stations.len().min(20);
+    for i in 0..count {
+        copy_str_to_buf(&stations[i].id, &mut items[i].id);
+        copy_str_to_buf(&stations[i].name, &mut items[i].name);
+        copy_str_to_buf(&stations[i].tags.join(", "), &mut items[i].tags);
+        if let Some(ref c) = stations[i].codec {
+            copy_str_to_buf(c, &mut items[i].codec);
+        }
+        items[i].bitrate_kbps = stations[i].bitrate_kbps.unwrap_or(0);
+        items[i].is_playing = false;
+    }
+    let cursor_c = next_cursor.and_then(|c| cstring(c).ok());
+    let cursor_ptr = cursor_c
+        .as_ref()
+        .map(|c| c.as_ptr())
+        .unwrap_or(core::ptr::null());
+    unsafe { rock_gui_set_browse_stations(items.as_ptr(), count, cursor_ptr) };
+}
+
+pub(crate) fn gui_set_search_results(
+    stations: &[crate::device_control::catalog::DeviceStationDto],
+) {
+    let mut items = [RockGuiStationItem {
+        id: [0; 129],
+        name: [0; 129],
+        tags: [0; 64],
+        codec: [0; 16],
+        bitrate_kbps: 0,
+        is_playing: false,
+    }; 20];
+    let count = stations.len().min(20);
+    for i in 0..count {
+        copy_str_to_buf(&stations[i].id, &mut items[i].id);
+        copy_str_to_buf(&stations[i].name, &mut items[i].name);
+        copy_str_to_buf(&stations[i].tags.join(", "), &mut items[i].tags);
+        if let Some(ref c) = stations[i].codec {
+            copy_str_to_buf(c, &mut items[i].codec);
+        }
+        items[i].bitrate_kbps = stations[i].bitrate_kbps.unwrap_or(0);
+        items[i].is_playing = false;
+    }
+    unsafe { rock_gui_set_search_results(items.as_ptr(), count) };
+}
+
+pub(crate) fn gui_show_loading(msg: &str) {
+    if let Ok(c) = cstring(msg) {
+        unsafe { rock_gui_show_loading(c.as_ptr()) };
+    }
+}
+
+pub(crate) fn gui_show_empty(msg: &str) {
+    if let Ok(c) = cstring(msg) {
+        unsafe { rock_gui_show_empty(c.as_ptr()) };
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn gui_show_offline(msg: &str) {
+    if let Ok(c) = cstring(msg) {
+        unsafe { rock_gui_show_offline(c.as_ptr()) };
+    }
+}
+
+pub(crate) fn gui_show_error(msg: &str) {
+    if let Ok(c) = cstring(msg) {
+        unsafe { rock_gui_show_error(c.as_ptr()) };
+    }
+}
+
+pub(crate) fn gui_dismiss_state() {
+    unsafe { rock_gui_dismiss_state() };
+}
+
+pub(crate) fn gui_mark_catalog_stale() {
+    unsafe { rock_gui_mark_catalog_stale() };
+}
+
+pub(crate) fn gui_set_starting_station(station_id: &str) {
+    if let Ok(c) = cstring(station_id) {
+        unsafe { rock_gui_set_starting_station(c.as_ptr()) };
+    }
+}
+
+pub(crate) fn gui_show_cast_menu(scanning: bool) {
+    unsafe { rock_gui_show_cast_menu(scanning) };
+}
+
+pub(crate) fn gui_dismiss_cast_menu() {
+    unsafe { rock_gui_dismiss_cast_menu() };
+}
+
+pub(crate) fn gui_set_cast_devices(
+    items: &[crate::device_control::cast::ChromecastReceiverInfo],
+    active_receiver_id: Option<&str>,
+) {
+    let mut raw = [RockGuiCastItemRaw {
+        receiver_id: [0; 65],
+        display_name: [0; 129],
+        is_active: false,
+    }; 16];
+    let count = items.len().min(raw.len());
+    for i in 0..count {
+        let rec = &items[i];
+        copy_str_to_buf(&rec.receiver_id, &mut raw[i].receiver_id);
+        copy_str_to_buf(&rec.display_name, &mut raw[i].display_name);
+        raw[i].is_active = active_receiver_id == Some(rec.receiver_id.as_str());
+    }
+    unsafe { rock_gui_set_cast_devices(raw.as_ptr(), count) };
+}
+
+pub(crate) fn gui_update_cast_status(is_casting: bool, receiver_name: Option<&str>) {
+    let name_c = receiver_name.and_then(|n| cstring(n).ok());
+    unsafe {
+        rock_gui_update_cast_status(
+            is_casting,
+            name_c.as_ref().map(|s| s.as_ptr()).unwrap_or(core::ptr::null()),
+        )
+    };
+}

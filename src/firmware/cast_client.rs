@@ -58,6 +58,47 @@ impl CastClient {
         stream.send(&frame, 3000)
     }
 
+    /// Receiver keepalive PING detection (phase-4 dedup of five hand-rolled
+    /// blocks).
+    fn is_ping(msg: &CastMessage) -> bool {
+        msg.namespace == NS_HEARTBEAT
+            && matches!(&msg.payload, Payload::String(s) if s.contains("PING"))
+    }
+
+    /// PONG back to the ping's source.
+    fn send_pong(stream: &mut CastTlsStream, msg: &CastMessage) {
+        let _ = Self::send_msg(stream, &msg_pong_to(&msg.source_id));
+    }
+
+    /// Wait for a receiver-status message carrying a running DMR session
+    /// (phase-4 dedup of the pre-LAUNCH reuse probe and the post-LAUNCH
+    /// wait, which differ only in budget). Answers PINGs while waiting.
+    fn wait_dmr_session(
+        stream: &mut CastTlsStream,
+        inbox: &mut Vec<u8>,
+        budget_ms: u64,
+    ) -> Result<Option<AppSession>, ()> {
+        let start_wait = platform::uptime_ms();
+        while platform::uptime_ms() - start_wait < budget_ms {
+            if let Some(msg) = Self::read_msg(stream, inbox, 1000)? {
+                if Self::is_ping(&msg) {
+                    Self::send_pong(stream, &msg);
+                    continue;
+                }
+                if msg.namespace == NS_RECEIVER {
+                    if let Payload::String(ref s) = msg.payload {
+                        if let Ok(v) = serde_json::from_str::<Value>(s) {
+                            if let Some(app) = parse_dmr(&v) {
+                                return Ok(Some(app));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// Chromecast receivers may require this post-TLS challenge before CASTV2
     /// control messages. Authentication failures are best-effort, matching the
     /// desktop client: some receivers do not reply, but still accept CASTV2.
@@ -80,19 +121,16 @@ impl CastClient {
                     platform::cast_log("Cast device-auth reply received");
                     return;
                 }
-                Ok(Some(msg)) if msg.namespace == NS_HEARTBEAT => {
-                    if let Payload::String(ref s) = msg.payload {
-                        if s.contains("PING") {
-                            let _ = Self::send_msg(stream, &msg_pong_to(&msg.source_id));
-                        }
-                    }
+                Ok(Some(msg)) if Self::is_ping(&msg) => {
+                    Self::send_pong(stream, &msg);
                 }
-                Ok(Some(msg)) => {
+                Ok(Some(msg)) if msg.namespace != NS_HEARTBEAT => {
                     platform::cast_log(&format!(
                         "Cast rx namespace='{}' before session",
                         msg.namespace
                     ));
                 }
+                Ok(Some(_)) => {} // non-PING heartbeat: consumed silently
                 Ok(None) => {}
                 Err(()) => {
                     platform::cast_log("Cast device-auth read failed; continuing");
@@ -168,58 +206,17 @@ impl CastClient {
         // IDLE media session which does not consume a subsequent live LOAD.
         let status_req = self.next_req();
         Self::send_msg(&mut stream, &msg_get_receiver_status(status_req))?;
-        let mut app_session = None;
-        let status_wait = platform::uptime_ms();
-        while platform::uptime_ms() - status_wait < 500 {
-            if let Some(msg) = Self::read_msg(&mut stream, &mut self.inbox, 1000)? {
-                if msg.namespace == NS_HEARTBEAT {
-                    if let Payload::String(ref s) = msg.payload {
-                        if s.contains("PING") {
-                            let _ = Self::send_msg(&mut stream, &msg_pong_to(&msg.source_id));
-                        }
-                    }
-                    continue;
-                }
-                if msg.namespace == NS_RECEIVER {
-                    if let Payload::String(ref s) = msg.payload {
-                        if let Ok(v) = serde_json::from_str::<Value>(s) {
-                            if let Some(app) = parse_dmr(&v) {
-                                app_session = Some(app);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let mut app_session = Self::wait_dmr_session(&mut stream, &mut self.inbox, 500)?;
 
         // 3. No active DMR: launch it, then wait for its session identifiers.
         if app_session.is_none() {
             let launch_req = self.next_req();
             Self::send_msg(&mut stream, &msg_launch_dmr(launch_req))?;
-            let launch_wait = platform::uptime_ms();
-            while platform::uptime_ms() - launch_wait < CAST_LAUNCH_TIMEOUT_MS as u64 {
-                if let Some(msg) = Self::read_msg(&mut stream, &mut self.inbox, 1000)? {
-                    if msg.namespace == NS_HEARTBEAT {
-                        if let Payload::String(ref s) = msg.payload {
-                            if s.contains("PING") {
-                                let _ = Self::send_msg(&mut stream, &msg_pong_to(&msg.source_id));
-                            }
-                        }
-                        continue;
-                    }
-                    if msg.namespace == NS_RECEIVER {
-                        if let Payload::String(ref s) = msg.payload {
-                            if let Ok(v) = serde_json::from_str::<Value>(s) {
-                                if let Some(app) = parse_dmr(&v) {
-                                    app_session = Some(app);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            app_session = Self::wait_dmr_session(
+                &mut stream,
+                &mut self.inbox,
+                CAST_LAUNCH_TIMEOUT_MS as u64,
+            )?;
         }
 
         let app = app_session.ok_or(())?;
@@ -265,7 +262,10 @@ impl CastClient {
                 Err(()) => return Err(()),
             }
         }
-        unreachable!()
+        // Defensive only (candidates is never empty: it always contains the
+        // preferred transport): an explicit error path instead of a panic —
+        // the board builds with panic=abort.
+        Err(())
     }
 
     fn load_stream_attempt(
@@ -301,12 +301,10 @@ impl CastClient {
 
         while platform::uptime_ms() - start_wait < CAST_LOAD_ATTEMPT_TIMEOUT_MS as u64 {
             if let Some(msg) = Self::read_msg(stream, &mut self.inbox, 1000)? {
-                if msg.namespace == NS_HEARTBEAT {
-                    if let Payload::String(ref s) = msg.payload {
-                        if s.contains("PING") {
-                            let _ = Self::send_msg(stream, &msg_pong());
-                        }
-                    }
+                // PONG addressed to the receiver (original behaviour of this
+                // loop, unlike the source-addressed pong elsewhere).
+                if Self::is_ping(&msg) {
+                    let _ = Self::send_msg(stream, &msg_pong());
                     continue;
                 }
                 if msg.namespace == NS_MEDIA {
@@ -457,12 +455,8 @@ impl CastClient {
 
         // Quick non-blocking poll of inbound packets
         while let Some(msg) = Self::read_msg(stream, &mut self.inbox, 10)? {
-            if msg.namespace == NS_HEARTBEAT {
-                if let Payload::String(ref s) = msg.payload {
-                    if s.contains("PING") {
-                        let _ = Self::send_msg(stream, &msg_pong_to(&msg.source_id));
-                    }
-                }
+            if Self::is_ping(&msg) {
+                Self::send_pong(stream, &msg);
             }
         }
 

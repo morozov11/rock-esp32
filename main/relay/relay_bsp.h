@@ -102,13 +102,14 @@ int rock_source_read(uint8_t *out, size_t cap);
 esp_err_t rock_relay_listen(char *out_relay_url, size_t out_len);
 
 /**
- * Stop everything: source + Cast listeners.  Alias of rock_source_stop().
+ * Stop everything: source + Cast listeners.
+ * \deprecated Alias of rock_source_stop(); removal in phase 6.
  */
 void rock_relay_stop(void);
 
 /**
- * Returns true while the source feeder is running.  Alias of
- * rock_source_is_active().
+ * Returns true while the source feeder is running.
+ * \deprecated Alias of rock_source_is_active(); removal in phase 6.
  */
 bool rock_relay_is_active(void);
 
