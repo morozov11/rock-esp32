@@ -1,8 +1,8 @@
 #include "player_bsp.h"
 #include "pcm_snapshot.h"
 #include "audio_bsp.h"
-#include "display_bsp.h"
 #include "relay_bsp.h"
+#include "rock_ffi_exports.h"
 #if CONFIG_ROCK_BRINGUP_TESTS
 #include "test_mp3.h"
 #endif
@@ -32,9 +32,6 @@ static const char *TAG = "rock-player";
 #define PREROLL_MIN_BYTES (512 * 1024)      // ~3 s to absorb relay and Wi-Fi jitter
 #define HTTP_CHUNK_SIZE   4096
 #define DECODE_OUT_CAP    8192
-
-// External pure-Rust SSRF validator
-extern bool rock_validate_stream_uri(const char *uri);
 
 // ---------------------------------------------------------------------------
 // Thread-safe PSRAM PCM Ring Buffer
@@ -160,6 +157,22 @@ static atomic_uint_fast32_t s_stat_zero_reads = 0;
 
 static TaskHandle_t s_rx_task = NULL;
 
+// UI callbacks registered by the composition root; the player never calls
+// rock_ui_* directly (dependency inversion, phase 3).
+static rock_player_ui_cbs_t s_ui_cbs;
+
+void rock_player_set_ui_cbs(const rock_player_ui_cbs_t *cbs)
+{
+    s_ui_cbs = cbs ? *cbs : (rock_player_ui_cbs_t){0};
+}
+
+static void notify_ui(const char *station_id, rock_player_ui_state_t state)
+{
+    if (s_ui_cbs.on_playback_state) {
+        s_ui_cbs.on_playback_state(station_id, state);
+    }
+}
+
 static void set_player_status(rock_player_status_t status)
 {
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
@@ -202,7 +215,7 @@ static void audio_tx_task(void *arg)
                 atomic_fetch_add(&s_stat_underruns, 1);
                 set_player_status(ROCK_PLAYER_STATUS_BUFFERING);
                 rock_audio_pa_set(false);
-                rock_ui_show_now_playing(s_station_id, "BUFFERING", "Waiting for stream...");
+                notify_ui(s_station_id, ROCK_PLAYER_UI_STALLED);
                 ESP_LOGW(TAG, "PCM ring underrun (total: %u)", (unsigned)atomic_load(&s_stat_underruns));
             }
         } else if (st == ROCK_PLAYER_STATUS_PAUSED) {
@@ -241,7 +254,7 @@ static void stream_rx_task(void *arg)
     xSemaphoreGive(s_state_mutex);
 
     set_player_status(ROCK_PLAYER_STATUS_BUFFERING);
-    rock_ui_show_now_playing(current_station, "BUFFERING", "Connecting to stream...");
+    notify_ui(current_station, ROCK_PLAYER_UI_BUFFERING);
 
     if (!in_buf || !out_buf) {
         ESP_LOGE(TAG, "Failed to allocate stream RX buffers");
@@ -327,7 +340,7 @@ static void stream_rx_task(void *arg)
             if (get_player_status() == ROCK_PLAYER_STATUS_BUFFERING
                 && pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
                 set_player_status(ROCK_PLAYER_STATUS_PLAYING);
-                rock_ui_show_now_playing(current_station, "PLAYING", "RockCast Radio");
+                notify_ui(current_station, ROCK_PLAYER_UI_PLAYING);
                 if (!atomic_load(&s_muted)) {
                     rock_audio_pa_set(true);
                 }
@@ -379,7 +392,7 @@ static void stream_rx_task(void *arg)
                     if (get_player_status() == ROCK_PLAYER_STATUS_BUFFERING &&
                         pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
                         set_player_status(ROCK_PLAYER_STATUS_PLAYING);
-                        rock_ui_show_now_playing(current_station, "PLAYING", "RockCast Radio");
+                        notify_ui(current_station, ROCK_PLAYER_UI_PLAYING);
                         if (!atomic_load(&s_muted)) {
                             rock_audio_pa_set(true);
                         }
@@ -408,7 +421,7 @@ static void stream_rx_task(void *arg)
 
 fail:
     set_player_status(ROCK_PLAYER_STATUS_ERROR);
-    rock_ui_show_text("PLAYBACK ERROR");
+    notify_ui(current_station, ROCK_PLAYER_UI_ERROR);
     rock_audio_pa_set(false);
 
 cleanup:
@@ -527,7 +540,7 @@ int rock_player_play(void)
     if (st == ROCK_PLAYER_STATUS_PAUSED) {
         set_player_status(ROCK_PLAYER_STATUS_PLAYING);
         if (!atomic_load(&s_muted)) rock_audio_pa_set(true);
-        rock_ui_show_now_playing(s_station_id, "PLAYING", "RockCast Radio");
+        notify_ui(s_station_id, ROCK_PLAYER_UI_PLAYING);
     }
     return 0;
 }
@@ -538,7 +551,7 @@ int rock_player_pause(void)
     if (st == ROCK_PLAYER_STATUS_PLAYING) {
         set_player_status(ROCK_PLAYER_STATUS_PAUSED);
         rock_audio_pa_set(false);
-        rock_ui_show_now_playing(s_station_id, "PAUSED", "");
+        notify_ui(s_station_id, ROCK_PLAYER_UI_PAUSED);
     }
     return 0;
 }
@@ -663,7 +676,7 @@ static void player_bringup_task(void *arg)
     // 2. Decoder & Audio Path verification
     ESP_LOGI(TAG, "[TEST 2/5] MP3 Decoder & Pipeline initialization...");
     set_player_status(ROCK_PLAYER_STATUS_BUFFERING);
-    rock_ui_show_now_playing("bringup-station", "BUFFERING", "RockCast Radio");
+    notify_ui("bringup-station", ROCK_PLAYER_UI_BUFFERING);
 
     esp_audio_dec_handle_t dec = NULL;
     esp_audio_dec_cfg_t dec_cfg = {
@@ -721,7 +734,7 @@ static void player_bringup_task(void *arg)
                 if (!playback_started && pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
                     playback_started = true;
                     set_player_status(ROCK_PLAYER_STATUS_PLAYING);
-                    rock_ui_show_now_playing("bringup-station", "PLAYING", "RockCast Radio");
+                    notify_ui("bringup-station", ROCK_PLAYER_UI_PLAYING);
                     if (!atomic_load(&s_muted)) rock_audio_pa_set(true);
                     ESP_LOGI(TAG, "[TEST 2/5] Pre-roll buffer reached (%u bytes), PA GPIO11 active, playback PASS",
                              (unsigned)PREROLL_MIN_BYTES);

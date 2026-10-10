@@ -8,13 +8,55 @@
 #include <time.h>
 
 #include "board_bus.h"
+#include "control_platform.h"
 #include "display_bsp.h"
 #include "player_bsp.h"
 #include "rock_ota.h"
+#include "rock_ui_screens.h"
 
 static const char *TAG = "rock-esp32";
 
 extern void rust_main(void);
+
+// OTA → UI adapter: renders download progress on the local screen.
+static void ota_on_progress(const char *version, int percent)
+{
+    rock_ui_ota_progress_show(version, percent);
+}
+
+// Platform → UI adapters: splash boot status and the Wi-Fi scan list.
+static bool platform_ui_on_splash_status(const char *text)
+{
+    return rock_ui_splash_status(text);
+}
+
+static void platform_ui_on_wifi_scan(const rock_wifi_scan_item_t *items, uint16_t count)
+{
+    rock_ui_wifi_scan_show(items, count);
+}
+
+// Player → UI adapter: the player only reports abstract states; which text
+// and screen each state renders is decided here, next to the display wiring.
+static void player_ui_on_playback_state(const char *station_id, rock_player_ui_state_t state)
+{
+    switch (state) {
+        case ROCK_PLAYER_UI_BUFFERING:
+            rock_ui_show_now_playing(station_id, "BUFFERING", "Connecting to stream...");
+            break;
+        case ROCK_PLAYER_UI_STALLED:
+            rock_ui_show_now_playing(station_id, "BUFFERING", "Waiting for stream...");
+            break;
+        case ROCK_PLAYER_UI_PLAYING:
+            rock_ui_show_now_playing(station_id, "PLAYING", "RockCast Radio");
+            break;
+        case ROCK_PLAYER_UI_PAUSED:
+            rock_ui_show_now_playing(station_id, "PAUSED", "");
+            break;
+        case ROCK_PLAYER_UI_ERROR:
+            rock_ui_show_text("PLAYBACK ERROR");
+            break;
+    }
+}
 
 void rock_log_heap(size_t bytes)
 {
@@ -30,6 +72,7 @@ void app_main(void)
 {
     // Initialize OTA state tracking early (checks if running image is PENDING_VERIFY)
     rock_ota_init();
+    rock_ota_set_progress_cb(ota_on_progress);
 
     // Create the shared I2C1 bus (GT911 + ES8311) once, before any consumer.
     if (rock_i2c1_bus_acquire() == NULL) {
@@ -42,6 +85,17 @@ void app_main(void)
     if (rock_player_init() != 0) {
         ESP_LOGE(TAG, "Player subsystem init failed");
     }
+    rock_player_ui_cbs_t player_ui_cbs = {
+        .on_playback_state = player_ui_on_playback_state,
+    };
+    rock_player_set_ui_cbs(&player_ui_cbs);
+    // rock_platform_init() runs from rust_main(), so platform UI callbacks
+    // must be in place before it.
+    rock_platform_ui_cbs_t platform_ui_cbs = {
+        .on_splash_status = platform_ui_on_splash_status,
+        .on_wifi_scan = platform_ui_on_wifi_scan,
+    };
+    rock_platform_set_ui_cbs(&platform_ui_cbs);
 #if CONFIG_ROCK_BRINGUP_TESTS
     if (rock_player_bringup_start() != 0) {
         ESP_LOGE(TAG, "Player bring-up task start failed");

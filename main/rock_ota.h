@@ -38,6 +38,13 @@ esp_err_t rock_ota_check_start(const char *url, bool force);
  */
 bool rock_ota_is_in_progress(void);
 
+/**
+ * Register the progress callback invoked from the OTA worker with the image
+ * version and percent (0..100). Registered by the composition root; without
+ * a callback the OTA module does not touch the UI.
+ */
+void rock_ota_set_progress_cb(void (*cb)(const char *version, int percent));
+
 #ifdef __cplusplus
 }
 #endif

@@ -310,6 +310,96 @@ ALL PASSED!» (soak 30 s: underruns=0, dec_errors=0, WSS-сессия живёт
 композиционном корне (`main.c`). Файлы не переезжают — меняется направление
 стрелок.
 
+**Выполнено 2026-10-10** (16 файлов изменено +281/−815; 7 новых файлов
++830 строк: `rock_ui_screens.c/h`, `rock_serial.c/h`, `rock_screenshot.c/h`,
+`rock_ffi_exports.h`):
+
+- **A. player → UI через колбеки**: `player_bsp.h/.c` — enum
+  `rock_player_ui_state_t` (BUFFERING/STALLED/PLAYING/PAUSED/ERROR),
+  `rock_player_ui_cbs_t{on_playback_state}` + `rock_player_set_ui_cbs()`;
+  все 9 вызовов `rock_ui_*` (7 продакшн + 2 bringup внутри
+  `#if CONFIG_ROCK_BRINGUP_TESTS`) заменены на `notify_ui()` c NULL-чеком;
+  include `display_bsp.h` удалён. UI-строки («BUFFERING»,
+  «Waiting for stream…», «RockCast Radio», «PLAYBACK ERROR») переехали в
+  адаптер `player_ui_on_playback_state` в `main.c`; регистрация сразу после
+  `rock_player_init()`, до `rust_main()`.
+- **B. platform/OTA → UI через колбеки**: `rock_wifi_scan_item_t` переехал
+  из `display_bsp.h` в `control_platform.h` (владелец Wi-Fi-домена; Rust тип
+  не биндит); `rock_platform_ui_cbs_t{on_splash_status,on_wifi_scan}` +
+  сеттер; 6 вызовов `rock_ui_*` в `control_platform.c` → колбеки;
+  `rock_ota_set_progress_cb()`, оба вызова `rock_ui_ota_progress_show` →
+  колбек; include `display_bsp.h` удалён из обоих .c. Регистрации в `main.c`:
+  платформа — до `rust_main()` (`rock_platform_init` зовётся из Rust), OTA —
+  рядом с `rock_ota_init()`. `rock_onboarding.c`→UI не трогали (легальное
+  направление app→UI).
+- **C. display_bsp → только hardware**: экраны splash, legacy-презентация,
+  pairing, Wi-Fi-scan, onboarding, OTA-бар переехали в новый
+  `rock_ui_screens.c` (485 строк; статик-виджеты и `s_qr_buffer` с ними);
+  QR-рендер ×2 свёрнут в один `qr_canvas_render()` — константы 320/4/177 в
+  одном месте. `display_bsp.c` = 239 строк: DSI/panel/LVGL/тач/подсветка;
+  include `rock_gui.h` удалён — **круг GUI↔BSP разорван**. Делегирование
+  `rock_gui_present/rock_gui_is_active` (быв. display_bsp.c:379-415) уехало
+  в `rock_ui_screens.c` — теперь это делегация внутри UI-слоя. `display_bsp.h`
+  — только `rock_display_init`; остальные объявления в `rock_ui_screens.h`.
+- **D. Серийный CLI → `rock_serial.c`**: `serial_cmd_task` (парсинг CMD:* +
+  USB-JTAG I/O, 104 строки, TAG «rock-serial») вынесен из `rock_gui.c`;
+  GUI получил узкие публичные `rock_gui_trigger(action)` (вся if-цепочка
+  CMD:UI: на статик-виджетах под LVGL-локом) и `rock_gui_log_debug_state()`
+  («ui view=…» логирует владелец статиков). `rock_gui.h` больше не включает
+  `player_bsp.h`: локальный `rock_gui_playback_t` — числовое зеркало
+  `rock_player_status_t` (0..5, ABI идентичен; Rust-биндинг в platform.rs
+  передаёт сырой c_int и не менялся). Задача стартует из `rock_gui_start()`
+  (виджеты должны существовать, а `rust_main()` не возвращается —
+  композиционный корень не может секвенировать после старта GUI).
+- **E. Скриншоты → `rock_screenshot.c`**: `rock_gui_dump_screenshot` +
+  b64/RLE-транспорт (128 строк) вынесены из `rock_gui.c`; единственный
+  потребитель — `rock_serial.c`.
+- **F. Extern-декларации → заголовки**: новый `rock_ffi_exports.h` —
+  сигнатуры `rock_validate_stream_uri`/`rock_qr_encode` дословно из
+  `#[no_mangle]`-определений (protocol.rs/pairing.rs); подключён в
+  `player_bsp.c` (быв. extern :35) и `rock_onboarding.c` (:24);
+  `relay_bsp.c:82` extern `rock_get_local_ip` → `#include
+  "control_platform.h"` (объявление функции добавлено в заголовок —
+  аддитивно; include-цикла нет, control_platform.h self-contained).
+- **G. `ws_frame_kind` удалён из C**: substring-сниффинг JSON (таксономия
+  протокола, которой владеет Rust) убран; C логирует только
+  «WSS send result=%d» / «WSS receive len=%d». Kind-логирование перенесено в
+  Rust: `transport.rs` после успешного `parse_frame` зовёт новый C-хелпер
+  `rock_ws_log_rx_frame(kind)` (по образцу `rock_ws_log_heartbeat_timeout`;
+  прямых вызовов ESP-IDF-лога из Rust не появилось — esp_idf_sys по-прежнему
+  только в композиционном корне). Формат «WSS receive type=%s» сохранён —
+  его парсит `tools/rock_hwtest.py:218`. Бонус точности: kind теперь из
+  разобранного Envelope, а не угадан подстроками — в логе виден
+  «directory.snapshot», которого в старом хардкод-списке не было.
+
+Дельта размеров (idf.py size, дефолт, до/после): Flash 2 358 904 → 2 361 574
+(**+2 670**), DIRAM 205 830 → 205 846 (+16), bin 0x258470 → 0x258ee0 (+752) —
+цена колбек-адаптеров и новых модульных гранул при −815 строках в
+god-object-файлах (display_bsp.c 714→239, rock_gui.c 1968→1794).
+
+Верификация: после каждого шага A–G `idf.py --no-ccache build` — чисто, без
+новых предупреждений (Rust: ровно два pre-existing `recover`/
+`rock_hosted_recover`); bringup-сборка
+(`-D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.bringup'`) после C и
+финально — чисто (bin 0x25f3f0; bringup-сайты плеера и CMD:SELFTEST в
+`rock_serial.c` компилируются под гейтом — оба преобразованы на колбеки
+внутри `#if`); host `cargo test` 12 lib + 21 контрактный зелёные.
+Grep-барьеры: в `player_bsp.c`/`control_platform.c`/`rock_ota.c` нет вызовов
+`rock_ui_*` и include `display_bsp.h`; в `display_bsp.c` нет `rock_gui_*`; в
+`rock_gui.c` нет `usb_serial_jtag` и extern-деклараций; в `display_bsp.h` нет
+`rock_wifi_scan_item_t`. Smoke на плате (COM6, дефолтная сборка):
+`tools/rock_hwtest.py` **14/14** (WSS за 16.1 s, browse/search 200, 3/3
+станции playing — колбеки BUFFERING→PLAYING вживую, pause/resume/stop/volume,
+heartbeat worst gap 22 s, post-TTL reload каталога); вручную: CMD:SELFTEST →
+«SELFTEST disabled (build with CONFIG_ROCK_BRINGUP_TESTS=y)», CMD:METRICS →
+обе строки на месте («metrics heap=…» от rock-serial + «ui view=…» от
+rock-gui/rock_gui_log_debug_state), CMD:VIEW:BROWSE/NP и CMD:SCREENSHOT
+(маркеры START/END) работают; в 20-минутном логе 79 строк
+«WSS receive type=…» (kind из Rust), «WSS send result=…»/«WSS receive len=…»
+на месте, полных WSS-кадров/stream_uri/токенов нет. Первый прогон hwtest дал
+13/14 только из-за позднего attach (WSS-строка бута прошла мимо окна) —
+повтор flash+hwtest подряд закрыл и его.
+
 1. **player → UI**: в `player_bsp` вместо восьми `rock_ui_*` — структура
    колбеков `rock_player_ui_cbs_t` (on_status, on_now_playing, on_text),
    регистрируется в `main.c`, который подключает её к display/gui. Аудио-слой
@@ -411,7 +501,7 @@ ALL PASSED!» (soak 30 s: underruns=0, dec_errors=0, WSS-сессия живёт
 |------|------|----------|-------------|
 | 1 баги+секрет | низкий | высокий | точечные патчи, делать сразу — выполнено 2026-10-10 |
 | 2 мёртвый код | очень низкий | высокий | механика, минус флеш/память — выполнено 2026-10-10 |
-| 3 инверсия зависимостей | средний | высокий | главное архитектурное улучшение |
+| 3 инверсия зависимостей | средний | высокий | главное архитектурное улучшение — выполнено 2026-10-10 |
 | 4 распил файлов | средний | высокий | по одному PR, каждый собирается |
 | 5 кросс-языковая DRY | низкий | средний | ABI-заголовок — первый шаг |
 | 6 компоненты/переименования | высокий | средний | только после стабилизации 1–5 |

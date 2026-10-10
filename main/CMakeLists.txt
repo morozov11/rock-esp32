@@ -8,6 +8,7 @@
 idf_component_register(
     SRCS "main.c" "display_bsp.c" "control_platform.c" "board_bus.c" "audio_bsp.c" "player_bsp.c"
          "rock_wifi_storage.c" "rock_ota.c" "rock_onboarding.c" "audio_spectrum.c" "rock_gui.c"
+         "rock_ui_screens.c" "rock_serial.c" "rock_screenshot.c"
          "font_inter_14.c" "font_inter_18.c" "font_inter_24.c" "font_hack_16.c" "cast_bsp.c" "relay_bsp.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES

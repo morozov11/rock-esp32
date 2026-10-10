@@ -1,5 +1,4 @@
 #include "rock_ota.h"
-#include "display_bsp.h"
 
 #include "esp_app_desc.h"
 #include "esp_crt_bundle.h"
@@ -16,6 +15,12 @@
 static const char *TAG = "rock-ota";
 static atomic_bool s_ota_in_progress = false;
 static TaskHandle_t s_ota_task_handle = NULL;
+static void (*s_progress_cb)(const char *version, int percent) = NULL;
+
+void rock_ota_set_progress_cb(void (*cb)(const char *version, int percent))
+{
+    s_progress_cb = cb;
+}
 
 typedef struct {
     char url[512];
@@ -207,7 +212,7 @@ static void ota_worker_task(void *pvParameter)
             if (percent != last_reported_percent && (percent % 5 == 0 || percent == 100)) {
                 last_reported_percent = percent;
                 ESP_LOGI(TAG, "OTA progress: %d%% (%d / %d bytes)", percent, len_read, total_size);
-                rock_ui_ota_progress_show(fw_version, percent);
+                if (s_progress_cb) s_progress_cb(fw_version, percent);
             }
         }
 
@@ -219,7 +224,7 @@ static void ota_worker_task(void *pvParameter)
         err = esp_https_ota_finish(ota_handle);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "OTA update successfully written and verified! Rebooting in 2 seconds...");
-            rock_ui_ota_progress_show(fw_version, 100);
+            if (s_progress_cb) s_progress_cb(fw_version, 100);
             vTaskDelay(pdMS_TO_TICKS(2000));
             esp_restart();
         } else {

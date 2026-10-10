@@ -1,9 +1,9 @@
 #include "rock_gui.h"
-#include "esp_wifi.h"
 #include "rockcast_tokens.h"
 #include "rock_fonts.h"
 #include "audio_spectrum.h"
-#include "display_bsp.h"
+#include "rock_ui_screens.h"
+#include "rock_serial.h"
 
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
@@ -11,8 +11,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
-#include "draw/snapshot/lv_snapshot.h"
-#include "driver/usb_serial_jtag.h"
 #include "esp_heap_caps.h"
 
 #include <stdio.h>
@@ -35,7 +33,7 @@ static QueueHandle_t s_ui_event_queue = NULL;
 
 // Active state
 static rock_gui_view_mode_t s_active_view = VIEW_NOW_PLAYING;
-static rock_player_status_t s_playback_status = ROCK_PLAYER_STATUS_IDLE;
+static rock_gui_playback_t s_playback_status = ROCK_GUI_PLAYBACK_IDLE;
 static char s_station_id[129] = "";
 static uint8_t s_volume_level = 65;
 static bool s_volume_muted = false;
@@ -185,7 +183,6 @@ static void keyboard_input(lv_event_t *e)
 
 static void switch_view(rock_gui_view_mode_t view);
 static void enqueue_event(rock_ui_event_type_t type, const char *text, int16_t val);
-static void serial_cmd_task(void *arg);
 
 // ---------------------------------------------------------------------------
 // Touch Event Callbacks (Runs in LVGL task context - MUST NEVER BLOCK)
@@ -213,7 +210,7 @@ static void on_back_to_np_click(lv_event_t *e)
 static void on_play_pause_click(lv_event_t *e)
 {
     (void)e;
-    if (s_playback_status == ROCK_PLAYER_STATUS_PLAYING) {
+    if (s_playback_status == ROCK_GUI_PLAYBACK_PLAYING) {
         enqueue_event(ROCK_UI_EVT_PLAYBACK_PAUSE, NULL, 0);
     } else {
         enqueue_event(ROCK_UI_EVT_PLAYBACK_PLAY, NULL, 0);
@@ -441,7 +438,7 @@ static void spectrum_timer_cb(lv_timer_t *timer)
         lv_obj_set_height(s_spectrum_bars[i], h);
         lv_obj_set_y(s_spectrum_bars[i], 74 - h);
 
-        if (val > 0.08f && s_playback_status == ROCK_PLAYER_STATUS_PLAYING) {
+        if (val > 0.08f && s_playback_status == ROCK_GUI_PLAYBACK_PLAYING) {
             lv_obj_set_style_bg_color(s_spectrum_bars[i], ROCK_COLOR_ACCENT, 0);
         } else {
             lv_obj_set_style_bg_color(s_spectrum_bars[i], ROCK_COLOR_BAR_DIM, 0);
@@ -1257,7 +1254,9 @@ int rock_gui_start(void)
 
     switch_view(VIEW_NOW_PLAYING);
 
-    xTaskCreatePinnedToCore(serial_cmd_task, "gui_cmd", 32768, NULL, 3, NULL, 0);
+    // Serial diagnostics console (rock_serial.c); started here because its
+    // CMD:UI:* actions target widgets that exist only from this point on.
+    rock_serial_start();
 
     lvgl_port_unlock();
     ESP_LOGI(TAG, "RockCast native station GUI started successfully");
@@ -1270,7 +1269,7 @@ bool rock_gui_poll_event(rock_ui_event_t *out_event, uint32_t timeout_ms)
     return xQueueReceive(s_ui_event_queue, out_event, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }
 
-void rock_gui_update_playback(rock_player_status_t status, const char *station_id,
+void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id,
                               const char *title, const char *subtitle,
                               uint8_t volume, bool muted)
 {
@@ -1297,7 +1296,7 @@ void rock_gui_update_playback(rock_player_status_t status, const char *station_i
     }
 
     if (s_lbl_play_pause) {
-        if (status == ROCK_PLAYER_STATUS_PLAYING) {
+        if (status == ROCK_GUI_PLAYBACK_PLAYING) {
             lv_label_set_text(s_lbl_play_pause, ROCK_ICON_PAUSE);
         } else {
             lv_label_set_text(s_lbl_play_pause, ROCK_ICON_PLAY);
@@ -1312,19 +1311,19 @@ void rock_gui_update_playback(rock_player_status_t status, const char *station_i
     }
     if (s_lbl_ticker) {
         switch (status) {
-            case ROCK_PLAYER_STATUS_PLAYING:
+            case ROCK_GUI_PLAYBACK_PLAYING:
                 lv_label_set_text_fmt(s_lbl_ticker, "Воспроизведение: %s", lv_label_get_text(s_lbl_np_station));
                 break;
-            case ROCK_PLAYER_STATUS_BUFFERING:
+            case ROCK_GUI_PLAYBACK_BUFFERING:
                 lv_label_set_text(s_lbl_ticker, "Буферизация потока станции...");
                 break;
-            case ROCK_PLAYER_STATUS_PAUSED:
+            case ROCK_GUI_PLAYBACK_PAUSED:
                 lv_label_set_text(s_lbl_ticker, "Пауза");
                 break;
-            case ROCK_PLAYER_STATUS_STOPPED:
+            case ROCK_GUI_PLAYBACK_STOPPED:
                 lv_label_set_text(s_lbl_ticker, "Воспроизведение остановлено");
                 break;
-            case ROCK_PLAYER_STATUS_ERROR:
+            case ROCK_GUI_PLAYBACK_ERROR:
                 lv_label_set_text(s_lbl_ticker, "Ошибка воспроизведения аудио");
                 break;
             default:
@@ -1737,232 +1736,59 @@ void rock_gui_switch_view(int view_index)
     lvgl_port_unlock();
 }
 
-typedef struct {
-    uint8_t octets[3];
-    size_t octet_count;
-    char line_buf[128];
-    size_t line_pos;
-} b64_stream_t;
-
-static void b64_emit_byte(b64_stream_t *s, uint8_t b)
+void rock_gui_trigger(const char *action)
 {
-    static const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    s->octets[s->octet_count++] = b;
-    if (s->octet_count == 3) {
-        uint32_t triple = (s->octets[0] << 16) | (s->octets[1] << 8) | s->octets[2];
-        s->line_buf[s->line_pos++] = b64_table[(triple >> 18) & 0x3F];
-        s->line_buf[s->line_pos++] = b64_table[(triple >> 12) & 0x3F];
-        s->line_buf[s->line_pos++] = b64_table[(triple >> 6) & 0x3F];
-        s->line_buf[s->line_pos++] = b64_table[triple & 0x3F];
-        s->octet_count = 0;
-        if (s->line_pos >= 120) {
-            s->line_buf[s->line_pos++] = '\n';
-            s->line_buf[s->line_pos] = '\0';
-            fputs(s->line_buf, stdout);
-            s->line_pos = 0;
-            vTaskDelay(1);
+    if (!action || !lvgl_port_lock(500)) return;
+    if (!strcmp(action, "CATALOG")) lv_obj_send_event(s_btn_browse, LV_EVENT_CLICKED, NULL);
+    else if (!strcmp(action, "SEARCH")) { on_search_edit(NULL); lv_obj_send_event(s_btn_search, LV_EVENT_CLICKED, NULL); }
+    else if (!strncmp(action, "SEARCH:", 7)) {
+        switch_view(VIEW_SEARCH);
+        lv_textarea_set_text(s_ta_search, action + 7);
+        lv_obj_send_event(s_kb_search, LV_EVENT_READY, NULL);
+    } else if (!strcmp(action, "PLAYPAUSE")) lv_obj_send_event(s_btn_play_pause, LV_EVENT_CLICKED, NULL);
+    else if (!strcmp(action, "STOP")) lv_obj_send_event(s_btn_stop, LV_EVENT_CLICKED, NULL);
+    else if (!strcmp(action, "VOL+")) lv_obj_send_event(s_btn_vol_up, LV_EVENT_CLICKED, NULL);
+    else if (!strcmp(action, "VOL-")) lv_obj_send_event(s_btn_vol_down, LV_EVENT_CLICKED, NULL);
+    else if (!strcmp(action, "RETRY")) lv_obj_send_event(s_overlay_btn1, LV_EVENT_CLICKED, NULL);
+    else if (!strcmp(action, "BACK")) lv_obj_send_event(s_overlay_btn2, LV_EVENT_CLICKED, NULL);
+    else if (!strncmp(action, "STATIONID:", 10)) {
+        const char *station_id = action + 10;
+        if (*station_id && strlen(station_id) <= 128 &&
+            strspn(station_id, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~") == strlen(station_id)) {
+            ESP_LOGI(TAG, "Serial trigger station id='%s'", station_id);
+            enqueue_event(ROCK_UI_EVT_PLAY_STATION, station_id, 0);
         }
     }
-}
-
-static void b64_flush(b64_stream_t *s)
-{
-    static const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    if (s->octet_count > 0) {
-        uint32_t a = s->octets[0];
-        uint32_t b = (s->octet_count >= 2) ? s->octets[1] : 0;
-        uint32_t triple = (a << 16) | (b << 8);
-        s->line_buf[s->line_pos++] = b64_table[(triple >> 18) & 0x3F];
-        s->line_buf[s->line_pos++] = b64_table[(triple >> 12) & 0x3F];
-        s->line_buf[s->line_pos++] = (s->octet_count >= 2) ? b64_table[(triple >> 6) & 0x3F] : '=';
-        s->line_buf[s->line_pos++] = '=';
-        s->octet_count = 0;
+    else if (!strncmp(action, "STATION:", 8)) {
+        int row = atoi(action + 8);
+        station_row_ui_t *rows = s_active_view == VIEW_SEARCH ? s_search_rows : s_browse_rows;
+        if (row >= 0 && row < ROCK_GUI_MAX_STATIONS && !s_catalog_stale &&
+            !lv_obj_has_flag(rows[row].row, LV_OBJ_FLAG_HIDDEN)) {
+            ESP_LOGI(TAG, "Serial trigger station row=%d id='%s'", row, rows[row].station_id);
+            lv_obj_send_event(rows[row].row, LV_EVENT_CLICKED, NULL);
+        } else {
+            ESP_LOGW(TAG, "Serial trigger station row=%d invalid (stale=%d hidden=%d)",
+                     row, s_catalog_stale,
+                     (row >= 0 && row < ROCK_GUI_MAX_STATIONS) ? lv_obj_has_flag(rows[row].row, LV_OBJ_FLAG_HIDDEN) : -1);
+        }
+    } else if (!strcmp(action, "CAST")) {
+        if (s_btn_cast) lv_obj_send_event(s_btn_cast, LV_EVENT_CLICKED, NULL);
+    } else if (!strncmp(action, "CAST:SELECT:", 12)) {
+        int row = atoi(action + 12);
+        if (row >= 0 && row < ROCK_GUI_MAX_CAST_DEVICES && s_cast_rows[row].btn &&
+            !lv_obj_has_flag(s_cast_rows[row].btn, LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_send_event(s_cast_rows[row].btn, LV_EVENT_CLICKED, NULL);
+        }
+    } else if (!strcmp(action, "CAST:LOCAL")) {
+        if (s_cast_local_btn) lv_obj_send_event(s_cast_local_btn, LV_EVENT_CLICKED, NULL);
     }
-    if (s->line_pos > 0) {
-        s->line_buf[s->line_pos++] = '\n';
-        s->line_buf[s->line_pos] = '\0';
-        fputs(s->line_buf, stdout);
-        s->line_pos = 0;
-        vTaskDelay(1);
-    }
-    fflush(stdout);
-}
-
-int rock_gui_dump_screenshot(void)
-{
-    if (!lvgl_port_lock(2000)) {
-        ESP_LOGE(TAG, "Failed to lock LVGL for screenshot");
-        return -1;
-    }
-
-    lv_obj_t *screen = lv_screen_active();
-    if (!screen) {
-        lvgl_port_unlock();
-        ESP_LOGE(TAG, "No active screen");
-        return -1;
-    }
-
-    lv_obj_update_layout(screen);
-    lv_draw_buf_t *draw_buf = lv_snapshot_take(screen, LV_COLOR_FORMAT_RGB565);
     lvgl_port_unlock();
-
-    if (!draw_buf) {
-        ESP_LOGE(TAG, "lv_snapshot_take failed");
-        return -1;
-    }
-
-    uint32_t w = draw_buf->header.w;
-    uint32_t h = draw_buf->header.h;
-    uint32_t stride = draw_buf->header.stride;
-    uint32_t data_size = draw_buf->data_size;
-    uint32_t total_pixels = w * h;
-
-    esp_log_level_set("*", ESP_LOG_NONE);
-
-    printf("\n===SCREENSHOT_START:w=%u,h=%u,stride=%u,cf=RGB565_RLE,len=%u===\n",
-           (unsigned)w, (unsigned)h, (unsigned)stride, (unsigned)data_size);
-    fflush(stdout);
-
-    b64_stream_t stream = {0};
-    uint32_t idx = 0;
-
-    while (idx < total_pixels) {
-        uint16_t cur = *(uint16_t *)(draw_buf->data + (idx / w) * stride + (idx % w) * 2);
-        uint32_t run = 1;
-        while (idx + run < total_pixels && *(uint16_t *)(draw_buf->data + ((idx + run) / w) * stride + ((idx + run) % w) * 2) == cur && run < 255) {
-            run++;
-        }
-        b64_emit_byte(&stream, (uint8_t)run);
-        b64_emit_byte(&stream, (uint8_t)(cur & 0xFF));
-        b64_emit_byte(&stream, (uint8_t)((cur >> 8) & 0xFF));
-        idx += run;
-    }
-    b64_flush(&stream);
-
-    printf("===SCREENSHOT_END===\n");
-    fflush(stdout);
-
-    esp_log_level_set("*", ESP_LOG_INFO);
-
-    lv_draw_buf_destroy(draw_buf);
-    return 0;
 }
 
-static void serial_cmd_task(void *arg)
+void rock_gui_log_debug_state(void)
 {
-    (void)arg;
-    usb_serial_jtag_driver_config_t jtag_cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
-    esp_err_t err = usb_serial_jtag_driver_install(&jtag_cfg);
-    bool jtag_installed = (err == ESP_OK || err == ESP_ERR_INVALID_STATE);
-
-    char cmd[544];
-    size_t cmd_idx = 0;
-
-    ESP_LOGI(TAG, "Serial command listener active (USB-JTAG: %d)", (int)jtag_installed);
-
-    while (1) {
-
-        uint8_t ch = 0;
-        int n = usb_serial_jtag_read_bytes(&ch, 1, pdMS_TO_TICKS(50));
-        if (n > 0) {
-            if (ch == '\n' || ch == '\r') {
-                if (cmd_idx > 0) {
-                    cmd[cmd_idx] = '\0';
-                    ESP_LOGI(TAG, "Serial command received: '%s'", cmd);
-                    if (strcmp(cmd, "CMD:SELFTEST") == 0) {
-#if CONFIG_ROCK_BRINGUP_TESTS
-                        static bool ran;
-                        char state[16];
-                        rock_player_get_state(state, sizeof(state), NULL, 0, NULL, NULL);
-                        if (!ran && (!strcmp(state, "idle") || !strcmp(state, "stopped"))) {
-                            ran = rock_player_bringup_start() == 0;
-                        }
-#else
-                        ESP_LOGI(TAG, "SELFTEST disabled (build with CONFIG_ROCK_BRINGUP_TESTS=y)");
-#endif
-                    } else if (!strncmp(cmd, "CMD:UI:", 7)) {
-                        if (lvgl_port_lock(500)) {
-                            const char *action = cmd + 7;
-                            if (!strcmp(action, "CATALOG")) lv_obj_send_event(s_btn_browse, LV_EVENT_CLICKED, NULL);
-                            else if (!strcmp(action, "SEARCH")) { on_search_edit(NULL); lv_obj_send_event(s_btn_search, LV_EVENT_CLICKED, NULL); }
-                            else if (!strncmp(action, "SEARCH:", 7)) {
-                                switch_view(VIEW_SEARCH);
-                                lv_textarea_set_text(s_ta_search, action + 7);
-                                lv_obj_send_event(s_kb_search, LV_EVENT_READY, NULL);
-                            } else if (!strcmp(action, "PLAYPAUSE")) lv_obj_send_event(s_btn_play_pause, LV_EVENT_CLICKED, NULL);
-                            else if (!strcmp(action, "STOP")) lv_obj_send_event(s_btn_stop, LV_EVENT_CLICKED, NULL);
-                            else if (!strcmp(action, "VOL+")) lv_obj_send_event(s_btn_vol_up, LV_EVENT_CLICKED, NULL);
-                            else if (!strcmp(action, "VOL-")) lv_obj_send_event(s_btn_vol_down, LV_EVENT_CLICKED, NULL);
-                            else if (!strcmp(action, "RETRY")) lv_obj_send_event(s_overlay_btn1, LV_EVENT_CLICKED, NULL);
-                            else if (!strcmp(action, "BACK")) lv_obj_send_event(s_overlay_btn2, LV_EVENT_CLICKED, NULL);
-                            else if (!strncmp(action, "STATIONID:", 10)) {
-                                const char *station_id = action + 10;
-                                if (*station_id && strlen(station_id) <= 128 &&
-                                    strspn(station_id, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~") == strlen(station_id)) {
-                                    ESP_LOGI(TAG, "Serial trigger station id='%s'", station_id);
-                                    enqueue_event(ROCK_UI_EVT_PLAY_STATION, station_id, 0);
-                                }
-                            }
-                            else if (!strncmp(action, "STATION:", 8)) {
-                                int row = atoi(action + 8);
-                                station_row_ui_t *rows = s_active_view == VIEW_SEARCH ? s_search_rows : s_browse_rows;
-                                if (row >= 0 && row < ROCK_GUI_MAX_STATIONS && !s_catalog_stale &&
-                                    !lv_obj_has_flag(rows[row].row, LV_OBJ_FLAG_HIDDEN)) {
-                                    ESP_LOGI(TAG, "Serial trigger station row=%d id='%s'", row, rows[row].station_id);
-                                    lv_obj_send_event(rows[row].row, LV_EVENT_CLICKED, NULL);
-                                } else {
-                                    ESP_LOGW(TAG, "Serial trigger station row=%d invalid (stale=%d hidden=%d)",
-                                             row, s_catalog_stale,
-                                             (row >= 0 && row < ROCK_GUI_MAX_STATIONS) ? lv_obj_has_flag(rows[row].row, LV_OBJ_FLAG_HIDDEN) : -1);
-                                }
-                            } else if (!strcmp(action, "CAST")) {
-                                if (s_btn_cast) lv_obj_send_event(s_btn_cast, LV_EVENT_CLICKED, NULL);
-                            } else if (!strncmp(action, "CAST:SELECT:", 12)) {
-                                int row = atoi(action + 12);
-                                if (row >= 0 && row < ROCK_GUI_MAX_CAST_DEVICES && s_cast_rows[row].btn &&
-                                    !lv_obj_has_flag(s_cast_rows[row].btn, LV_OBJ_FLAG_HIDDEN)) {
-                                    lv_obj_send_event(s_cast_rows[row].btn, LV_EVENT_CLICKED, NULL);
-                                }
-                            } else if (!strcmp(action, "CAST:LOCAL")) {
-                                if (s_cast_local_btn) lv_obj_send_event(s_cast_local_btn, LV_EVENT_CLICKED, NULL);
-                            }
-                            lvgl_port_unlock();
-                        }
-                    } else if (strcmp(cmd, "CMD:METRICS") == 0) {
-                        uint32_t underruns, errors, reconnects;
-                        rock_player_get_stats(&underruns, &errors, &reconnects);
-                        extern int rock_wifi_rssi(void);
-                        extern int rock_wifi_channel(void);
-                        wifi_ps_type_t ps_now = WIFI_PS_NONE;
-                        esp_err_t ps_err = esp_wifi_get_ps(&ps_now);
-                        ESP_LOGI(TAG, "metrics heap=%u internal=%u underruns=%lu decode_errors=%lu reconnects=%lu tasks=%u timer_hz=%lu rssi=%d ch=%d ps=%d ps_err=%d",
-                            (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-                            (unsigned long)underruns, (unsigned long)errors, (unsigned long)reconnects,
-                            (unsigned)uxTaskGetNumberOfTasks(), (unsigned long)s_fps, rock_wifi_rssi(),
-                            rock_wifi_channel(), (int)ps_now, (int)ps_err);
-                        rock_player_log_stream_metrics();
-                        rock_spectrum_log_metrics();
-                        ESP_LOGI(TAG, "ui view=%d browse=%u search=%u stale=%d playback=%d volume=%u",
-                                 s_active_view, (unsigned)s_browse_rows_count,
-                                 (unsigned)s_search_rows_count, s_catalog_stale,
-                                 s_playback_status, s_volume_level);
-                    } else if (strcmp(cmd, "CMD:SCREENSHOT") == 0) {
-                        rock_gui_dump_screenshot();
-                    } else if (strcmp(cmd, "CMD:VIEW:NP") == 0) {
-                        rock_gui_switch_view(0);
-                        rock_gui_dump_screenshot();
-                    } else if (strcmp(cmd, "CMD:VIEW:BROWSE") == 0) {
-                        rock_gui_switch_view(1);
-                        rock_gui_dump_screenshot();
-                    } else if (strcmp(cmd, "CMD:VIEW:SEARCH") == 0) {
-                        rock_gui_switch_view(2);
-                        rock_gui_dump_screenshot();
-                    }
-                    cmd_idx = 0;
-                }
-            } else if (cmd_idx + 1 < sizeof(cmd)) {
-                cmd[cmd_idx++] = (char)ch;
-            }
-        }
-    }
+    ESP_LOGI(TAG, "ui view=%d browse=%u search=%u stale=%d playback=%d volume=%u",
+             (int)s_active_view, (unsigned)s_browse_rows_count,
+             (unsigned)s_search_rows_count, (int)s_catalog_stale,
+             (int)s_playback_status, (unsigned)s_volume_level);
 }

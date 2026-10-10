@@ -521,6 +521,9 @@ fn session(token: &str) -> Result<(), ()> {
         }) else {
             continue;
         };
+        // Observability only: log the parsed envelope kind, never the frame
+        // content (device.command carries stream_uri with a token).
+        platform::ws_log_rx_frame(&inbound.kind);
         if inbound.kind == "device.heartbeat_ack" {
             last_heartbeat_ack = platform::uptime_ms();
             continue;

@@ -1,6 +1,7 @@
 #include "rock_onboarding.h"
 #include "rock_wifi_storage.h"
-#include "display_bsp.h"
+#include "rock_ui_screens.h"
+#include "rock_ffi_exports.h"
 
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -19,8 +20,6 @@
 #include <string.h>
 
 static const char *TAG = "rock-onboard";
-
-extern int rock_qr_encode(const char *text, uint8_t *out_buf, size_t out_cap, uint16_t *out_width);
 
 static httpd_handle_t s_httpd = NULL;
 static TaskHandle_t s_dns_task_handle = NULL;

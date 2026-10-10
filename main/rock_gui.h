@@ -1,6 +1,5 @@
 #pragma once
 
-#include "player_bsp.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -10,6 +9,18 @@ extern "C" {
 #endif
 
 #define ROCK_GUI_MAX_STATIONS 20
+
+// Numeric mirror of rock_player_status_t (player_bsp.h). The Rust binding
+// passes this field as a raw int (platform.rs rock_gui_update_playback), so
+// the values must stay in exact lockstep until the phase-5 shared ABI header.
+typedef enum {
+    ROCK_GUI_PLAYBACK_IDLE = 0,
+    ROCK_GUI_PLAYBACK_BUFFERING,
+    ROCK_GUI_PLAYBACK_PLAYING,
+    ROCK_GUI_PLAYBACK_PAUSED,
+    ROCK_GUI_PLAYBACK_STOPPED,
+    ROCK_GUI_PLAYBACK_ERROR
+} rock_gui_playback_t;
 
 typedef struct {
     char id[129];
@@ -69,7 +80,7 @@ bool rock_gui_poll_event(rock_ui_event_t *out_event, uint32_t timeout_ms);
 /**
  * Update playback state on the GUI (Now-Playing view, status ticker, transport buttons).
  */
-void rock_gui_update_playback(rock_player_status_t status, const char *station_id,
+void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id,
                               const char *title, const char *subtitle,
                               uint8_t volume, bool muted);
 
@@ -123,16 +134,24 @@ void rock_gui_get_metrics(uint32_t *out_fps, size_t *out_free_heap);
 bool rock_gui_is_active(void);
 
 /**
- * Takes an LVGL snapshot of the active screen and dumps it over serial (stdout)
- * in base64 format wrapped in ===SCREENSHOT_START=== and ===SCREENSHOT_END===.
- */
-int rock_gui_dump_screenshot(void);
-
-/**
  * Switch active UI view programmatically:
  * 0 = Now Playing, 1 = Browse, 2 = Search
  */
 void rock_gui_switch_view(int view_index);
+
+/**
+ * Execute a serial-console UI action against the live widgets (under the
+ * LVGL lock). Action strings are the CMD:UI: payload of the serial protocol
+ * (CATALOG, SEARCH, SEARCH:<q>, PLAYPAUSE, STOP, VOL+, VOL-, RETRY, BACK,
+ * STATION:<row>, STATIONID:<id>, CAST, CAST:SELECT:<row>, CAST:LOCAL).
+ */
+void rock_gui_trigger(const char *action);
+
+/**
+ * Log one diagnostics line with the GUI's internal view/catalog state
+ * (format parsed by tools/rock_hwtest.py — keep verbatim).
+ */
+void rock_gui_log_debug_state(void);
 
 /**
  * Show audio output selection dialog / menu.

@@ -17,7 +17,23 @@ typedef enum {
     ROCK_PLAYER_STATUS_ERROR
 } rock_player_status_t;
 
+// Playback states the player reports upward to the UI. Which text/screen each
+// state maps to is decided by the callback owner (composition root), not here.
+typedef enum {
+    ROCK_PLAYER_UI_BUFFERING,
+    ROCK_PLAYER_UI_STALLED,
+    ROCK_PLAYER_UI_PLAYING,
+    ROCK_PLAYER_UI_PAUSED,
+    ROCK_PLAYER_UI_ERROR
+} rock_player_ui_state_t;
+
+typedef struct {
+    void (*on_playback_state)(const char *station_id, rock_player_ui_state_t state);
+} rock_player_ui_cbs_t;
+
 int rock_player_init(void);
+
+void rock_player_set_ui_cbs(const rock_player_ui_cbs_t *cbs);
 
 #if CONFIG_ROCK_BRINGUP_TESTS
 /**

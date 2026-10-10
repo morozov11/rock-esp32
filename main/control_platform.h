@@ -4,6 +4,24 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// One scanned Wi-Fi network, normalized for the scan list UI. Owner of the
+// Wi-Fi domain: this module (authmode mirrors esp_wifi authmode codes).
+typedef struct {
+    char ssid[33];
+    int8_t rssi;
+    uint8_t authmode;
+    uint8_t channel;
+} rock_wifi_scan_item_t;
+
+// UI callbacks registered by the composition root; the platform layer never
+// calls rock_ui_* directly (dependency inversion, phase 3).
+typedef struct {
+    bool (*on_splash_status)(const char *text);
+    void (*on_wifi_scan)(const rock_wifi_scan_item_t *items, uint16_t count);
+} rock_platform_ui_cbs_t;
+
+void rock_platform_set_ui_cbs(const rock_platform_ui_cbs_t *cbs);
+
 int rock_platform_init(void);
 int rock_identity_load(char *id, size_t id_cap, char *secret, size_t secret_cap);
 int rock_identity_save(const char *id, const char *secret);
@@ -17,6 +35,9 @@ void rock_ws_stop(void);
 int rock_ws_send(const char *data, size_t len);
 int rock_ws_receive(char *data, size_t cap, uint32_t timeout_ms);
 void rock_ws_log_heartbeat_timeout(uint64_t age_ms);
+/** Log a received frame's protocol kind (string like "device.command") from
+ *  the Rust session loop. Kind only — never frame content. */
+void rock_ws_log_rx_frame(const char *kind);
 int rock_now_rfc3339(char *out, size_t cap);
 void rock_random_fill(uint8_t *out, size_t len);
 const char *rock_server_base_url(void);
@@ -26,4 +47,5 @@ int rock_wifi_scan_and_show(void);
 bool rock_wifi_is_connected(void);
 int rock_wifi_rssi(void);
 int rock_wifi_channel(void);
+int rock_get_local_ip(char *out, size_t cap);
 uint64_t rock_uptime_ms(void);

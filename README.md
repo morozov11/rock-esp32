@@ -65,11 +65,42 @@ touch verification remains a separate board-session record; no flash operation
 is implied by a firmware build.
 
 Display bring-up (2026-09-08, completed ahead of the original checkpoint order): the 4.3-inch
-ST7701 panel runs through LVGL 9.5.0 + `esp_lvgl_port` 2.9.0 with an uptime clock
-(`HH:MM:SS`) rendered on the physical display; the Rust side drives the label through
-the `main/display_bsp.c` facade. See [docs/bring-up.md](docs/bring-up.md) for the
-verified pin/timing map and the ESP-IDF 6.x API migrations the vendor ST7701
-component needed.
+ST7701 panel runs through LVGL 9.5.0 + `esp_lvgl_port` 2.9.0. See
+[docs/bring-up.md](docs/bring-up.md) for the verified pin/timing map and the
+ESP-IDF 6.x API migrations the vendor ST7701 component needed.
+
+## Firmware layout and refactoring status
+
+After the phase-3 layering refactor (2026-10-10, see
+[docs/refactoring-audit.md](docs/refactoring-audit.md) for the full record and
+phase status), the C modules under `main/` follow a strict dependency
+direction: lower layers never call the UI directly — everything upward goes
+through callbacks registered in `main/main.c` (the composition root):
+
+- `display_bsp.c` — display hardware only (DSI/ST7701 panel, LVGL port task,
+  GT911 touch, backlight); no screens, no GUI knowledge.
+- `rock_ui_screens.c` — non-GUI LVGL screens: splash, legacy bounded
+  presentations, DC-017 pairing, Wi-Fi scan list, onboarding, OTA progress.
+- `rock_gui.c` — the native station GUI (views, touch, events); exposes narrow
+  hooks (`rock_gui_trigger`, `rock_gui_log_debug_state`) for diagnostics and
+  does not include `player_bsp.h`.
+- `rock_serial.c` — the CMD: serial diagnostics console over USB-JTAG (the
+  command set is a contract of `tools/*.py`); `rock_screenshot.c` — the
+  RLE/base64 screenshot transport.
+- `player_bsp.c`, `control_platform.c`, `rock_ota.c` — audio, Wi-Fi/WSS/OTA
+  platform and update workers; report state upward via
+  `rock_player_set_ui_cbs` / `rock_platform_set_ui_cbs` /
+  `rock_ota_set_progress_cb` instead of calling the UI.
+- `rock_ffi_exports.h` — the C-visible surface of the pure-Rust exports
+  (`rock_validate_stream_uri`, `rock_qr_encode`).
+
+WSS frame kinds are logged from the Rust session loop (parsed envelope kind
+only — frame content is never logged, per the phase-1 confidentiality
+contract); the C transport logs only lengths and results.
+
+Refactoring phases 1–3 (critical bugs, dead code, layer inversion) are
+complete and verified on the board; phase 4 (splitting the remaining god
+objects) is planned in the audit document.
 
 See [docs/bring-up.md](docs/bring-up.md) for hardware notes and [docs/rust-direction.md](docs/rust-direction.md) for the language strategy.
 

@@ -1,5 +1,4 @@
 #include "control_platform.h"
-#include "display_bsp.h"
 #include "rock_ota.h"
 #include "rock_wifi_storage.h"
 #include "rock_onboarding.h"
@@ -37,6 +36,25 @@
 #define ROCK_C6_RESET_GPIO GPIO_NUM_54
 
 void rock_hosted_recover(void);
+
+// UI callbacks registered by the composition root; this module never calls
+// rock_ui_* directly (dependency inversion, phase 3).
+static rock_platform_ui_cbs_t s_ui_cbs;
+
+void rock_platform_set_ui_cbs(const rock_platform_ui_cbs_t *cbs)
+{
+    s_ui_cbs = cbs ? *cbs : (rock_platform_ui_cbs_t){0};
+}
+
+static void notify_splash_status(const char *text)
+{
+    if (s_ui_cbs.on_splash_status) s_ui_cbs.on_splash_status(text);
+}
+
+static void notify_wifi_scan(const rock_wifi_scan_item_t *items, uint16_t count)
+{
+    if (s_ui_cbs.on_wifi_scan) s_ui_cbs.on_wifi_scan(items, count);
+}
 
 static const char *TAG = "rock-control";
 static EventGroupHandle_t s_wifi_events;
@@ -115,7 +133,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&event->ip_info.ip));
             char ip_buf[48];
             snprintf(ip_buf, sizeof(ip_buf), "Connected! IP: %s", s_sta_ip);
-            rock_ui_splash_status(ip_buf);
+            notify_splash_status(ip_buf);
         }
     }
 }
@@ -252,7 +270,7 @@ int rock_wifi_scan_and_show(void)
     esp_err_t err = esp_wifi_scan_start(&scan_cfg, true);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Wi-Fi scan start failed: %s", esp_err_to_name(err));
-        rock_ui_wifi_scan_show(NULL, 0);
+        notify_wifi_scan(NULL, 0);
         return -1;
     }
     uint16_t ap_count = 0;
@@ -276,7 +294,7 @@ int rock_wifi_scan_and_show(void)
         }
     }
 
-    rock_ui_wifi_scan_show(items, ap_count);
+    notify_wifi_scan(items, ap_count);
 
     if (items) free(items);
     if (records) free(records);
@@ -329,22 +347,6 @@ static int http_request(const char *method, const char *path, const char *bearer
              method, path, *status, esp_err_to_name(err), (unsigned)sink.len);
     esp_http_client_cleanup(client);
     return ret;
-}
-
-static const char *ws_frame_kind(const char *frame)
-{
-    static const char *const kinds[] = {
-        "protocol.hello", "protocol.welcome", "protocol.error", "device.register",
-        "device.registered", "device.state_full", "device.heartbeat",
-        "device.heartbeat_ack", "device.command", "command.accepted", "command.result",
-        "device.resync_requested"
-    };
-    for (size_t i = 0; i < sizeof(kinds) / sizeof(kinds[0]); ++i) {
-        char marker[64];
-        snprintf(marker, sizeof(marker), "\"type\":\"%s\"", kinds[i]);
-        if (strstr(frame, marker)) return kinds[i];
-    }
-    return "other";
 }
 
 static void websocket_event(void *arg, esp_event_base_t base, int32_t id, void *event_data)
@@ -432,7 +434,7 @@ int rock_platform_init(void)
         ESP_LOGI(TAG, "Wi-Fi country set to RU (channels 1-13 enabled)");
     }
 
-    rock_ui_splash_status("Checking network...");
+    notify_splash_status("Checking network...");
 
     // Check credentials hierarchy
     char active_ssid[33] = {0};
@@ -453,7 +455,7 @@ int rock_platform_init(void)
 
     if (!has_creds) {
         ESP_LOGI(TAG, "No Wi-Fi credentials in sdkconfig or NVS. Launching onboarding...");
-        rock_ui_splash_status("Starting Wi-Fi setup...");
+        notify_splash_status("Starting Wi-Fi setup...");
         rock_onboarding_run();
         return -1;
     }
@@ -472,7 +474,7 @@ int rock_platform_init(void)
     vTaskDelay(pdMS_TO_TICKS(500));
 
     // Keep valid credentials through transient AP outages and retry with backoff.
-    rock_ui_splash_status("Connecting to Wi-Fi...");
+    notify_splash_status("Connecting to Wi-Fi...");
     if (!wifi_connect_with_backoff(rock_uptime_ms() + 600000)) {
         ESP_LOGW(TAG, "STA unavailable for 10 minutes; opening onboarding with credentials preserved");
         rock_onboarding_run();
@@ -606,8 +608,9 @@ int rock_ws_send(const char *data, size_t len)
     if (!s_ws || !esp_websocket_client_is_connected(s_ws) || len > ROCK_MAX_FRAME) return -1;
     int sent = esp_websocket_client_send_text(s_ws, data, len, pdMS_TO_TICKS(10000));
     // Confidentiality: never log raw frames — device.command carries
-    // stream_uri with ?token=… (transport.rs contract).
-    ESP_LOGI(TAG, "WSS send type=%s result=%d", ws_frame_kind(data), sent);
+    // stream_uri with ?token=… (transport.rs contract). Frame-kind taxonomy
+    // belongs to Rust; it logs the kind after parsing the envelope.
+    ESP_LOGI(TAG, "WSS send result=%d", sent);
     return sent;
 }
 
@@ -620,9 +623,17 @@ int rock_ws_receive(char *data, size_t cap, uint32_t timeout_ms)
     memcpy(data, s_ws_frame, result);
     data[result] = '\0';
     // Confidentiality: never log raw frames — device.command carries
-    // stream_uri with ?token=… (transport.rs contract).
-    ESP_LOGI(TAG, "WSS receive type=%s len=%d", ws_frame_kind(data), result);
+    // stream_uri with ?token=… (transport.rs contract). The frame kind is
+    // logged by the Rust session loop (rock_ws_log_rx_frame) once parsed.
+    ESP_LOGI(TAG, "WSS receive len=%d", result);
     return result;
+}
+
+void rock_ws_log_rx_frame(const char *kind)
+{
+    // Called from the Rust session loop with the parsed envelope kind only —
+    // never frame content (phase-1 confidentiality contract).
+    ESP_LOGI(TAG, "WSS receive type=%s", kind ? kind : "unknown");
 }
 
 void rock_ws_log_heartbeat_timeout(uint64_t age_ms)

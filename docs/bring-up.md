@@ -69,8 +69,11 @@ Verified configuration (from the working vendor LVGL v9 demo, adapted):
   ESP Component Registry; the vendor `esp_lcd_st7701` 1.1.3 component is copied
   to `components/esp_lcd_st7701` because its DPI preset carries this board's
   specific timings.
-- Rust drives the clock label through the `main/display_bsp.c` facade
-  (`rock_ui_clock_set_text`), taking the LVGL port lock inside C. The loop uses
+- Rust drove the clock label through the `main/display_bsp.c` facade
+  (`rock_ui_clock_set_text`), taking the LVGL port lock inside C. (Historical:
+  the clock facade was removed in the phase-2 dead-code cleanup; the clock now
+  lives in the native station GUI, and `display_bsp.c` is hardware-only since
+  phase 3.) The loop uses
   `esp_timer_get_time` and a fixed buffer: pulling `std::time`/`CString` dragged
   `std::fs` into the link and failed on missing `realpath` under
   `-Zbuild-std` for this target.

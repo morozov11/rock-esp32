@@ -1,4 +1,5 @@
 #include "relay_bsp.h"
+#include "control_platform.h"
 
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
@@ -78,8 +79,6 @@ static const char RELAY_FORMAT_PASSTHROUGH_HEADERS[] =
     "Access-Control-Allow-Origin: *\r\n"
     "Accept-Ranges: none\r\n"
     "\r\n";
-
-extern int rock_get_local_ip(char *out, size_t cap);
 
 static char s_upstream_uri[512] = {0};
 // Bearer for the RockServer station proxy; empty string means an anonymous

@@ -65,6 +65,7 @@ unsafe extern "C" {
     fn rock_ws_send(data: *const c_char, len: usize) -> c_int;
     fn rock_ws_receive(data: *mut c_char, cap: usize, timeout_ms: u32) -> c_int;
     fn rock_ws_log_heartbeat_timeout(age_ms: u64);
+    fn rock_ws_log_rx_frame(kind: *const c_char);
     fn rock_now_rfc3339(out: *mut c_char, cap: usize) -> c_int;
     fn rock_random_fill(out: *mut u8, len: usize);
     fn rock_server_base_url() -> *const c_char;
@@ -312,6 +313,11 @@ pub(crate) fn ws_receive(frame: &mut [c_char], timeout_ms: u32) -> i32 {
 }
 pub(crate) fn ws_log_heartbeat_timeout(age_ms: u64) {
     unsafe { rock_ws_log_heartbeat_timeout(age_ms) }
+}
+pub(crate) fn ws_log_rx_frame(kind: &str) {
+    if let Ok(kind) = cstring(kind) {
+        unsafe { rock_ws_log_rx_frame(kind.as_ptr()) }
+    }
 }
 
 pub(crate) fn player_play_stream(stream_uri: &str, station_id: &str, bearer: &str) -> Result<(), ()> {
