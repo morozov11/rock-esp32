@@ -1,6 +1,16 @@
 # rock-esp32
 
-Firmware workspace for RockServer devices based on the JC4880P443C_I_W board (ESP32-P4 with an ESP32-C6 Wi-Fi companion). The initial milestone is deliberately small: a Rust application hosted by ESP-IDF that prints a heartbeat once per second.
+Firmware workspace for [RockServer](https://github.com/morozov11/rockserver) ([rockplatform.win](https://rockplatform.win)) devices based on the JC4880P443C_I_W board (ESP32-P4 with an ESP32-C6 Wi-Fi companion). The initial milestone is deliberately small: a Rust application hosted by ESP-IDF that prints a heartbeat once per second.
+
+## Ecosystem
+
+rock-esp32 is the embedded hardware component in the RockCast internet radio suite:
+
+- **[rock-esp32](https://github.com/morozov11/rock-esp32)** *(this repository)* — Standalone hardware radio player and display firmware based on ESP32-P4.
+- **[RockCast](https://github.com/morozov11/rockcast)** — Desktop internet radio player for Windows & Linux with Google Cast (CASTV2).
+- **[RockMobile](https://github.com/morozov11/rockmobile)** — Android companion app and radio player.
+- **[RockServer](https://github.com/morozov11/rockserver)** — Rust backend for radio discovery, AI semantic search, and device control ([rockplatform.win](https://rockplatform.win)).
+- **[RockCast Station Catalog](https://github.com/morozov11/rockcast-station-catalog)** — Curated baseline station catalog, JSON schema, and offline validation tools.
 
 ## Current target
 
