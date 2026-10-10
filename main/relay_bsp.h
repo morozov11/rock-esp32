@@ -61,6 +61,12 @@ void rock_source_stop(void);
 bool rock_source_is_active(void);
 
 /**
+ * Successful reconnects of a dropped upstream since the last
+ * rock_source_start (the primary connect is not counted).
+ */
+uint32_t rock_source_reconnect_count(void);
+
+/**
  * Returns true when the ring holds 48 kHz stereo PCM (transcode mode);
  * false when it holds compressed audio (passthrough mode).
  */

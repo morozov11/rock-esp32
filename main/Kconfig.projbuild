@@ -84,11 +84,13 @@ config ROCK_AP_MAX_CONN
 
 endmenu
 
-config ROCK_PLAYER_SELFTEST
-    bool "Enable player startup self-test tone"
+config ROCK_BRINGUP_TESTS
+    bool "Compile board bring-up self-test harnesses"
     default n
     help
-        Run player hardware bring-up and verification audio test on boot.
+        Compile the audio/player board bring-up harnesses and embed the
+        built-in test MP3 in the firmware. Used for board acceptance;
+        keep off in production builds.
 
 config ROCK_UI_DEBUG_OVERLAY
     bool "Enable UI debug telemetry in bottom status bar"

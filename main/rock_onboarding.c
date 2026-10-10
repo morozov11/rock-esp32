@@ -1,7 +1,6 @@
 #include "rock_onboarding.h"
 #include "rock_wifi_storage.h"
 #include "display_bsp.h"
-#include "rock_gui.h"
 
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -25,7 +24,6 @@ extern int rock_qr_encode(const char *text, uint8_t *out_buf, size_t out_cap, ui
 
 static httpd_handle_t s_httpd = NULL;
 static TaskHandle_t s_dns_task_handle = NULL;
-static bool s_dns_running = false;
 static char s_onboarding_pin[8] = {0};
 static wifi_ap_record_t s_scan_cache[30];
 static uint16_t s_scan_count;
@@ -474,12 +472,12 @@ static void dns_server_task(void *pvParameter)
     }
 
     ESP_LOGI(TAG, "Captive DNS server started on port 53");
-    s_dns_running = true;
 
     uint8_t rx_buf[512];
     uint8_t tx_buf[512];
 
-    while (s_dns_running) {
+    // The DNS server runs until reboot; nothing in onboarding stops it.
+    while (1) {
         struct sockaddr_in client_addr;
         socklen_t addr_len = sizeof(client_addr);
         int len = recvfrom(sock, rx_buf, sizeof(rx_buf), 0, (struct sockaddr *)&client_addr, &addr_len);
@@ -623,6 +621,4 @@ esp_err_t rock_onboarding_run(void)
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
-
-    return ESP_OK;
 }

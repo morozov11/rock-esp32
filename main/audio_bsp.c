@@ -73,6 +73,7 @@ static const char *TAG = "rock-audio";
 // (running tasks or ISRs).
 #define ROCK_IDLE_GAP_BUSY_US 250
 
+#if CONFIG_ROCK_BRINGUP_TESTS
 typedef enum {
     WIRE_16_MONO = 0,    // plain int16 mono samples (expected)
     WIRE_16_EMPTY_RIGHT, // int16 pairs, right slot always near zero
@@ -93,6 +94,7 @@ typedef struct {
     uint32_t buckets;
     bool quiet; // suppress per-window log lines (loopback mode)
 } pcm_stats_t;
+#endif // CONFIG_ROCK_BRINGUP_TESTS
 
 typedef struct {
     atomic_int rx_overrun;
@@ -108,6 +110,7 @@ static const audio_codec_data_if_t *s_data_if;
 static const audio_codec_ctrl_if_t *s_ctrl_if;
 static const audio_codec_gpio_if_t *s_gpio_if;
 static const audio_codec_if_t *s_es8311_if;
+#if CONFIG_ROCK_BRINGUP_TESTS
 static TaskHandle_t s_bringup_task;
 static TaskHandle_t s_writer_task;
 static TaskHandle_t s_reader_task;
@@ -117,13 +120,16 @@ static UBaseType_t s_bringup_stack_min;
 static wire_fmt_t s_wire_fmt = WIRE_16_MONO;
 
 static volatile bool s_loop_run;
+#endif // CONFIG_ROCK_BRINGUP_TESTS
 static loop_counters_t s_loop;
+#if CONFIG_ROCK_BRINGUP_TESTS
 // TX starvation tracking: an inter-write gap >= the DMA buffer depth means
 // the channel certainly ran dry (auto_clear sends silence); >= half the
 // depth is a warning.
 static volatile int s_underrun_definite;
 static volatile int s_underrun_warn;
 static volatile int64_t s_max_write_gap_us;
+#endif // CONFIG_ROCK_BRINGUP_TESTS
 
 static void pa_init(void)
 {
@@ -145,6 +151,7 @@ static inline void pa_set(bool on)
 
 // ---------------------------------------------------------------------------
 // Per-core CPU load via idle hooks (no Kconfig dependency; removed after use).
+#if CONFIG_ROCK_BRINGUP_TESTS
 static volatile int64_t s_idle_busy_us[2];
 static volatile int64_t s_idle_last_us[2];
 
@@ -199,10 +206,12 @@ static void cpu_mon_read(int pct[2], int64_t window_us)
         if (pct[i] > 100) pct[i] = 100;
     }
 }
+#endif // CONFIG_ROCK_BRINGUP_TESTS
 
 // ---------------------------------------------------------------------------
 // GT911 health probe over the shared I2C1 bus: read the static product-id
 // register ("911"), which cannot interfere with coordinate polling.
+#if CONFIG_ROCK_BRINGUP_TESTS
 static int gt911_probe(i2c_master_dev_handle_t *dev)
 {
     if (!*dev) {
@@ -222,9 +231,11 @@ static int gt911_probe(i2c_master_dev_handle_t *dev)
     }
     return id[0] == '9' && id[1] == '1' && id[2] == '1';
 }
+#endif // CONFIG_ROCK_BRINGUP_TESTS
 
 // ---------------------------------------------------------------------------
 // PCM metrics. Sample values themselves never enter any log line.
+#if CONFIG_ROCK_BRINGUP_TESTS
 static double dbfs(double rms)
 {
     return 20.0 * log10(rms / 32768.0 + 1e-12);
@@ -382,6 +393,7 @@ static void note_write_gap(int64_t start_us, int64_t prev_end_us)
     if (gap > (int64_t)ROCK_DMA_DEPTH_MS * 1000) s_underrun_definite++;
     else if (gap > (int64_t)ROCK_DMA_DEPTH_MS * 500) s_underrun_warn++;
 }
+#endif // CONFIG_ROCK_BRINGUP_TESTS
 
 // ---------------------------------------------------------------------------
 static bool IRAM_ATTR rx_overflow_cb(i2s_chan_handle_t chan, i2s_event_data_t *event, void *user_ctx)
@@ -538,6 +550,7 @@ int rock_audio_reconfig(uint32_t sample_rate, uint8_t channels)
     return 0;
 }
 
+#if CONFIG_ROCK_BRINGUP_TESTS
 static int play_tone(uint32_t freq_hz, uint32_t duration_ms, int32_t amplitude, bool with_pa)
 {
     ESP_LOGI(TAG, "TONE start: sine %u Hz, %u ms, 16-bit mono %d Hz, amp=%d (%.1f dBFS), PA=%s",
@@ -790,3 +803,4 @@ int rock_audio_bringup_start(void)
     }
     return 0;
 }
+#endif // CONFIG_ROCK_BRINGUP_TESTS

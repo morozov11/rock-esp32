@@ -94,7 +94,9 @@ static SemaphoreHandle_t s_config_lock = NULL;
 static atomic_bool s_relay_stop = false;
 static atomic_bool s_relay_running = false;
 static atomic_int s_client_count = 0;
-static TaskHandle_t s_relay_task_handle = NULL;
+// Successful reconnects of a dropped upstream; reset by rock_source_start
+// (the primary connect is not counted). Exposed for player telemetry.
+static atomic_uint s_upstream_reconnects = 0;
 static int s_server_sock = -1;
 // Passthrough mode: forward compressed MP3 as-is instead of transcoding to
 // PCM WAV.  The radio link (RSSI ~-77 dBm) cannot carry 192 KB/s of WAV plus
@@ -736,6 +738,7 @@ static int upstream_pump(relay_upstream_t *up, uint8_t *scratch, uint8_t *filter
         for (int retry = 0; retry < 3 && !relay_stopped(); retry++) {
             vTaskDelay(pdMS_TO_TICKS(1000));
             if (upstream_connect(up)) {
+                atomic_fetch_add(&s_upstream_reconnects, 1);
                 up->mp3_synced = false;
                 ESP_LOGI(TAG, "Upstream stream reconnected");
                 return 0;
@@ -1114,7 +1117,6 @@ exit:
     }
     upstream_teardown(&s_upstream);
     atomic_store(&s_relay_running, false);
-    s_relay_task_handle = NULL;
     ESP_LOGI(TAG, "Relay task exited");
     // This task was created with plain xTaskCreatePinnedToCore (dynamically
     // allocated stack/TCB): it must self-delete with plain vTaskDelete.
@@ -1199,6 +1201,7 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
     // A previous source cycle leaves the stop flag asserted; without this
     // reset the prefill loop below would bail out instantly at 0 bytes.
     atomic_store(&s_relay_stop, false);
+    atomic_store(&s_upstream_reconnects, 0);
     s_tap_joined = false;
     s_tap_pos = 0;
 
@@ -1299,7 +1302,7 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
     atomic_store(&s_relay_running, true);
 
     BaseType_t ret = xTaskCreatePinnedToCore(relay_task, "rock_relay", 6144, NULL, 5,
-        &s_relay_task_handle, 1);
+        NULL, 1);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to spawn source feeder task");
         atomic_store(&s_relay_running, false);
@@ -1421,6 +1424,11 @@ fail_socket:
 bool rock_source_is_active(void)
 {
     return atomic_load(&s_relay_running);
+}
+
+uint32_t rock_source_reconnect_count(void)
+{
+    return (uint32_t)atomic_load(&s_upstream_reconnects);
 }
 
 bool rock_source_is_pcm(void)

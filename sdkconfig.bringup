@@ -1,0 +1,4 @@
+# Board bring-up acceptance build: enables the audio/player bring-up
+# harnesses and embeds the test MP3. Usage:
+#   idf.py -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.bringup' build
+CONFIG_ROCK_BRINGUP_TESTS=y

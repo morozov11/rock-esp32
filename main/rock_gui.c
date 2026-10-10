@@ -37,8 +37,6 @@ static QueueHandle_t s_ui_event_queue = NULL;
 static rock_gui_view_mode_t s_active_view = VIEW_NOW_PLAYING;
 static rock_player_status_t s_playback_status = ROCK_PLAYER_STATUS_IDLE;
 static char s_station_id[129] = "";
-static char s_track_title[128] = "RockCast Radio";
-static char s_track_subtitle[128] = "Готов к воспроизведению";
 static uint8_t s_volume_level = 65;
 static bool s_volume_muted = false;
 static bool s_catalog_stale = false;
@@ -1292,11 +1290,9 @@ void rock_gui_update_playback(rock_player_status_t status, const char *station_i
         snprintf(s_station_id, sizeof(s_station_id), "%s", station_id);
     }
     if (title && title[0]) {
-        strncpy(s_track_title, title, sizeof(s_track_title) - 1);
         lv_label_set_text(s_lbl_np_station, title);
     }
     if (subtitle && subtitle[0]) {
-        strncpy(s_track_subtitle, subtitle, sizeof(s_track_subtitle) - 1);
         lv_label_set_text(s_lbl_np_subtitle, subtitle);
     }
 
@@ -1874,12 +1870,16 @@ static void serial_cmd_task(void *arg)
                     cmd[cmd_idx] = '\0';
                     ESP_LOGI(TAG, "Serial command received: '%s'", cmd);
                     if (strcmp(cmd, "CMD:SELFTEST") == 0) {
+#if CONFIG_ROCK_BRINGUP_TESTS
                         static bool ran;
                         char state[16];
                         rock_player_get_state(state, sizeof(state), NULL, 0, NULL, NULL);
                         if (!ran && (!strcmp(state, "idle") || !strcmp(state, "stopped"))) {
                             ran = rock_player_bringup_start() == 0;
                         }
+#else
+                        ESP_LOGI(TAG, "SELFTEST disabled (build with CONFIG_ROCK_BRINGUP_TESTS=y)");
+#endif
                     } else if (!strncmp(cmd, "CMD:UI:", 7)) {
                         if (lvgl_port_lock(500)) {
                             const char *action = cmd + 7;

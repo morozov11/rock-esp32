@@ -26,7 +26,9 @@ typedef enum {
     ROCK_UI_EVT_PLAYBACK_PLAY,
     ROCK_UI_EVT_PLAYBACK_PAUSE,
     ROCK_UI_EVT_PLAYBACK_STOP,
-    ROCK_UI_EVT_VOLUME_SET,     // value: 0..100
+    // reserved; never emitted; value is part of the Rust FFI contract
+    // (platform.rs evt decoding) — remove only with the phase-5 ABI header.
+    ROCK_UI_EVT_VOLUME_SET,
     ROCK_UI_EVT_VOLUME_CHANGE,  // value: -5 / +5
     ROCK_UI_EVT_CATALOG_BROWSE, // text: optional cursor
     ROCK_UI_EVT_CATALOG_SEARCH, // text: query (<=128 chars)

@@ -220,6 +220,74 @@ host `cargo test` 12 lib + 21 контрактный зелёные (вкл.
 
 ### Фаза 2 — вычистка мёртвого кода (−~700 строк C, −100+ KB флеша)
 
+**Выполнено 2026-10-10** (16 файлов, +66/−92, плюс новый `sdkconfig.bringup`):
+
+- Bring-up харнессы гейтированы **на месте** через `#if
+  CONFIG_ROCK_BRINGUP_TESTS` (новый Kconfig-флаг, default n; заменил
+  `ROCK_PLAYER_SELFTEST`). Вынос в отдельные файлы отложен до фазы 4 —
+  сейчас он потребовал бы расшаривать приватные статики без выигрыша.
+  Затегейчено: `audio_bsp.c` (tone/pcm_stats/cpu_mon/gt911_probe/loopback/
+  capture/play_tone + их статики и объявления `rock_audio_bringup_start`),
+  `player_bsp.c` (`player_bringup_task`, `rock_player_bringup_start`,
+  `test_mp3.h`), `CMD:SELFTEST` в `rock_gui.c` (всегда компилируется; под
+  гейтом — запуск, иначе лог «SELFTEST disabled»), вызов в `main.c`.
+  Продакшн-путь (`rock_audio_init/reconfig/pa_set/rx_overflow_cb`,
+  `pcm_ring_*`, `s_stat_*`) не гейтился. `s_loop`/`loop_counters_t` остались
+  вне гейта: их пишет продакшн-колбэк `rx_overflow_cb`.
+- Удалён no-op `rock_player_update_bearer` парной правкой C+Rust:
+  `player_bsp.c/h` (включая мёртвые `s_stream_uri`/`s_stream_authorization`),
+  `platform.rs` (extern+обёртка), `transport.rs` (вызов при старте сессии;
+  refresh-цикл теперь безусловно обновляет настоящий источник через
+  `rock_source_update_bearer` — раньше провал no-op молча пропускал refresh).
+- Удалены мёртвые: `s_stat_max_read_ms` (+поле из unparsed строки stream
+  metrics), `s_tx_task`, `s_relay_task_handle` (в xTaskCreate… → NULL),
+  `rock_ui_clock_init/set_text`, `ROCK_CAST_MAX_DEVICES`, `s_track_title/
+  subtitle`, мёртвый include `rock_gui.h` в `rock_onboarding.c`,
+  недостижимый `return ESP_OK` после `while(1)`, `s_dns_running` (цикл
+  упрощен до `while(1)` с комментарием). Гигиена: `<string.h>` добавлен,
+  неиспользуемый `esp_check.h` убран (`display_bsp.c`).
+- `ROCK_UI_EVT_VOLUME_SET` НЕ удалян (запрещено: номер — часть числового
+  FFI-контракта `platform.rs`), помечен комментарием reserved.
+- Телеметрия reconnects стала настоящей: `relay_bsp.c` считает успешные
+  переподключения упавшего апстрима (`upstream_pump` retry-loop; первичное
+  подключение не считается; сброс в `rock_source_start`), экспорт
+  `rock_source_reconnect_count()` (аддитивный ABI, Rust-биндинг не нужен),
+  `rock_player_get_stats` берёт значение оттуда; формат GUI-строки метрик
+  не менялся (его парсит `tools/rock_hwtest.py`).
+- `sdkconfig.bringup` (одна строка `CONFIG_ROCK_BRINGUP_TESTS=y`) закоммичен
+  в корне — воспроизводимая сборка приёмки:
+  `idf.py -D SDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.bringup' build`.
+- Исправлена доисторическая поломка харнеса плеера (обнаружена при проверке
+  bringup-сборки на плате): встроенный MP3 (~1.3 с ≈ 230 КБ PCM) за один
+  проход не достигал `PREROLL_MIN_BYTES` = 512 КБ → статус оставался
+  BUFFERING → ассерт `pause()` в TEST 3/5 падал → плата ребуталась (харнес
+  автостартует из `main.c`, семантика старого SELFTEST-флага). TEST 2/5
+  теперь зацикливает клип, как это всегда делала soak-петля. Правка только
+  внутри гейтнутого кода.
+
+Дельта размеров (idf.py size, дефолтная сборка, до/после): Flash
+2 385 294 → 2 358 904 (**−26 390**; .rodata 739 088 → 715 904 = −23 184,
+.text 1 645 630 → 1 642 424 = −3 206), bin 0x25EC90 → 0x258470 (−29 216),
+DIRAM 216 950 → 205 830 (−11 120). Меньше исходной оценки «−100+ KB» по
+двум причинам: `test_mp3.h` — это 101 540 байт *исходника* (hex-текст), а в
+бинарнике ~20.7 KB констант; аудио-харнес (~570 строк) линкер уже вырезал в
+базлайне (--gc-sections, вызовов не было). Гейт убирает код из компиляции
+вообще и возвращает явный контроль; bringup-сборка с гейтом собирается
+чисто (bin 0x25E9B0 ≈ базлайн).
+
+Верификация: `idf.py --no-ccache build` (дефолт и bringup) — чисто, без
+новых предупреждений (Rust: ровно два pre-existing `recover`/
+`rock_hosted_recover`, не тронуты); host `cargo test --target
+x86_64-pc-windows-msvc` 12 lib + 21 контрактный зелёные; smoke на плате
+(COM6, дефолтная сборка): `tools/rock_hwtest.py` **12/12** (WSS за 14.8 s,
+browse/search 200, станция играет, pause/volume/stop, heartbeat ≤20 s,
+CMD:METRICS матчится regex-ом с `reconnects=`), `CMD:SELFTEST` отвечает
+«SELFTEST disabled (build with CONFIG_ROCK_BRINGUP_TESTS=y)», полных
+WSS-кадров/stream_uri/bearer в логе нет. Bringup-сборка на плате: харнес
+автостартует с бута и завершается «RE-5 PLAYER HARDWARE VERIFICATION:
+ALL PASSED!» (soak 30 s: underruns=0, dec_errors=0, WSS-сессия живёт
+параллельно); после проверки плата возвращена на дефолтную прошивку.
+
 1. Bring-up харнессы (`audio_bsp.c` ~570 строк; `player_bsp.c` bringup-таск +
    `test_mp3.h` 100 KB; 16 `assert()`) вынести в отдельные файлы
    `rock_bringup_audio.c` / `rock_bringup_player.c` под Kconfig
@@ -342,7 +410,7 @@ host `cargo test` 12 lib + 21 контрактный зелёные (вкл.
 | Фаза | Риск | Ценность | Комментарий |
 |------|------|----------|-------------|
 | 1 баги+секрет | низкий | высокий | точечные патчи, делать сразу — выполнено 2026-10-10 |
-| 2 мёртвый код | очень низкий | высокий | механика, минус флеш/память |
+| 2 мёртвый код | очень низкий | высокий | механика, минус флеш/память — выполнено 2026-10-10 |
 | 3 инверсия зависимостей | средний | высокий | главное архитектурное улучшение |
 | 4 распил файлов | средний | высокий | по одному PR, каждый собирается |
 | 5 кросс-языковая DRY | низкий | средний | ABI-заголовок — первый шаг |

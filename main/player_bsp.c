@@ -3,7 +3,9 @@
 #include "audio_bsp.h"
 #include "display_bsp.h"
 #include "relay_bsp.h"
+#if CONFIG_ROCK_BRINGUP_TESTS
 #include "test_mp3.h"
+#endif
 
 #include <assert.h>
 #include "esp_audio_dec.h"
@@ -143,8 +145,6 @@ size_t rock_player_copy_pcm_snapshot(int16_t *out_samples, size_t max_samples,
 static SemaphoreHandle_t s_state_mutex;
 static rock_player_status_t s_status = ROCK_PLAYER_STATUS_IDLE;
 static char s_station_id[130];
-static char s_stream_uri[2050];
-static char s_stream_authorization[600];
 static uint8_t s_volume = 35;
 // Atomic: read by the audio TX task without s_state_mutex (B5 fix).
 static atomic_bool s_muted = false;
@@ -154,14 +154,11 @@ static atomic_bool s_stop_signal = false;
 
 static atomic_uint_fast32_t s_stat_underruns = 0;
 static atomic_uint_fast32_t s_stat_decode_errors = 0;
-static atomic_uint_fast32_t s_stat_net_reconnects = 0;
 static atomic_uint_fast32_t s_stat_net_bytes = 0;
 static atomic_uint_fast32_t s_stat_pcm_bytes = 0;
 static atomic_uint_fast32_t s_stat_zero_reads = 0;
-static atomic_uint_fast32_t s_stat_max_read_ms = 0;
 
 static TaskHandle_t s_rx_task = NULL;
-static TaskHandle_t s_tx_task = NULL;
 
 static void set_player_status(rock_player_status_t status)
 {
@@ -464,7 +461,7 @@ int rock_player_init(void)
     rock_audio_pa_set(false);
 
     // Create audio TX worker pinned to Core 1
-    if (xTaskCreatePinnedToCore(audio_tx_task, "rock_au_tx", 4096, NULL, 6, &s_tx_task, 1) != pdPASS) {
+    if (xTaskCreatePinnedToCore(audio_tx_task, "rock_au_tx", 4096, NULL, 6, NULL, 1) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create audio TX worker");
         goto fail;
     }
@@ -483,10 +480,7 @@ fail:
 
 int rock_player_play_stream(const char *stream_uri, const char *station_id, const char *bearer)
 {
-    if (!stream_uri || !station_id || !bearer || !*bearer) return -1;
-    char authorization[sizeof(s_stream_authorization)];
-    int auth_len = snprintf(authorization, sizeof(authorization), "Bearer %s", bearer);
-    if (auth_len <= 7 || (size_t)auth_len >= sizeof(authorization) || strpbrk(bearer, "\r\n")) return -1;
+    if (!stream_uri || !station_id || !bearer || !*bearer || strpbrk(bearer, "\r\n")) return -1;
 
     // SSRF gate on admission
     if (!rock_validate_stream_uri(stream_uri)) {
@@ -508,15 +502,12 @@ int rock_player_play_stream(const char *stream_uri, const char *station_id, cons
     rock_audio_pa_set(false);
 
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-    strlcpy(s_stream_uri, stream_uri, sizeof(s_stream_uri));
     strlcpy(s_station_id, station_id, sizeof(s_station_id));
-    strlcpy(s_stream_authorization, authorization, sizeof(s_stream_authorization));
     xSemaphoreGive(s_state_mutex);
 
     atomic_store(&s_stat_net_bytes, 0);
     atomic_store(&s_stat_pcm_bytes, 0);
     atomic_store(&s_stat_zero_reads, 0);
-    atomic_store(&s_stat_max_read_ms, 0);
 
     atomic_store(&s_stop_signal, false);
 
@@ -527,18 +518,6 @@ int rock_player_play_stream(const char *stream_uri, const char *station_id, cons
         return -1;
     }
 
-    return 0;
-}
-
-int rock_player_update_bearer(const char *bearer)
-{
-    if (!s_state_mutex || !bearer || !*bearer || strpbrk(bearer, "\r\n")) return -1;
-    char authorization[sizeof(s_stream_authorization)];
-    int len = snprintf(authorization, sizeof(authorization), "Bearer %s", bearer);
-    if (len <= 7 || (size_t)len >= sizeof(authorization)) return -1;
-    xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-    strlcpy(s_stream_authorization, authorization, sizeof(s_stream_authorization));
-    xSemaphoreGive(s_state_mutex);
     return 0;
 }
 
@@ -644,23 +623,23 @@ void rock_player_get_stats(uint32_t *underruns, uint32_t *decode_errors, uint32_
 {
     if (underruns) *underruns = (uint32_t)atomic_load(&s_stat_underruns);
     if (decode_errors) *decode_errors = (uint32_t)atomic_load(&s_stat_decode_errors);
-    if (net_reconnects) *net_reconnects = (uint32_t)atomic_load(&s_stat_net_reconnects);
+    if (net_reconnects) *net_reconnects = rock_source_reconnect_count();
 }
 
 void rock_player_log_stream_metrics(void)
 {
-    ESP_LOGI(TAG, "stream metrics net=%lu pcm=%lu ring=%u zero_reads=%lu max_read_ms=%lu dma_largest=%u",
+    ESP_LOGI(TAG, "stream metrics net=%lu pcm=%lu ring=%u zero_reads=%lu dma_largest=%u",
              (unsigned long)atomic_load(&s_stat_net_bytes),
              (unsigned long)atomic_load(&s_stat_pcm_bytes),
              (unsigned)pcm_ring_fill(&s_pcm_ring),
              (unsigned long)atomic_load(&s_stat_zero_reads),
-             (unsigned long)atomic_load(&s_stat_max_read_ms),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
 }
 
 // ---------------------------------------------------------------------------
 // Hardware Bring-up & Verification Task (Pinned to Core 1)
 // ---------------------------------------------------------------------------
+#if CONFIG_ROCK_BRINGUP_TESTS
 static void player_bringup_task(void *arg)
 {
     (void)arg;
@@ -704,8 +683,13 @@ static void player_bringup_task(void *arg)
     uint8_t current_channels = 1;
     bool playback_started = false;
 
-    // Decode until pre-roll is reached and playback starts
-    while (in_pos < s_test_mp3_len) {
+    // Decode until pre-roll is reached and playback starts.  The embedded
+    // clip decodes to only ~230 KB of PCM, under the 512 KB pre-roll
+    // threshold, so loop the input like the soak below instead of a single
+    // pass (a single pass never starts playback and trips the TEST 3
+    // pause/play asserts).
+    while (!playback_started) {
+        if (in_pos >= s_test_mp3_len) in_pos = 0;
         esp_audio_dec_in_raw_t raw = {
             .buffer = (uint8_t *)(s_test_mp3_data + in_pos),
             .len = (uint32_t)(s_test_mp3_len - in_pos),
@@ -855,3 +839,4 @@ int rock_player_bringup_start(void)
     }
     return 0;
 }
+#endif // CONFIG_ROCK_BRINGUP_TESTS

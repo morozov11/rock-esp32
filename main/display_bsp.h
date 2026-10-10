@@ -9,8 +9,8 @@ extern "C" {
 
 /**
  * Bring up the JC4880P443C_I_W display: MIPI-DSI PHY power, DSI bus, ST7701
- * panel and the esp_lvgl_port task. Must be called once before
- * rock_ui_clock_init(). Values follow the working vendor LVGL v9 demo
+ * panel and the esp_lvgl_port task. Must be called once before any
+ * rock_ui_* call. Values follow the working vendor LVGL v9 demo
  * (native 480x800 portrait panel, LVGL rotates to 800x480).
  */
 int rock_display_init(void);
@@ -30,16 +30,6 @@ bool rock_ui_splash_status(const char *status_text);
  * Dismiss the splash screen state and invalidate splash pointers.
  */
 void rock_ui_splash_dismiss(void);
-
-/** Legacy clock init (redirected to splash screen) */
-int rock_ui_clock_init(void);
-
-/**
- * Replace the clock label text. Takes the LVGL port lock internally with a
- * short timeout; returns false when the lock was not acquired in time, in
- * which case the caller may simply retry on its next tick.
- */
-bool rock_ui_clock_set_text(const char *text);
 
 /** Render one bounded protocol-v1 presentation on the local LVGL display. */
 bool rock_ui_show_text(const char *text);

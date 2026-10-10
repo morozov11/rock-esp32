@@ -284,7 +284,6 @@ fn session(token: &str) -> Result<(), ()> {
     let mut output_mode = device_control::OutputMode::Local;
     let mut last_stream: Option<(String, String)> = None;
     let mut source = SourceState { station: None };
-    let _ = platform::player_update_bearer(&token);
     refresh_player_with_cast(&mut player, false);
     publish_state(&display, &player, &output_mode)?;
     platform::gui_start()?;
@@ -302,15 +301,11 @@ fn session(token: &str) -> Result<(), ()> {
     loop {
         if platform::uptime_ms() >= next_token_refresh {
             if let Ok(fresh) = super::pairing::fresh_access_token() {
-                if platform::player_update_bearer(&fresh).is_ok() {
-                    // The long-lived stream source reconnects with the stored
-                    // bearer; keep it fresh alongside the player copy.
-                    let _ = platform::source_update_bearer(&fresh);
-                    token = fresh;
-                    next_token_refresh = platform::uptime_ms() + 10 * 60_000;
-                } else {
-                    next_token_refresh = platform::uptime_ms() + 60_000;
-                }
+                // The long-lived stream source reconnects with the stored
+                // bearer; refresh it whenever the session token rotates.
+                let _ = platform::source_update_bearer(&fresh);
+                token = fresh;
+                next_token_refresh = platform::uptime_ms() + 10 * 60_000;
             } else {
                 next_token_refresh = platform::uptime_ms() + 60_000;
             }

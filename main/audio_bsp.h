@@ -7,10 +7,12 @@
 extern "C" {
 #endif
 
+#if CONFIG_ROCK_BRINGUP_TESTS
 /**
  * RE-4 audio bring-up proof (plan steps 1.4-1.9).
  */
 int rock_audio_bringup_start(void);
+#endif
 
 /**
  * RE-5 audio subsystem primitives used by the player.

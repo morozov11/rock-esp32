@@ -8,8 +8,6 @@
 extern "C" {
 #endif
 
-#define ROCK_CAST_MAX_DEVICES 16
-
 typedef struct {
     char id[65];        // mDNS instance or id
     char name[129];     // friendly name (fn TXT record)

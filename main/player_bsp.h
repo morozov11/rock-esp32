@@ -19,10 +19,12 @@ typedef enum {
 
 int rock_player_init(void);
 
+#if CONFIG_ROCK_BRINGUP_TESTS
 /**
  * RE-5 hardware bring-up and verification task (Core 1).
  */
 int rock_player_bringup_start(void);
+#endif
 
 /**
  * Initiates playback of an HTTP/HTTPS audio stream (MP3 or AAC).
@@ -30,7 +32,6 @@ int rock_player_bringup_start(void);
  * Returns 0 on successful initiation, -1 on immediate rejection (e.g. SSRF violation).
  */
 int rock_player_play_stream(const char *stream_uri, const char *station_id, const char *bearer);
-int rock_player_update_bearer(const char *bearer);
 
 int rock_player_play(void);
 int rock_player_pause(void);

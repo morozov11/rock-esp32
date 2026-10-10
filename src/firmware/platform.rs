@@ -77,7 +77,6 @@ unsafe extern "C" {
     ) -> bool;
     fn rock_delay_ms(milliseconds: u32);
     fn rock_player_play_stream(stream_uri: *const c_char, station_id: *const c_char, bearer: *const c_char) -> c_int;
-    fn rock_player_update_bearer(bearer: *const c_char) -> c_int;
     fn rock_player_play() -> c_int;
     fn rock_player_pause() -> c_int;
     fn rock_player_stop() -> c_int;
@@ -320,15 +319,6 @@ pub(crate) fn player_play_stream(stream_uri: &str, station_id: &str, bearer: &st
     let station_id = cstring(station_id)?;
     let bearer = cstring(bearer)?;
     if unsafe { rock_player_play_stream(stream_uri.as_ptr(), station_id.as_ptr(), bearer.as_ptr()) } == 0 {
-        Ok(())
-    } else {
-        Err(())
-    }
-}
-
-pub(crate) fn player_update_bearer(bearer: &str) -> Result<(), ()> {
-    let bearer = cstring(bearer)?;
-    if unsafe { rock_player_update_bearer(bearer.as_ptr()) } == 0 {
         Ok(())
     } else {
         Err(())

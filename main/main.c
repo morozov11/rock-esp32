@@ -42,7 +42,7 @@ void app_main(void)
     if (rock_player_init() != 0) {
         ESP_LOGE(TAG, "Player subsystem init failed");
     }
-#if CONFIG_ROCK_PLAYER_SELFTEST
+#if CONFIG_ROCK_BRINGUP_TESTS
     if (rock_player_bringup_start() != 0) {
         ESP_LOGE(TAG, "Player bring-up task start failed");
     }

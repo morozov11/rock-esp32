@@ -13,7 +13,6 @@
 
 #include "board_bus.h"
 
-#include "esp_check.h"
 #include "esp_log.h"
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_panel_io.h"
@@ -31,6 +30,7 @@
 #include "lvgl.h"
 
 #include <stddef.h>
+#include <string.h>
 
 static const char *TAG = "rock-display";
 
@@ -344,16 +344,6 @@ void rock_ui_splash_dismiss(void)
     if (!lvgl_port_lock(500)) return;
     s_splash_status_lbl = NULL;
     lvgl_port_unlock();
-}
-
-int rock_ui_clock_init(void)
-{
-    return rock_ui_splash_show();
-}
-
-bool rock_ui_clock_set_text(const char *text)
-{
-    return rock_ui_splash_status(text);
 }
 
 static lv_obj_t *legacy_screen(void)
