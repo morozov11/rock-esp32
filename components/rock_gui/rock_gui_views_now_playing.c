@@ -260,19 +260,17 @@ void gui_now_playing_set_station(const char *name, const char *desc, const char 
     lv_label_set_text(s_lbl_np_track, "");
 }
 
-void gui_now_playing_update_meta(const char *station_id, const char *title, const char *subtitle)
+void gui_now_playing_update_meta(const char *station_id, const char *station_name,
+                                const char *title, const char *subtitle)
 {
     if (station_id && station_id[0]) {
-        if (strcmp(gui_station_id(), station_id) != 0) {
-            const char *cur = lv_label_get_text(s_lbl_np_station);
-            if (!cur || cur[0] == '\0') {
-                lv_label_set_text(s_lbl_np_station, station_id);
-            }
-        }
         gui_set_station_id(station_id);
     }
-    if (title && title[0]) {
-        lv_label_set_text(s_lbl_np_station, title);
+    if (station_name && station_name[0]) {
+        lv_label_set_text(s_lbl_np_station, station_name);
+    }
+    if (title) {
+        lv_label_set_text(s_lbl_np_track, title);
     }
     if (subtitle && subtitle[0]) {
         lv_label_set_text(s_lbl_np_subtitle, subtitle);

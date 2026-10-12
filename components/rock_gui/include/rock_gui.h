@@ -78,6 +78,7 @@ bool rock_gui_poll_event(rock_ui_event_t *out_event, uint32_t timeout_ms);
  * Update playback state on the GUI (Now-Playing view, status ticker, transport buttons).
  */
 void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id,
+                              const char *station_name,
                               const char *title, const char *subtitle,
                               uint8_t volume, bool muted);
 

@@ -93,7 +93,8 @@ void gui_now_playing_hide(void);
 void gui_now_playing_set_station(const char *name, const char *desc, const char *codec);
 // rock_gui_update_playback path: conditional label updates keyed on the
 // shell's station_id.
-void gui_now_playing_update_meta(const char *station_id, const char *title, const char *subtitle);
+void gui_now_playing_update_meta(const char *station_id, const char *station_name,
+                                const char *title, const char *subtitle);
 void gui_now_playing_update_transport(rock_gui_playback_t status, uint8_t volume, bool muted);
 void gui_now_playing_apply_cast_state(bool is_casting, const char *receiver_name);
 void gui_now_playing_spectrum_update(const float *bands, bool playing);

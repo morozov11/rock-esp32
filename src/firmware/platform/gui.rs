@@ -64,18 +64,23 @@ pub(crate) fn gui_start() -> Result<(), ()> {
 pub(crate) fn gui_update_playback(
     status: i32,
     station_id: &str,
+    station_name: &str,
     title: &str,
     subtitle: &str,
     volume: u8,
     muted: bool,
 ) {
     let st_c = cstring(station_id).ok();
+    let nm_c = cstring(station_name).ok();
     let ti_c = cstring(title).ok();
     let su_c = cstring(subtitle).ok();
     unsafe {
         rock_gui_update_playback(
             status,
             st_c.as_ref()
+                .map(|s| s.as_ptr())
+                .unwrap_or(core::ptr::null()),
+            nm_c.as_ref()
                 .map(|s| s.as_ptr())
                 .unwrap_or(core::ptr::null()),
             ti_c.as_ref()

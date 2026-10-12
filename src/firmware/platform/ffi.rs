@@ -36,6 +36,7 @@ unsafe extern "C" {
     pub(crate) fn rock_gui_update_playback(
         status: c_int,
         station_id: *const c_char,
+        station_name: *const c_char,
         title: *const c_char,
         subtitle: *const c_char,
         volume: u8,
@@ -123,6 +124,9 @@ unsafe extern "C" {
     // C keeps it for its own serve loop; Rust uses the enum + locked copy.
     pub(crate) fn rock_source_content_type_enum() -> c_int;
     pub(crate) fn rock_source_content_type_copy(out: *mut c_char, cap: usize) -> c_int;
+    pub(crate) fn rock_source_get_meta_title(buf: *mut c_char, cap: usize) -> u32;
+    pub(crate) fn rock_source_meta_generation() -> u32;
+    pub(crate) fn rock_source_clear_meta_title();
     pub(crate) fn rock_relay_listen(out_url: *mut c_char, out_cap: usize) -> c_int;
 }
 

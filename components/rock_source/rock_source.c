@@ -85,10 +85,14 @@ typedef struct {
     bool have_previous;
 } pcm_resampler_t;
 
+#define ICY_METADATA_BUF_SIZE 512
+
 typedef struct {
     size_t metadata_interval;
     size_t until_metadata;
     size_t metadata_remaining;
+    char meta_buf[ICY_METADATA_BUF_SIZE];
+    size_t meta_len;
 } icy_filter_t;
 
 typedef struct {
@@ -383,6 +387,133 @@ static esp_err_t on_upstream_http_event(esp_http_client_event_t *event)
     return ESP_OK;
 }
 
+static char s_meta_title[512] = {0};
+static char s_meta_pending[512] = {0};
+static atomic_uint_least32_t s_meta_generation = 0;
+static int64_t s_meta_last_update_us = 0;
+
+static const char *find_stream_title_value(const char *buf, size_t len)
+{
+    const char *key = "StreamTitle='";
+    size_t key_len = strlen(key);
+    if (len < key_len) {
+        return NULL;
+    }
+    for (size_t i = 0; i <= len - key_len; i++) {
+        if (strncasecmp(buf + i, key, key_len) == 0) {
+            return buf + i + key_len;
+        }
+    }
+    return NULL;
+}
+
+static bool parse_stream_title(const char *raw, size_t raw_len, char *out, size_t out_cap)
+{
+    const char *p = find_stream_title_value(raw, raw_len);
+    if (!p) {
+        return false;
+    }
+    size_t out_pos = 0;
+    while (*p && out_pos < out_cap - 1) {
+        if (*p == '\\' && *(p + 1) == '\'') {
+            out[out_pos++] = '\'';
+            p += 2;
+            continue;
+        }
+        if (*p == '\'') {
+            if (*(p + 1) == ';' || *(p + 1) == '\0') {
+                break;
+            }
+            out[out_pos++] = *p++;
+            continue;
+        }
+        if (*p == ';') {
+            break;
+        }
+        out[out_pos++] = *p++;
+    }
+    out[out_pos] = '\0';
+
+    while (out_pos > 0 && ((unsigned char)out[out_pos - 1] <= ' ')) {
+        out[--out_pos] = '\0';
+    }
+    char *start = out;
+    while (*start && ((unsigned char)*start <= ' ')) {
+        start++;
+    }
+    if (start != out) {
+        memmove(out, start, strlen(start) + 1);
+    }
+    return true;
+}
+
+static void update_meta_title(const char *new_title)
+{
+    if (!new_title) return;
+    if (!s_config_lock) {
+        s_config_lock = xSemaphoreCreateMutex();
+        if (!s_config_lock) return;
+    }
+
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    if (strcmp(s_meta_title, new_title) != 0) {
+        int64_t now_us = esp_timer_get_time();
+        if (s_meta_last_update_us == 0 || (now_us - s_meta_last_update_us) >= 3000000LL) {
+            strncpy(s_meta_title, new_title, sizeof(s_meta_title) - 1);
+            s_meta_title[sizeof(s_meta_title) - 1] = '\0';
+            s_meta_pending[0] = '\0';
+            s_meta_last_update_us = now_us;
+            atomic_fetch_add(&s_meta_generation, 1);
+            ESP_LOGI(TAG, "ICY StreamTitle updated: \"%s\" (gen=%u)",
+                     s_meta_title, (unsigned)atomic_load(&s_meta_generation));
+        } else {
+            strncpy(s_meta_pending, new_title, sizeof(s_meta_pending) - 1);
+            s_meta_pending[sizeof(s_meta_pending) - 1] = '\0';
+        }
+    } else {
+        s_meta_pending[0] = '\0';
+    }
+    xSemaphoreGive(s_config_lock);
+}
+
+static void check_meta_pending(void)
+{
+    if (s_meta_pending[0] == '\0') return;
+    if (!s_config_lock) return;
+
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    if (s_meta_pending[0] != '\0') {
+        int64_t now_us = esp_timer_get_time();
+        if (s_meta_last_update_us == 0 || (now_us - s_meta_last_update_us) >= 3000000LL) {
+            strncpy(s_meta_title, s_meta_pending, sizeof(s_meta_title) - 1);
+            s_meta_title[sizeof(s_meta_title) - 1] = '\0';
+            s_meta_pending[0] = '\0';
+            s_meta_last_update_us = now_us;
+            atomic_fetch_add(&s_meta_generation, 1);
+            ESP_LOGI(TAG, "ICY StreamTitle updated from pending: \"%s\" (gen=%u)",
+                     s_meta_title, (unsigned)atomic_load(&s_meta_generation));
+        }
+    }
+    xSemaphoreGive(s_config_lock);
+}
+
+static void clear_meta_title(void)
+{
+    if (s_config_lock) {
+        xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    }
+    bool had_title = (s_meta_title[0] != '\0' || s_meta_pending[0] != '\0');
+    s_meta_title[0] = '\0';
+    s_meta_pending[0] = '\0';
+    s_meta_last_update_us = 0;
+    if (had_title) {
+        atomic_fetch_add(&s_meta_generation, 1);
+    }
+    if (s_config_lock) {
+        xSemaphoreGive(s_config_lock);
+    }
+}
+
 // RockCast requests ICY metadata and removes it before the Cast-side relay.
 // The metadata bytes are not audio, so passing them through corrupts an MP3
 // frame stream even when the upstream Content-Type says audio/mpeg.
@@ -408,16 +539,31 @@ static size_t filter_icy_audio(
             if (skip > input_len - in_pos) {
                 skip = input_len - in_pos;
             }
+            if (filter->meta_len < sizeof(filter->meta_buf) - 1) {
+                size_t to_copy = skip;
+                if (to_copy > (sizeof(filter->meta_buf) - 1) - filter->meta_len) {
+                    to_copy = (sizeof(filter->meta_buf) - 1) - filter->meta_len;
+                }
+                memcpy(filter->meta_buf + filter->meta_len, input + in_pos, to_copy);
+                filter->meta_len += to_copy;
+                filter->meta_buf[filter->meta_len] = '\0';
+            }
             in_pos += skip;
             filter->metadata_remaining -= skip;
             if (filter->metadata_remaining == 0) {
                 filter->until_metadata = filter->metadata_interval;
+                char parsed_title[512] = {0};
+                if (parse_stream_title(filter->meta_buf, filter->meta_len, parsed_title, sizeof(parsed_title))) {
+                    update_meta_title(parsed_title);
+                }
             }
             continue;
         }
 
         if (filter->until_metadata == 0) {
             filter->metadata_remaining = (size_t)input[in_pos++] * 16;
+            filter->meta_len = 0;
+            filter->meta_buf[0] = '\0';
             if (filter->metadata_remaining == 0) {
                 filter->until_metadata = filter->metadata_interval;
             }
@@ -467,6 +613,8 @@ static bool upstream_connect(relay_upstream_t *up)
         up->icy.metadata_interval = 0;
         up->icy.until_metadata = 0;
         up->icy.metadata_remaining = 0;
+        up->icy.meta_len = 0;
+        up->icy.meta_buf[0] = '\0';
 
         // Snapshot the upstream URL/bearer under the config lock: the session
         // task may refresh the bearer while the feeder reconnects.  The URL
@@ -693,6 +841,7 @@ static void relay_task(void *pvParameters)
         // Poll for new Cast clients without ever blocking the media pace.
         // Speaker-only sessions never attach a listener.
         relay_listener_poll();
+        check_meta_pending();
 
         if (s_passthrough) {
             // Upstream sets the pace; the ring absorbs bursts (no transcode
@@ -831,6 +980,7 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
     atomic_store(&s_upstream_reconnects, 0);
     s_tap_joined = false;
     s_tap_pos = 0;
+    clear_meta_title();
 
     if (!s_config_lock) {
         s_config_lock = xSemaphoreCreateMutex();
@@ -1110,5 +1260,35 @@ void rock_source_stop(void)
         s_upstream_bearer[0] = '\0';
         xSemaphoreGive(s_config_lock);
     }
+    clear_meta_title();
     ESP_LOGI(TAG, "Stream source stopped");
+}
+
+uint32_t rock_source_get_meta_title(char *buf, size_t cap)
+{
+    if (!buf || cap == 0) {
+        return 0;
+    }
+    check_meta_pending();
+    if (s_config_lock) {
+        xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    }
+    strncpy(buf, s_meta_title, cap - 1);
+    buf[cap - 1] = '\0';
+    uint32_t gen = (uint32_t)atomic_load(&s_meta_generation);
+    if (s_config_lock) {
+        xSemaphoreGive(s_config_lock);
+    }
+    return gen;
+}
+
+uint32_t rock_source_meta_generation(void)
+{
+    check_meta_pending();
+    return (uint32_t)atomic_load(&s_meta_generation);
+}
+
+void rock_source_clear_meta_title(void)
+{
+    clear_meta_title();
 }

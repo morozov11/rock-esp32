@@ -12,6 +12,7 @@
 #include "display_bsp.h"
 #include "rock_player.h"
 #include "rock_ota.h"
+#include "rock_gui.h"
 #include "rock_ui_screens.h"
 
 static const char *TAG = "rock-esp32";
@@ -37,8 +38,13 @@ static void platform_ui_on_wifi_scan(const rock_wifi_scan_item_t *items, uint16_
 
 // Player → UI adapter: the player only reports abstract states; which text
 // and screen each state renders is decided here, next to the display wiring.
+// When the native station GUI is active, playback status is driven through
+// rock_gui_update_playback by the Rust transport session.
 static void player_ui_on_playback_state(const char *station_id, rock_player_ui_state_t state)
 {
+    if (rock_gui_is_active()) {
+        return;
+    }
     switch (state) {
         case ROCK_PLAYER_UI_BUFFERING:
             rock_ui_show_now_playing(station_id, "BUFFERING", "Connecting to stream...");

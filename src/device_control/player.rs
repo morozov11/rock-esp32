@@ -45,6 +45,7 @@ pub enum PlayerCommand {
     PlayStream {
         command_id: String,
         station_id: String,
+        station_name: Option<String>,
         stream_uri: String,
     },
     Playback {
@@ -111,9 +112,16 @@ pub fn player_command(frame: &Envelope) -> Result<PlayerCommand, &'static str> {
                 .and_then(Value::as_str)
                 .ok_or("invalid_payload")?;
             validate_stream_uri(stream_uri).map_err(|_| "invalid_payload")?;
+            let station_name = body
+                .get("station_name")
+                .or_else(|| body.get("display_name"))
+                .or_else(|| body.get("title"))
+                .and_then(Value::as_str)
+                .map(|s| s.to_string());
             Ok(PlayerCommand::PlayStream {
                 command_id: command_id.into(),
                 station_id: station_id.into(),
+                station_name,
                 stream_uri: stream_uri.into(),
             })
         }
@@ -383,6 +391,7 @@ mod tests {
             PlayerCommand::PlayStream {
                 command_id: "60000000-0000-4000-8000-000000000001".into(),
                 station_id: "station.rock_classic".into(),
+                station_name: None,
                 stream_uri: "https://stream.example.com:8443/live.mp3".into(),
             }
         );

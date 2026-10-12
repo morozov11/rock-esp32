@@ -252,6 +252,23 @@ pub(crate) fn source_is_active() -> bool {
     unsafe { rock_source_is_active() }
 }
 
+pub(crate) fn source_get_meta_title() -> (u32, String) {
+    let mut buf = [0 as core::ffi::c_char; 512];
+    let generation = unsafe { rock_source_get_meta_title(buf.as_mut_ptr(), buf.len()) };
+    let title = unsafe { CStr::from_ptr(buf.as_ptr()) }
+        .to_string_lossy()
+        .into_owned();
+    (generation, title)
+}
+
+pub(crate) fn source_meta_generation() -> u32 {
+    unsafe { rock_source_meta_generation() }
+}
+
+pub(crate) fn source_clear_meta_title() {
+    unsafe { rock_source_clear_meta_title() };
+}
+
 /// Content-type enum straight from the C source domain (single source of
 /// truth; unknown values degrade to Unknown instead of guessing).
 pub(crate) fn source_content_type_enum() -> crate::device_control::SourceContentType {

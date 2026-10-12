@@ -136,7 +136,7 @@ pub extern "C" fn rust_main() -> ! {
     let initial_volume = platform::player_get_full_state()
         .map(|state| state.2)
         .unwrap_or(35);
-    platform::gui_update_playback(0, "", "", "", initial_volume, false);
+    platform::gui_update_playback(0, "", "", "", "", initial_volume, false);
 
     let _ = platform::init();
     let mut local_player = crate::device_control::PlayerState::new();

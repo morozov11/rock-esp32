@@ -125,6 +125,25 @@ int rock_source_read(uint8_t *out, size_t cap);
  */
 esp_err_t rock_relay_listen(char *out_relay_url, size_t out_len);
 
+/**
+ * Thread-safe copy of the current ICY stream title (if any).
+ *
+ * @param buf Output buffer for null-terminated UTF-8 title string.
+ * @param cap Capacity of buf.
+ * @return Current metadata generation counter.
+ */
+uint32_t rock_source_get_meta_title(char *buf, size_t cap);
+
+/**
+ * Return current metadata generation counter without copying the string.
+ */
+uint32_t rock_source_meta_generation(void);
+
+/**
+ * Reset stored metadata title and increment generation counter.
+ */
+void rock_source_clear_meta_title(void);
+
 #ifdef __cplusplus
 }
 #endif

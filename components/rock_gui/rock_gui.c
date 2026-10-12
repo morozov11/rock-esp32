@@ -349,6 +349,7 @@ bool rock_gui_poll_event(rock_ui_event_t *out_event, uint32_t timeout_ms)
 }
 
 void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id,
+                              const char *station_name,
                               const char *title, const char *subtitle,
                               uint8_t volume, bool muted)
 {
@@ -358,7 +359,7 @@ void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id
     s_volume_level = volume;
     s_volume_muted = muted;
 
-    gui_now_playing_update_meta(station_id, title, subtitle);
+    gui_now_playing_update_meta(station_id, station_name, title, subtitle);
     gui_now_playing_update_transport(status, volume, muted);
 
     if (s_lbl_ticker) {

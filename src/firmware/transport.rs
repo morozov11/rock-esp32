@@ -85,12 +85,52 @@ fn current_revision(display: &DisplayState, player: &PlayerState) -> u64 {
     }
 }
 
-/// Synchronize only observed hardware state, including after an offline interval.
-pub(crate) fn refresh_player(player: &mut PlayerState) -> bool {
-    refresh_player_with_cast(player, false)
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+static CATALOG_CACHE: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+pub(crate) fn resolve_station_name(station_id: &str) -> String {
+    let mut cache = CATALOG_CACHE.lock().unwrap();
+    let map = cache.get_or_insert_with(|| {
+        let mut m = HashMap::new();
+        m.insert("st-01".into(), "Radio Maximum".into());
+        m.insert("st-02".into(), "Наше Радио".into());
+        m.insert("st-03".into(), "Rock FM 95.2".into());
+        m.insert("st-04".into(), "Radio Ultra".into());
+        m.insert("st-05".into(), "Radio Record".into());
+        m
+    });
+    map.get(station_id)
+        .cloned()
+        .unwrap_or_else(|| station_id.to_string())
 }
 
-pub(crate) fn refresh_player_with_cast(player: &mut PlayerState, is_casting: bool) -> bool {
+pub(crate) fn cache_catalog_stations(stations: &[device_control::catalog::DeviceStationDto]) {
+    let mut cache = CATALOG_CACHE.lock().unwrap();
+    let map = cache.get_or_insert_with(HashMap::new);
+    for s in stations {
+        map.insert(s.id.clone(), s.name.clone());
+    }
+}
+
+pub(crate) fn cache_station_name(station_id: &str, station_name: &str) {
+    let mut cache = CATALOG_CACHE.lock().unwrap();
+    let map = cache.get_or_insert_with(HashMap::new);
+    map.insert(station_id.to_string(), station_name.to_string());
+}
+
+/// Synchronize only observed hardware state, including after an offline interval.
+pub(crate) fn refresh_player(player: &mut PlayerState) -> bool {
+    let (_, title) = platform::source_get_meta_title();
+    refresh_player_with_cast(player, false, &title)
+}
+
+pub(crate) fn refresh_player_with_cast(
+    player: &mut PlayerState,
+    is_casting: bool,
+    meta_title: &str,
+) -> bool {
     let Some((status, station, volume, muted)) = platform::player_get_full_state() else {
         return false;
     };
@@ -121,13 +161,13 @@ pub(crate) fn refresh_player_with_cast(player: &mut PlayerState, is_casting: boo
     player.apply_volume(VolumeAction::SetLevel(volume));
     player.apply_volume(VolumeAction::SetMute(muted));
     if player.revision() != before {
-        update_gui(player);
+        update_gui(player, meta_title);
         return true;
     }
     false
 }
 
-fn update_gui(player: &PlayerState) {
+fn update_gui(player: &PlayerState, meta_title: &str) {
     let code = match player.status() {
         PlaybackStatus::Idle => 0,
         PlaybackStatus::Buffering => 1,
@@ -136,10 +176,17 @@ fn update_gui(player: &PlayerState) {
         PlaybackStatus::Stopped => 4,
         PlaybackStatus::Error => 5,
     };
+    let station_id = player.station_id().unwrap_or("");
+    let station_name = if !station_id.is_empty() {
+        resolve_station_name(station_id)
+    } else {
+        String::new()
+    };
     platform::gui_update_playback(
         code,
-        player.station_id().unwrap_or(""),
-        "",
+        station_id,
+        &station_name,
+        meta_title,
         "",
         player.volume_level(),
         player.volume_muted(),
@@ -172,6 +219,7 @@ fn load_catalog(token: &mut String, query: Option<&str>) {
             if query.is_some() {
                 match device_control::parse_search_page(&bytes) {
                     Ok(page) => {
+                        cache_catalog_stations(&page.stations);
                         platform::gui_set_search_results(&page.stations);
                         if page.stations.is_empty() {
                             platform::gui_show_empty(tr::SEARCH_EMPTY);
@@ -182,6 +230,7 @@ fn load_catalog(token: &mut String, query: Option<&str>) {
             } else {
                 match device_control::parse_catalog_page(&bytes) {
                     Ok(page) => {
+                        cache_catalog_stations(&page.stations);
                         platform::gui_set_browse_stations(
                             &page.stations,
                             page.next_cursor.as_deref(),
@@ -247,6 +296,7 @@ fn play_local_station(
 fn cast_play_stream(
     cast_client: &mut super::cast_client::CastClient,
     station_id: &str,
+    meta_title: &str,
     token: &mut String,
     source: &mut SourceState,
 ) -> Result<(), ()> {
@@ -258,7 +308,13 @@ fn cast_play_stream(
     ensure_source(station_id, token, source)?;
     let relay_url = platform::relay_listen().ok_or(())?;
     let content_type = platform::source_content_type_enum();
-    let res = cast_client.load_stream(&relay_url, station_id, content_type);
+    let resolved_station = resolve_station_name(station_id);
+    let title = if !meta_title.is_empty() {
+        meta_title
+    } else {
+        &resolved_station
+    };
+    let res = cast_client.load_stream(&relay_url, title, content_type);
     if res.is_err() {
         return Err(());
     }
@@ -290,6 +346,8 @@ struct Session {
     /// GuiEvent handlers cannot return errors; a failed mandatory send
     /// marks the session dead instead (checked after each drain).
     fatal: bool,
+    meta_title: String,
+    meta_generation: u32,
 }
 
 fn session(token: &str) -> Result<(), ()> {
@@ -359,14 +417,20 @@ impl Session {
             last_heartbeat_ack: platform::uptime_ms(),
             heartbeat_sequence: 0,
             fatal: false,
+            meta_title: String::new(),
+            meta_generation: 0,
         };
-        refresh_player_with_cast(&mut s.player, false);
+        refresh_player_with_cast(&mut s.player, false, &s.meta_title);
         s.publish_state()?;
         platform::gui_start()?;
         update_link_indicator(true);
-        update_gui(&s.player);
+        s.update_gui();
         s.device_id = platform::identity_load().ok_or(())?.0;
         Ok(s)
+    }
+
+    fn update_gui(&self) {
+        update_gui(&self.player, &self.meta_title);
     }
 
     fn publish_state(&self) -> Result<(), ()> {
@@ -446,8 +510,38 @@ impl Session {
         }
     }
 
+    fn poll_meta(&mut self) -> bool {
+        if !platform::source_is_active() {
+            if !self.meta_title.is_empty() {
+                self.meta_title.clear();
+                self.meta_generation = 0;
+                return true;
+            }
+            return false;
+        }
+        let generation = platform::source_meta_generation();
+        if generation != self.meta_generation {
+            let (new_gen, title) = platform::source_get_meta_title();
+            self.meta_generation = new_gen;
+            if self.meta_title != title {
+                self.meta_title = title;
+                return true;
+            }
+        }
+        false
+    }
+
     fn tick_player_refresh(&mut self) -> Result<(), ()> {
-        if refresh_player_with_cast(&mut self.player, self.cast_client.is_connected()) {
+        let player_changed = refresh_player_with_cast(
+            &mut self.player,
+            self.cast_client.is_connected(),
+            &self.meta_title,
+        );
+        let meta_changed = self.poll_meta();
+        if meta_changed && !player_changed {
+            self.update_gui();
+        }
+        if player_changed {
             self.publish_state()?;
             if self.player.status() == PlaybackStatus::Error {
                 platform::gui_show_error(tr::PLAYBACK_ERROR);
@@ -485,7 +579,7 @@ impl Session {
             .is_some_and(|(_, deadline)| platform::uptime_ms() >= *deadline)
         {
             self.pending = None;
-            update_gui(&self.player);
+            self.update_gui();
             platform::gui_show_error(tr::STATION_NO_RESPONSE);
         }
     }
@@ -524,7 +618,7 @@ impl Session {
                 if matches {
                     let failed = !matches!(outcome, Some((_, true)));
                     self.pending = None;
-                    update_gui(&self.player);
+                    self.update_gui();
                     if failed {
                         platform::gui_show_error(tr::STATION_REJECTED);
                     }
@@ -564,10 +658,10 @@ impl Session {
             &id,
         ))?;
         let result = self.exec_player_command(command);
-        refresh_player_with_cast(&mut self.player, self.cast_client.is_connected());
+        refresh_player_with_cast(&mut self.player, self.cast_client.is_connected(), &self.meta_title);
         if self.pending.as_ref().is_some_and(|(pending_id, _)| pending_id == &id) {
             self.pending = None;
-            update_gui(&self.player);
+            self.update_gui();
         }
         match result {
             Ok(()) => {
@@ -655,9 +749,16 @@ impl Session {
         match command {
             PlayerCommand::PlayStream {
                 station_id,
+                station_name,
                 stream_uri,
                 ..
             } => {
+                if let Some(ref name) = station_name {
+                    cache_station_name(&station_id, name);
+                }
+                self.meta_title.clear();
+                self.meta_generation = 0;
+                platform::source_clear_meta_title();
                 self.last_stream = Some((station_id.clone(), stream_uri));
                 if self.cast_client.is_connected() {
                     // Best-effort detach: cast_play_stream detaches again and
@@ -666,20 +767,21 @@ impl Session {
                     let res = cast_play_stream(
                         &mut self.cast_client,
                         &station_id,
+                        &self.meta_title,
                         &mut self.token,
                         &mut self.source,
                     );
                     if res.is_ok() {
                         self.player.apply_play_stream(&station_id);
                         self.player.set_playing();
-                        update_gui(&self.player);
+                        self.update_gui();
                         Ok(())
                     } else {
                         platform::cast_log(
                             "Cast play_stream failed; remaining in Cast mode without starting local audio",
                         );
                         self.player.set_stopped();
-                        update_gui(&self.player);
+                        self.update_gui();
                         Err(())
                     }
                 } else if self.player.station_id() == Some(station_id.as_str())
@@ -701,6 +803,7 @@ impl Session {
                                 if cast_play_stream(
                                     &mut self.cast_client,
                                     st_id,
+                                    &self.meta_title,
                                     &mut self.token,
                                     &mut self.source,
                                 )
@@ -710,7 +813,7 @@ impl Session {
                                 }
                             }
                             self.player.set_playing();
-                            update_gui(&self.player);
+                            self.update_gui();
                             Ok(())
                         }
                         PlaybackAction::Pause => {
@@ -718,15 +821,18 @@ impl Session {
                                 platform::log_msg("Cast media stop failed on pause");
                             }
                             self.player.set_paused();
-                            update_gui(&self.player);
+                            self.update_gui();
                             Ok(())
                         }
                         PlaybackAction::Stop => {
                             if self.cast_client.stop_media().is_err() {
                                 platform::log_msg("Cast media stop failed on stop");
                             }
+                            self.meta_title.clear();
+                            self.meta_generation = 0;
+                            platform::source_clear_meta_title();
                             self.player.set_stopped();
-                            update_gui(&self.player);
+                            self.update_gui();
                             // Full stop tears the shared source down with it.
                             platform::source_stop();
                             self.source.station = None;
@@ -738,6 +844,11 @@ impl Session {
                         PlaybackAction::Play => self.local_play(),
                         PlaybackAction::Pause => platform::player_pause(),
                         PlaybackAction::Stop => {
+                            self.meta_title.clear();
+                            self.meta_generation = 0;
+                            platform::source_clear_meta_title();
+                            self.player.set_stopped();
+                            self.update_gui();
                             let res = platform::player_stop();
                             platform::source_stop();
                             self.source.station = None;
@@ -782,6 +893,9 @@ impl GuiEventSink for Session {
         if station.is_empty() || station.len() > 128 {
             return;
         }
+        self.meta_title.clear();
+        self.meta_generation = 0;
+        platform::source_clear_meta_title();
         let command = message_id();
         let Ok(now) = platform::now() else {
             self.fatal = true;
@@ -804,16 +918,23 @@ impl GuiEventSink for Session {
         self.pending = Some((command, platform::uptime_ms() + 30_000));
         self.retry = Some(platform::GuiEvent::PlayStation(station.clone()));
         platform::gui_set_starting_station(&station);
+        self.update_gui();
     }
 
     fn on_playback_play(&mut self) {
         if self.cast_client.is_connected() {
             if let Some((st_id, _)) = &self.last_stream {
-                if cast_play_stream(&mut self.cast_client, st_id, &mut self.token, &mut self.source)
-                    .is_ok()
+                if cast_play_stream(
+                    &mut self.cast_client,
+                    st_id,
+                    &self.meta_title,
+                    &mut self.token,
+                    &mut self.source,
+                )
+                .is_ok()
                 {
                     self.player.set_playing();
-                    update_gui(&self.player);
+                    self.update_gui();
                 } else {
                     platform::log_msg("Cast resume failed; playback stays paused");
                 }
@@ -832,13 +953,16 @@ impl GuiEventSink for Session {
                 platform::log_msg("Cast media stop failed on pause");
             }
             self.player.set_paused();
-            update_gui(&self.player);
+            self.update_gui();
         } else if platform::player_pause().is_err() {
             platform::log_msg("Player pause failed");
         }
     }
 
     fn on_playback_stop(&mut self) {
+        self.meta_title.clear();
+        self.meta_generation = 0;
+        platform::source_clear_meta_title();
         self.pending = None;
         if self.cast_client.is_connected() {
             // Same session-preserving teardown as the server path: stop the
@@ -847,7 +971,10 @@ impl GuiEventSink for Session {
                 platform::log_msg("Cast media stop failed on stop");
             }
             self.player.set_stopped();
-            update_gui(&self.player);
+            self.update_gui();
+        } else {
+            self.player.set_stopped();
+            self.update_gui();
         }
         if platform::player_stop().is_err() {
             platform::log_msg("Player stop failed");
@@ -929,6 +1056,7 @@ impl GuiEventSink for Session {
                     if cast_play_stream(
                         &mut self.cast_client,
                         st_id,
+                        &self.meta_title,
                         &mut self.token,
                         &mut self.source,
                     )
@@ -936,7 +1064,7 @@ impl GuiEventSink for Session {
                     {
                         self.player.apply_play_stream(st_id);
                         self.player.set_playing();
-                        update_gui(&self.player);
+                        self.update_gui();
                     } else {
                         // LOAD failed after a successful connect: roll the
                         // output back to the speaker and resume local playback
@@ -996,6 +1124,7 @@ impl GuiEventSink for Session {
                 platform::log_msg("Local playback fallback failed after cast disconnect");
             }
         }
+        self.update_gui();
         if self.publish_state().is_err() {
             self.fatal = true;
         }
