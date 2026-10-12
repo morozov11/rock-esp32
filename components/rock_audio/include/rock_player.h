@@ -66,6 +66,13 @@ int rock_player_get_state(char *status_buf, size_t status_cap,
                           uint8_t *vol, bool *muted);
 
 /**
+ * Current playback status as the rock_player_status_t value itself — the
+ * cross-language contract for Rust (single source of truth instead of
+ * parsing the text form above).
+ */
+int rock_player_status_enum(void);
+
+/**
  * Telemetry metrics: underruns, decode errors, reconnect counts.
  */
 void rock_player_get_stats(uint32_t *underruns, uint32_t *decode_errors, uint32_t *net_reconnects);

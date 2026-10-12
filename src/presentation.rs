@@ -28,6 +28,8 @@ pub mod ui_strings {
     pub const CAST_PLAYER_BUSY: &str = "Не удалось освободить аудиоплеер";
     pub const CAST_CONNECT_FAILED: &str = "Не удалось подключиться к Chromecast";
     pub const CAST_LINK_LOST: &str = "Связь с Chromecast потеряна";
+    pub const CAST_START_FAILED: &str = "Не удалось начать воспроизведение на Chromecast";
+    pub const CAST_PICK_STATION: &str = "Chromecast подключён. Выберите станцию из каталога.";
     pub const SERVER_LINK_LOST: &str = "Связь с сервером потеряна";
 }
 

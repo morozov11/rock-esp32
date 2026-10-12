@@ -99,23 +99,23 @@ pub(crate) fn refresh_player_with_cast(player: &mut PlayerState, is_casting: boo
         if !station.is_empty() && player.station_id() != Some(station.as_str()) {
             player.apply_play_stream(&station);
         }
-        match status.as_str() {
-            "buffering" => {
+        match status {
+            PlaybackStatus::Buffering => {
                 player.apply_play_stream(&station);
             }
-            "playing" => {
+            PlaybackStatus::Playing => {
                 player.set_playing();
             }
-            "paused" => {
+            PlaybackStatus::Paused => {
                 player.set_paused();
             }
-            "stopped" => {
+            PlaybackStatus::Stopped => {
                 player.set_stopped();
             }
-            "error" => {
+            PlaybackStatus::Error => {
                 player.set_error();
             }
-            _ => {}
+            PlaybackStatus::Idle => {}
         }
     }
     player.apply_volume(VolumeAction::SetLevel(volume));
@@ -631,6 +631,26 @@ impl Session {
         Ok(())
     }
 
+    /// Local-speaker play policy shared by the GUI and server paths: PAUSED
+    /// resumes in place, but a full stop (or an rx crash) tore the shared
+    /// source down with the player, so STOPPED/IDLE/ERROR can only move
+    /// forward by re-opening the last station.
+    fn local_play(&mut self) -> Result<(), ()> {
+        match platform::player_status() {
+            PlaybackStatus::Stopped | PlaybackStatus::Idle | PlaybackStatus::Error => {
+                match self.last_stream.clone() {
+                    Some((st_id, _)) => {
+                        play_local_station(&st_id, &mut self.token, &mut self.source)
+                    }
+                    None => Ok(()),
+                }
+            }
+            PlaybackStatus::Paused => platform::player_play(),
+            // BUFFERING reaches PLAYING on its own; PLAYING needs nothing.
+            PlaybackStatus::Buffering | PlaybackStatus::Playing => Ok(()),
+        }
+    }
+
     fn exec_player_command(&mut self, command: PlayerCommand) -> Result<(), ()> {
         match command {
             PlayerCommand::PlayStream {
@@ -715,7 +735,7 @@ impl Session {
                     }
                 } else {
                     match action {
-                        PlaybackAction::Play => platform::player_play(),
+                        PlaybackAction::Play => self.local_play(),
                         PlaybackAction::Pause => platform::player_pause(),
                         PlaybackAction::Stop => {
                             let res = platform::player_stop();
@@ -798,16 +818,19 @@ impl GuiEventSink for Session {
                     platform::log_msg("Cast resume failed; playback stays paused");
                 }
             }
-        } else if platform::player_play().is_err() {
+        } else if self.local_play().is_err() {
             platform::log_msg("Player resume failed");
         }
     }
 
     fn on_playback_pause(&mut self) {
         if self.cast_client.is_connected() {
-            // Cast teardown on pause is best-effort: a stuck receiver is
-            // caught by the pump/reconnect path, not by this send.
-            let _ = self.cast_client.stop();
+            // Media-level STOP keeps the Cast control session alive so a
+            // later resume can LOAD again; the full receiver teardown lives
+            // in on_cast_disconnect. Best-effort send (see server path).
+            if self.cast_client.stop_media().is_err() {
+                platform::log_msg("Cast media stop failed on pause");
+            }
             self.player.set_paused();
             update_gui(&self.player);
         } else if platform::player_pause().is_err() {
@@ -818,8 +841,11 @@ impl GuiEventSink for Session {
     fn on_playback_stop(&mut self) {
         self.pending = None;
         if self.cast_client.is_connected() {
-            // Best-effort teardown (see on_playback_pause).
-            let _ = self.cast_client.stop();
+            // Same session-preserving teardown as the server path: stop the
+            // media, keep the Cast connection for stop→play.
+            if self.cast_client.stop_media().is_err() {
+                platform::log_msg("Cast media stop failed on stop");
+            }
             self.player.set_stopped();
             update_gui(&self.player);
         }
@@ -896,6 +922,10 @@ impl GuiEventSink for Session {
                     ));
                     self.heartbeat_sequence = self.heartbeat_sequence.wrapping_add(1);
                     self.next_heartbeat = platform::uptime_ms() + HEARTBEAT_MS;
+                    // ACKs are only read by handle_inbound, which cannot run
+                    // while this handler blocks for up to ~70 s — reset the
+                    // watchdog window on both sides of the handoff.
+                    self.last_heartbeat_ack = platform::uptime_ms();
                     if cast_play_stream(
                         &mut self.cast_client,
                         st_id,
@@ -907,7 +937,25 @@ impl GuiEventSink for Session {
                         self.player.apply_play_stream(st_id);
                         self.player.set_playing();
                         update_gui(&self.player);
+                    } else {
+                        // LOAD failed after a successful connect: roll the
+                        // output back to the speaker and resume local playback
+                        // instead of a dead Cast mode (mirror of the
+                        // connect-failure path below).
+                        platform::cast_log("Cast LOAD failed after connect; falling back to local");
+                        self.cast_client.disconnect();
+                        self.output_mode = device_control::OutputMode::Local;
+                        platform::gui_update_cast_status(false, None);
+                        platform::gui_show_error(tr::CAST_START_FAILED);
+                        if play_local_station(st_id, &mut self.token, &mut self.source).is_err() {
+                            platform::log_msg("Local fallback failed after cast load failure");
+                        }
                     }
+                    self.last_heartbeat_ack = platform::uptime_ms();
+                } else {
+                    // Connected with nothing queued: catalog selections route
+                    // to the active Cast output, so point the user there.
+                    platform::gui_show_empty(tr::CAST_PICK_STATION);
                 }
                 if self.publish_state().is_err() {
                     self.fatal = true;
@@ -921,6 +969,15 @@ impl GuiEventSink for Session {
                     }
                 }
             }
+        } else {
+            // Expired cache entry (60 s TTL): the menu already closed itself
+            // on tap, so rescan and reopen with the fresh list — the menu's
+            // own empty-list status covers a found-nothing outcome.
+            platform::cast_log("Cast selection cache expired; rescanning");
+            platform::gui_show_cast_menu(true);
+            let found = platform::cast_discover(2500);
+            let active_list = self.receiver_cache.replace(found, platform::uptime_ms() / 1000);
+            platform::gui_set_cast_devices(&active_list, self.cast_client.receiver_id());
         }
     }
 

@@ -90,6 +90,7 @@ unsafe extern "C" {
         vol: *mut u8,
         muted: *mut bool,
     ) -> c_int;
+    pub(crate) fn rock_player_status_enum() -> c_int;
     pub(crate) fn rock_cast_discover(
         timeout_ms: u32,
         out_devices: *mut RockCastDeviceRaw,

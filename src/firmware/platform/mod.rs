@@ -181,16 +181,32 @@ pub(crate) fn player_set_mute(muted: bool) -> Result<(), ()> {
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn player_get_full_state() -> Option<(String, String, u8, bool)> {
-    let mut status_buf = [0 as core::ffi::c_char; 32];
+/// Player status straight from the C domain enum (single source of truth;
+/// unknown values degrade to Idle instead of guessing, mirroring the string
+/// accessor's historical default).
+pub(crate) fn player_status() -> crate::device_control::PlaybackStatus {
+    match unsafe { rock_player_status_enum() } {
+        1 => crate::device_control::PlaybackStatus::Buffering,
+        2 => crate::device_control::PlaybackStatus::Playing,
+        3 => crate::device_control::PlaybackStatus::Paused,
+        4 => crate::device_control::PlaybackStatus::Stopped,
+        5 => crate::device_control::PlaybackStatus::Error,
+        _ => crate::device_control::PlaybackStatus::Idle,
+    }
+}
+
+pub(crate) fn player_get_full_state(
+) -> Option<(crate::device_control::PlaybackStatus, String, u8, bool)> {
     let mut station_buf = [0 as core::ffi::c_char; 129];
     let mut vol = 0u8;
     let mut muted = false;
+    // Status comes from the enum accessor; the string slot in the C
+    // signature stays for rock_serial diagnostics only.
+    let mut status_scratch = [0 as core::ffi::c_char; 16];
     if unsafe {
         rock_player_get_state(
-            status_buf.as_mut_ptr(),
-            status_buf.len(),
+            status_scratch.as_mut_ptr(),
+            status_scratch.len(),
             station_buf.as_mut_ptr(),
             station_buf.len(),
             &mut vol,
@@ -198,13 +214,10 @@ pub(crate) fn player_get_full_state() -> Option<(String, String, u8, bool)> {
         )
     } == 0
     {
-        let status = unsafe { CStr::from_ptr(status_buf.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
         let station = unsafe { CStr::from_ptr(station_buf.as_ptr()) }
             .to_string_lossy()
             .into_owned();
-        Some((status, station, vol, muted))
+        Some((player_status(), station, vol, muted))
     } else {
         None
     }

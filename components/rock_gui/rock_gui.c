@@ -89,7 +89,11 @@ void gui_enqueue_event(rock_ui_event_type_t type, const char *text, int16_t val)
     if (text) {
         strncpy(evt.text, text, sizeof(evt.text) - 1);
     }
-    xQueueSend(s_ui_event_queue, &evt, 0);
+    if (xQueueSend(s_ui_event_queue, &evt, 0) != pdTRUE) {
+        // Zero-timeout send on a full queue drops the event; at least leave
+        // a trace of which interaction was lost.
+        ESP_LOGW(TAG, "UI event queue full, dropped event type=%d", (int)type);
+    }
 }
 
 static const rock_gui_view_reg_t *find_view_reg(rock_gui_view_mode_t view)
@@ -274,7 +278,7 @@ int rock_gui_start(void)
     ESP_LOGI(TAG, "Starting RockCast native station GUI...");
 
     if (!s_ui_event_queue) {
-        s_ui_event_queue = xQueueCreate(16, sizeof(rock_ui_event_t));
+        s_ui_event_queue = xQueueCreate(32, sizeof(rock_ui_event_t));
         if (!s_ui_event_queue) {
             ESP_LOGE(TAG, "Failed to create UI event queue");
             return -1;

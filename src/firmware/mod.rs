@@ -68,7 +68,18 @@ impl GuiEventSink for OfflineHandler {
         platform::gui_show_offline(crate::presentation::ui_strings::SERVER_LINK_LOST);
     }
     fn on_playback_play(&mut self) {
-        let _ = platform::player_play();
+        // Offline, the only applicable play is resuming PAUSED: restarting
+        // after a full stop needs the station proxy bearer, i.e. the server.
+        // Say so instead of a silent no-op.
+        use crate::device_control::PlaybackStatus as HwStatus;
+        match platform::player_status() {
+            HwStatus::Paused => {
+                let _ = platform::player_play();
+            }
+            // BUFFERING reaches PLAYING on its own; PLAYING needs nothing.
+            HwStatus::Buffering | HwStatus::Playing => {}
+            _ => platform::gui_show_offline(crate::presentation::ui_strings::SERVER_LINK_LOST),
+        }
     }
     fn on_playback_pause(&mut self) {
         let _ = platform::player_pause();
@@ -91,8 +102,22 @@ impl GuiEventSink for OfflineHandler {
         platform::gui_dismiss_state();
         self.exit_backoff = true;
     }
-    fn on_cast_browse(&mut self) {}
-    fn on_cast_select(&mut self, _receiver_id: String) {}
+    fn on_cast_browse(&mut self) {
+        // mDNS/subnet scanning needs no server: refresh the menu so the
+        // spinner does not run forever while offline. Selecting still needs
+        // the server (stream bearer), which on_cast_select reports.
+        let found = platform::cast_discover(2500);
+        let mut cache = crate::device_control::ReceiverCache::new();
+        let active_list = cache.replace(found, platform::uptime_ms() / 1000);
+        platform::gui_set_cast_devices(&active_list, None);
+        platform::gui_show_cast_menu(false);
+    }
+    fn on_cast_select(&mut self, _receiver_id: String) {
+        // Casting needs the server-side station proxy (auth bearer): dismiss
+        // the menu state the tap left behind and say so.
+        platform::gui_dismiss_cast_menu();
+        platform::gui_show_error(crate::presentation::ui_strings::SERVER_LINK_LOST);
+    }
     fn on_cast_disconnect(&mut self) {}
 }
 

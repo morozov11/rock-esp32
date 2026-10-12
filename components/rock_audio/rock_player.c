@@ -357,8 +357,13 @@ static void stream_rx_task(void *arg)
     goto cleanup;
 
 fail:
-    set_player_status(ROCK_PLAYER_STATUS_ERROR);
-    notify_ui(current_station, ROCK_PLAYER_UI_ERROR);
+    // A concurrent stop (or a newer play_stream generation) may have torn the
+    // source down and already installed its own status: never overwrite that
+    // with ERROR, the stream did not fail on its own.
+    if (!atomic_load(&s_stop_signal) && atomic_load(&s_stream_generation) == current_gen) {
+        set_player_status(ROCK_PLAYER_STATUS_ERROR);
+        notify_ui(current_station, ROCK_PLAYER_UI_ERROR);
+    }
     rock_audio_pa_set(false);
 
 cleanup:
@@ -471,25 +476,30 @@ int rock_player_play_stream(const char *stream_uri, const char *station_id, cons
     return 0;
 }
 
+// Resume/pause return -1 when the command does not apply to the current
+// status so callers can distinguish "nothing to resume" from success; a
+// stopped player must be restarted via rock_player_play_stream.
 int rock_player_play(void)
 {
     rock_player_status_t st = get_player_status();
-    if (st == ROCK_PLAYER_STATUS_PAUSED) {
-        set_player_status(ROCK_PLAYER_STATUS_PLAYING);
-        if (!atomic_load(&s_muted)) rock_audio_pa_set(true);
-        notify_ui(s_station_id, ROCK_PLAYER_UI_PLAYING);
+    if (st != ROCK_PLAYER_STATUS_PAUSED) {
+        return -1;
     }
+    set_player_status(ROCK_PLAYER_STATUS_PLAYING);
+    if (!atomic_load(&s_muted)) rock_audio_pa_set(true);
+    notify_ui(s_station_id, ROCK_PLAYER_UI_PLAYING);
     return 0;
 }
 
 int rock_player_pause(void)
 {
     rock_player_status_t st = get_player_status();
-    if (st == ROCK_PLAYER_STATUS_PLAYING) {
-        set_player_status(ROCK_PLAYER_STATUS_PAUSED);
-        rock_audio_pa_set(false);
-        notify_ui(s_station_id, ROCK_PLAYER_UI_PAUSED);
+    if (st != ROCK_PLAYER_STATUS_PLAYING && st != ROCK_PLAYER_STATUS_BUFFERING) {
+        return -1;
     }
+    set_player_status(ROCK_PLAYER_STATUS_PAUSED);
+    rock_audio_pa_set(false);
+    notify_ui(s_station_id, ROCK_PLAYER_UI_PAUSED);
     return 0;
 }
 
@@ -567,6 +577,11 @@ int rock_player_get_state(char *status_buf, size_t status_cap,
     if (muted) *muted = atomic_load(&s_muted);
     xSemaphoreGive(s_state_mutex);
     return 0;
+}
+
+int rock_player_status_enum(void)
+{
+    return (int)get_player_status();
 }
 
 void rock_player_get_stats(uint32_t *underruns, uint32_t *decode_errors, uint32_t *net_reconnects)
