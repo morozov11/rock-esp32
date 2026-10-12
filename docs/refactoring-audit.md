@@ -755,3 +755,61 @@ VOLUME_SET отсутствуют во всём репо. Не закоммич�
 - Bringup-сборка (`idf.py -B build_bringup -D SDKCONFIG=build_bringup/sdkconfig build`): чисто.
 - Прошивка на плату (COM6) и `tools/rock_hwtest.py`: 13/13 проверок пройдены (browse, search, play 3/3 станций, stop/pause/volume, heartbeat ACK gap 0s, 0 крэшей).
 - `test_cast_hw.py`: полный цикл пройден успешно (mDNS discovery, TLS handshake к 192.168.31.109:8009, Cast LOAD audio/mpeg, стриминг через relay, скриншот подтверждён).
+
+---
+
+### Фаза 6 — журнал исполнения (сессия 3, 2026-10-11): Закрепление на уровне сборки
+
+**Выполнено 2026-10-11:**
+
+1. **Гигиена репозитория и артефактов:**
+   - В `.gitignore` явно внесены шаблоны: `scratch_audio.bin`, `screen*.png`, `test_cast_run*.log`, `hwtest_*.log`, `build_bringup/`.
+   - Из корня репозитория удален бинарный тестовый мусор (`scratch_audio.bin` 21.4 МБ, временные скриншоты `screen*.png`).
+   - Накопившиеся логи прогонов (`hwtest_*.log`, `test_cast_run*.log`, `build_relay.log`, `ttl_probe.log`) перемещены в архив `telemetry/hwtest_logs/`.
+
+2. **Финальные переименования (устранение исторического суффикса `_bsp` через `git mv`):**
+   - `main/relay/relay_bsp.c` и `relay_bsp.h` → `components/rock_source/rock_source.c` и `include/rock_source.h`
+   - `main/cast/cast_bsp.c` и `cast_bsp.h` → `components/rock_cast/rock_cast_discovery.c` и `include/rock_cast_discovery.h`
+   - `main/audio/player_bsp.c` и `player_bsp.h` → `components/rock_audio/rock_player.c` и `include/rock_player.h`
+   - `main/gui/rockcast_tokens.h` → `components/rock_gui/include/rock_ui_tokens.h`
+   - Окончательно удалены deprecated-псевдонимы `rock_relay_stop` и `rock_relay_is_active` в C (`rock_source.h/.c`) и Rust (`platform/ffi.rs`, `platform/mod.rs`), все вызовы переведены на канонические `rock_source_stop` и `rock_source_is_active`.
+   - Аккуратно обновлены все `#include` по проекту (`rock_source.h`, `rock_player.h`, `rock_cast_discovery.h`, `rock_ui_tokens.h`), ссылки в `src/abi.rs`, `src/device_control/cast.rs`, `tests/pcm_snapshot_test.c`, а также путь генерации ABI в `build.rs` (`components/rock_gui/include/rock_gui.h`).
+
+3. **Компонентизация сборки (ESP-IDF components):**
+   - Выделены 6 независимых доменных компонентов в `components/rock_*`:
+     * `components/rock_source`: единый источник аудиопотока, HTTP-сервер релея, буферы кольца (`rock_source.c`, `rock_relay_http.c`, `rock_ring.c`, `rock_source.h`, `rock_ring.h`).
+     * `components/rock_cast`: mDNS-дискавери и TLS-клиент Chromecast (`rock_cast_discovery.c`, `rock_cast_discovery.h`).
+     * `components/rock_audio`: аудио-драйвер I2S/ES8311, стейт-машина плеера, декодеры, спектральный анализатор (`audio_bsp.c`, `rock_player.c`, `audio_spectrum.c`, `audio_bsp.h`, `rock_player.h`, `audio_spectrum.h`, `pcm_snapshot.h`).
+     * `components/rock_display`: низкоуровневый вывод на экран DSI/ST7701, тач GT911, инициализация LVGL-порта (`display_bsp.c`, `display_bsp.h`).
+     * `components/rock_platform`: Wi-Fi STA, WSS/HTTP-клиенты, NVS identity/хранилище сетей, OTA-апдейтер, SoftAP onboarding (`control_platform.c`, `rock_net_ws.c`, `rock_wifi_sta.c`, `rock_wifi_storage.c`, `rock_ota.c`, `rock_onboarding.c`, `control_platform.h`, `rock_wifi_storage.h`, `rock_ota.h`, `rock_onboarding.h`).
+     * `components/rock_gui`: фасад интерфейса LVGL, экраны, виджеты, клавиатура, серийная диагностика `rock_serial`, дампы скриншотов, шрифты (`rock_gui.c`, `rock_ui_screens.c`, `rock_serial.c`, `rock_screenshot.c`, `rock_gui_widgets.c`, `rock_gui_keyboard.c`, `rock_gui_views_*.c`, шрифты).
+   - `main/` стал тонким композиционным корнем: `main.c`, `board_bus.c/h`, `rock_protocol_abi.h`, `rock_ffi_exports.h`, регистрация колбеков, запуск Rust-рантайма.
+   - В `CMakeLists.txt` каждого компонента настроены строгие списки `REQUIRES` и `PRIV_REQUIRES`.
+   - **Архитектурный инвариант закреплен на уровне компилятора**:
+     * Ни один низкоуровневый компонент (`rock_audio`, `rock_source`, `rock_cast`, `rock_platform`, `rock_display`) не имеет в `REQUIRES` или `PRIV_REQUIRES` компонент `rock_gui`. Включение UI-заголовков из аудио или сети физически запрещено ошибкой сборки.
+     * `rock_onboarding` декуплирован от UI через расширение `rock_platform_ui_cbs_t` (`on_onboarding_status`, `on_onboarding_show`), проводка колбеков осуществляется исключительно в `main.c`.
+     * Компоненты, экспортирующие FFI-символы для Rust-статической библиотеки `librock_esp32.a`, помечены `WHOLE_ARCHIVE` для корректного разрешения линкером.
+
+**Метрики и дельта размеров (idf.py size):**
+- Flash: 2 361 574 (после фазы 3) → 2 361 510 (**−64 байта**; .text 1 644 302, .rodata 716 632).
+- DIRAM: 205 830 (**0 байт**, идентично фазе 3/4).
+- Binary size: `rock_esp32.bin` = 0x258ea0 (2 461 344 байт).
+
+**Финальная верификация Фазы 6:**
+- **Host Rust tests:** `cargo test --target x86_64-pc-windows-msvc` — **33/33 PASS** (12 lib + 21 contract, 0 warnings).
+- **ESP-IDF build:** `idf.py --no-ccache build` — чисто, 0 ошибок.
+- **Bring-up build:** `idf.py -B build_bringup -D SDKCONFIG=build_bringup/sdkconfig build` — чисто (bin: 0x25f450).
+- **Прошивка на плату (COM6):** `idf.py -p COM6 flash` — успешно прошито и верифицировано.
+- **Аппаратный тест `tools/rock_hwtest.py`:** **13/13 PASS** при полном 20-минутном окне стабильности:
+  * WSS сессия стабильна, browse 200, search 200.
+  * 3/3 станции успешно переведены в статус `playing`.
+  * Управление: stop, pause/resume, vol+, vol- подтверждены.
+  * 20 минут stability soak window: drops=0, reconnects=0, watchdogs=0, underruns=0, decode_errors=0, свободная куча 28.5 МБ.
+  * Пост-TTL перезагрузка каталога: 200 OK.
+- **Аппаратный тест Chromecast `test_cast_hw.py`:** **PASS**:
+  * mDNS обнаружение устройства: 1 Chromecast найден.
+  * TLS соединение к 192.168.31.109:8009 успешно установлено, аутентификация пройдена.
+  * Cast LOAD `audio/mpeg` успешно отправлен и принят.
+  * Потребитель переключен со встроенного динамика на Chromecast через локальный HTTP-релей.
+  * Передано **351+ КБ** аудиопотока в реальном времени.
+  * Скриншот экрана успешно снят по последовательному порту и сохранен.

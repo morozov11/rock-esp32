@@ -17,6 +17,8 @@
 
 void rock_platform_notify_splash_status(const char *text);
 void rock_platform_notify_wifi_scan(const rock_wifi_scan_item_t *items, uint16_t count);
+bool rock_platform_notify_onboarding_status(const char *text);
+bool rock_platform_notify_onboarding_show(const char *ssid, const char *pin, const char *url, const uint8_t *qr_modules, uint16_t qr_width);
 
 // --- rock_wifi_sta.c: pieces sequenced by rock_platform_init ---
 

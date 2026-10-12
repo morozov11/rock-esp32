@@ -18,6 +18,8 @@ typedef struct {
 typedef struct {
     bool (*on_splash_status)(const char *text);
     void (*on_wifi_scan)(const rock_wifi_scan_item_t *items, uint16_t count);
+    bool (*on_onboarding_status)(const char *text);
+    bool (*on_onboarding_show)(const char *ssid, const char *pin, const char *url, const uint8_t *qr_modules, uint16_t qr_width);
 } rock_platform_ui_cbs_t;
 
 void rock_platform_set_ui_cbs(const rock_platform_ui_cbs_t *cbs);

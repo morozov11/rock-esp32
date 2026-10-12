@@ -4,7 +4,7 @@
 
 #include "control_platform.h"
 #include "control_platform_internal.h"
-#include "relay_bsp.h"
+#include "rock_source.h"
 
 #include "esp_event.h"
 #include "esp_log.h"

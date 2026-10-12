@@ -5,26 +5,19 @@
 # the Rust static library is the actual consumer. esp_lcd/esp_lvgl_port are
 # also genuinely linked: display_bsp.c owns the display bring-up, while the
 # Rust side drives the clock UI through the display_bsp facade.
-# Module layout (phase 4): main/ keeps only the composition root and shared
-# board plumbing; feature modules live in subdirectories. Headers stay flat
-# (#include "x.h"): every module dir is on the include path.
+# Module layout (phase 6): main/ keeps only the thin composition root
+# (main.c, board_bus.c, callbacks, and Rust runtime launching).
+# Domain modules are isolated ESP-IDF components under components/rock_*.
 idf_component_register(
     SRCS "main.c" "board_bus.c"
-         "platform/control_platform.c" "platform/rock_wifi_sta.c" "platform/rock_net_ws.c"
-         "platform/rock_wifi_storage.c" "platform/rock_ota.c"
-         "audio/audio_bsp.c" "audio/audio_spectrum.c" "audio/player_bsp.c"
-         "relay/rock_ring.c" "relay/relay_bsp.c" "relay/rock_relay_http.c"
-         "cast/cast_bsp.c"
-         "display/display_bsp.c"
-         "gui/rock_gui.c" "gui/rock_gui_widgets.c" "gui/rock_gui_keyboard.c"
-         "gui/rock_gui_views_now_playing.c" "gui/rock_gui_views_browse.c"
-         "gui/rock_gui_views_search.c" "gui/rock_gui_views_cast.c"
-         "gui/rock_ui_screens.c" "gui/rock_serial.c" "gui/rock_screenshot.c"
-         "gui/fonts/font_inter_14.c" "gui/fonts/font_inter_18.c" "gui/fonts/font_inter_24.c"
-         "gui/fonts/font_hack_16.c"
-         "onboarding/rock_onboarding.c"
-    INCLUDE_DIRS "." "platform" "audio" "relay" "cast" "display" "gui" "gui/fonts" "onboarding"
-    PRIV_REQUIRES
+    INCLUDE_DIRS "."
+    REQUIRES
+        "rock_platform"
+        "rock_source"
+        "rock_cast"
+        "rock_audio"
+        "rock_display"
+        "rock_gui"
         "heap"
         "pthread"
         "driver"
@@ -61,6 +54,7 @@ idf_component_register(
         "esp_lcd_touch_gt911"
         "esp_lcd_st7701"
         "esp_lvgl_port"
+        "lvgl"
         "esp_http_client"
         "esp_hosted"
         "esp_timer"
@@ -71,9 +65,6 @@ idf_component_register(
         "esp-tls"
         "mdns"
         "mbedtls"
-        # RE-3 pinned audio/SR components. esp_codec_dev is genuinely used
-        # by audio_bsp.c (ES8311 + I2S); esp_audio_codec and esp-sr are
-        # consumed by the later player (RE-5) and wake-word (RE-8) steps.
         "esp_codec_dev"
         "esp_audio_codec"
         "esp-sr"

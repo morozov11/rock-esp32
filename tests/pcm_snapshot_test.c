@@ -1,5 +1,5 @@
 /* Run with a C11 compiler: cc -std=c11 tests/pcm_snapshot_test.c -o pcm_test */
-#include "../main/pcm_snapshot.h"
+#include "../components/rock_audio/include/pcm_snapshot.h"
 #include <assert.h>
 #include <stdio.h>
 

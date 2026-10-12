@@ -1,4 +1,4 @@
-#include "cast_bsp.h"
+#include "rock_cast_discovery.h"
 #include "esp_heap_caps.h"
 
 #include "freertos/FreeRTOS.h"

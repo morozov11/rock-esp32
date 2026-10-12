@@ -1,5 +1,5 @@
 #include "audio_spectrum.h"
-#include "player_bsp.h"
+#include "rock_player.h"
 #include "esp_dsp.h"
 #include "esp_log.h"
 #include "esp_timer.h"

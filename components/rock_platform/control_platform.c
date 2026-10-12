@@ -49,6 +49,16 @@ void rock_platform_notify_wifi_scan(const rock_wifi_scan_item_t *items, uint16_t
     if (s_ui_cbs.on_wifi_scan) s_ui_cbs.on_wifi_scan(items, count);
 }
 
+bool rock_platform_notify_onboarding_status(const char *text)
+{
+    return s_ui_cbs.on_onboarding_status ? s_ui_cbs.on_onboarding_status(text) : false;
+}
+
+bool rock_platform_notify_onboarding_show(const char *ssid, const char *pin, const char *url, const uint8_t *qr_modules, uint16_t qr_width)
+{
+    return s_ui_cbs.on_onboarding_show ? s_ui_cbs.on_onboarding_show(ssid, pin, url, qr_modules, qr_width) : false;
+}
+
 int rock_platform_init(void)
 {
     esp_err_t err = nvs_flash_init();

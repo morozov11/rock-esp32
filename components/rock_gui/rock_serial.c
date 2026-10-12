@@ -6,7 +6,7 @@
 
 #include "rock_serial.h"
 #include "control_platform.h"
-#include "player_bsp.h"
+#include "rock_player.h"
 #include "rock_gui.h"
 #include "rock_screenshot.h"
 #include "audio_spectrum.h"

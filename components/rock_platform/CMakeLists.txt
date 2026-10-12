@@ -1,0 +1,29 @@
+idf_component_register(
+    SRCS
+        "control_platform.c"
+        "rock_net_ws.c"
+        "rock_wifi_sta.c"
+        "rock_wifi_storage.c"
+        "rock_ota.c"
+        "rock_onboarding.c"
+    INCLUDE_DIRS "include"
+    PRIV_INCLUDE_DIRS "${PROJECT_DIR}/main"
+    PRIV_REQUIRES
+        "rock_source"
+        "esp_wifi"
+        "esp_netif"
+        "nvs_flash"
+        "esp_websocket_client"
+        "esp_http_client"
+        "esp_https_ota"
+        "app_update"
+        "esp_http_server"
+        "mbedtls"
+        "wpa_supplicant"
+        "driver"
+        "esp_driver_gpio"
+        "esp_timer"
+        "heap"
+        "lwip"
+    WHOLE_ARCHIVE
+)

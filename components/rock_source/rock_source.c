@@ -2,9 +2,9 @@
 // the single authorized upstream connection, ICY filtering, MP3 sync,
 // decode, resampling to 48 kHz stereo, pacing and the shared ring. The
 // Cast-side listener and serve loops live in rock_relay_http.c; ring buffers
-// in rock_ring.c. Public ABI: relay_bsp.h; shared plumbing: relay_internal.h.
+// in rock_ring.c. Public ABI: rock_source.h; shared plumbing: relay_internal.h.
 
-#include "relay_bsp.h"
+#include "rock_source.h"
 #include "control_platform.h"
 #include "relay_internal.h"
 
@@ -1111,14 +1111,4 @@ void rock_source_stop(void)
         xSemaphoreGive(s_config_lock);
     }
     ESP_LOGI(TAG, "Stream source stopped");
-}
-
-void rock_relay_stop(void)
-{
-    rock_source_stop();
-}
-
-bool rock_relay_is_active(void)
-{
-    return rock_source_is_active();
 }

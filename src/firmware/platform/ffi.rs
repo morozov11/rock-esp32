@@ -123,9 +123,6 @@ unsafe extern "C" {
     pub(crate) fn rock_source_content_type_enum() -> c_int;
     pub(crate) fn rock_source_content_type_copy(out: *mut c_char, cap: usize) -> c_int;
     pub(crate) fn rock_relay_listen(out_url: *mut c_char, out_cap: usize) -> c_int;
-    pub(crate) fn rock_relay_stop();
-    #[allow(dead_code)]
-    pub(crate) fn rock_relay_is_active() -> bool;
 }
 
 #[repr(C)]
@@ -137,7 +134,7 @@ pub(crate) struct RockCastDeviceRaw {
     pub host: [c_char; 65],
     pub port: u16,
     /// Raw eureka_info body staged by the C subnet scanner; empty for mDNS
-    /// hits or failed probes. Paired with rock_cast_device_t in cast_bsp.h.
+    /// hits or failed probes. Paired with rock_cast_device_t in rock_cast_discovery.h.
     pub eureka_json: [c_char; 1024],
 }
 

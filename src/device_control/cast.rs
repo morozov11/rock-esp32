@@ -26,7 +26,7 @@ pub const CAST_LOAD_ATTEMPT_TIMEOUT_MS: u32 = 15_000;
 pub const CAST_HEARTBEAT_INTERVAL_MS: u64 = 5_000;
 
 /// Content type of the unified stream source (phase 5): mirrors
-/// `rock_source_content_type_t` in relay_bsp.h — the single shared source
+/// `rock_source_content_type_t` in rock_source.h — the single shared source
 /// both languages read instead of sniffed strings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceContentType {

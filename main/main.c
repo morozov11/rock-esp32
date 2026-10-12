@@ -10,7 +10,7 @@
 #include "board_bus.h"
 #include "control_platform.h"
 #include "display_bsp.h"
-#include "player_bsp.h"
+#include "rock_player.h"
 #include "rock_ota.h"
 #include "rock_ui_screens.h"
 
@@ -94,6 +94,8 @@ void app_main(void)
     rock_platform_ui_cbs_t platform_ui_cbs = {
         .on_splash_status = platform_ui_on_splash_status,
         .on_wifi_scan = platform_ui_on_wifi_scan,
+        .on_onboarding_status = rock_ui_onboarding_status,
+        .on_onboarding_show = rock_ui_onboarding_show,
     };
     rock_platform_set_ui_cbs(&platform_ui_cbs);
 #if CONFIG_ROCK_BRINGUP_TESTS

@@ -278,10 +278,10 @@ pub(crate) fn relay_listen() -> Option<String> {
 }
 
 pub(crate) fn relay_stop() {
-    unsafe { rock_relay_stop() };
+    unsafe { rock_source_stop() };
 }
 
 #[allow(dead_code)]
 pub(crate) fn relay_is_active() -> bool {
-    unsafe { rock_relay_is_active() }
+    unsafe { rock_source_is_active() }
 }

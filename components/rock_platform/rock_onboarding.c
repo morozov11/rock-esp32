@@ -1,6 +1,6 @@
 #include "rock_onboarding.h"
 #include "rock_wifi_storage.h"
-#include "rock_ui_screens.h"
+#include "control_platform_internal.h"
 #include "rock_ffi_exports.h"
 
 #include "esp_http_server.h"
@@ -347,7 +347,7 @@ static esp_err_t scan_handler(httpd_req_t *req)
 
 static esp_err_t index_handler(httpd_req_t *req)
 {
-    rock_ui_onboarding_status("Phone connected! Complete setup in browser...");
+    rock_platform_notify_onboarding_status("Phone connected! Complete setup in browser...");
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, ONBOARDING_HTML, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -420,7 +420,7 @@ static esp_err_t connect_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    rock_ui_onboarding_status("Credentials saved! Restarting into network...");
+    rock_platform_notify_onboarding_status("Credentials saved! Restarting into network...");
 
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, CONNECTED_HTML, HTTPD_RESP_USE_STRLEN);
@@ -610,10 +610,10 @@ esp_err_t rock_onboarding_run(void)
     static uint8_t qr_modules[1024];
     uint16_t qr_width = 0;
     if (rock_qr_encode(qr_payload, qr_modules, sizeof(qr_modules), &qr_width) == 0) {
-        rock_ui_onboarding_show(CONFIG_ROCK_AP_SSID, s_onboarding_pin, "http://192.168.4.1", qr_modules, qr_width);
+        rock_platform_notify_onboarding_show(CONFIG_ROCK_AP_SSID, s_onboarding_pin, "http://192.168.4.1", qr_modules, qr_width);
     } else {
         ESP_LOGW(TAG, "QR code generation failed for Wi-Fi Quick Connect");
-        rock_ui_onboarding_show(CONFIG_ROCK_AP_SSID, s_onboarding_pin, "http://192.168.4.1", NULL, 0);
+        rock_platform_notify_onboarding_show(CONFIG_ROCK_AP_SSID, s_onboarding_pin, "http://192.168.4.1", NULL, 0);
     }
 
     // Block here while user completes onboarding (reboot task handles exit)

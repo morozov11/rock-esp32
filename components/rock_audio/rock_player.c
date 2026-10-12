@@ -1,7 +1,7 @@
-#include "player_bsp.h"
+#include "rock_player.h"
 #include "pcm_snapshot.h"
 #include "audio_bsp.h"
-#include "relay_bsp.h"
+#include "rock_source.h"
 #include "rock_ring.h"
 #include "rock_ffi_exports.h"
 #if CONFIG_ROCK_BRINGUP_TESTS

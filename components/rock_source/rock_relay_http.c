@@ -1,8 +1,8 @@
 // Cast-side HTTP server split out of relay_bsp.c (phase 4): the TCP listener,
 // request parsing and the client streaming loops (WAV PCM and chunked MP3
-// passthrough). Public ABI: relay_bsp.h; shared plumbing: relay_internal.h.
+// passthrough). Public ABI: rock_source.h; shared plumbing: relay_internal.h.
 
-#include "relay_bsp.h"
+#include "rock_source.h"
 #include "control_platform.h"
 #include "relay_internal.h"
 
