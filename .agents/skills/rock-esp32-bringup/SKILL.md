@@ -10,6 +10,8 @@ Read `docs/bring-up.md` before changing hardware configuration or flashing firmw
 ## Environment
 
 - Activate ESP-IDF with `$env:PYTHONUTF8='1'; . 'C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1'`.
+- When invoking from a Git Bash parent shell, run PowerShell with `-ExecutionPolicy Bypass` (the profile script is blocked otherwise) and clear the inherited MSYS marker variables first — `idf.py` aborts with "MSys/Mingw is no longer supported" before doing anything while `MSYSTEM` is set. Working one-liner from Git Bash:
+  `powershell -NoProfile -ExecutionPolicy Bypass -Command '$env:PYTHONUTF8="1"; . "C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1"; Remove-Item Env:MSYSTEM -ErrorAction SilentlyContinue; Remove-Item Env:MSYSTEM_CHOST -ErrorAction SilentlyContinue; Set-Location C:\repos\rock-esp32; idf.py build'`
 - Use target `esp32p4` and ESP-IDF 6.1 unless the user explicitly chooses the vendor 5.5.4 baseline.
 - Re-detect the serial port before flashing. COM6 was observed during initial bring-up, but is not a permanent assumption.
 - Never overlap builds, compilation-based tests, or dependency installations. Wait for each command to finish and inspect its result.
