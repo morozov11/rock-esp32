@@ -145,6 +145,25 @@ static void audio_tx_task(void *arg)
     }
 }
 
+// Codec reconfig gate (per stream generation). HE-AAC with aacPlus reports
+// the raw core format for the first decoded frames and then switches to the
+// SBR/PS-reconstructed format; a pause/resume restarts the decode task and
+// repeats that dance. Reconfiguring on every report storms esp_codec_dev
+// close/open cycles - the 2026-10-13 panic was an I2S DMA-descriptor
+// allocation failure inside the second back-to-back reconfig. Every
+// reconfig must pass all three gates below.
+#define FORMAT_STABLE_FRAMES 3            // consecutive frames with same new format
+#define FORMAT_RECONFIG_MIN_INTERVAL_MS 1000
+#define FORMAT_INITIAL_GRACE_MS 250       // let SBR lock before first reconfig
+
+typedef struct {
+    uint32_t pending_fs;
+    uint8_t pending_ch;
+    uint8_t stable_count;
+    int64_t decode_started_us;
+    int64_t last_reconfig_us;
+} rock_format_gate_t;
+
 // One decode pass over the staged compressed input (phase-4 extraction from
 // stream_rx_task): run esp_audio_dec frames, reconfigure the codec on format
 // changes, push PCM into the speaker ring and flip BUFFERING→PLAYING once
@@ -155,7 +174,8 @@ static int rock_decoder_step(esp_audio_dec_handle_t dec,
                              const char *station_id,
                              uint8_t *in_buf, size_t in_len,
                              uint8_t *out_buf,
-                             uint32_t *current_fs, uint8_t *current_channels)
+                             uint32_t *current_fs, uint8_t *current_channels,
+                             rock_format_gate_t *gate)
 {
     size_t in_pos = 0;
     while (in_len > in_pos && !atomic_load(&s_stop_signal)) {
@@ -179,16 +199,36 @@ static int rock_decoder_step(esp_audio_dec_handle_t dec,
                 esp_audio_dec_info_t info;
                 if (esp_audio_dec_get_info(dec, &info) == ESP_AUDIO_ERR_OK) {
                     if (info.sample_rate != *current_fs || info.channel != *current_channels) {
-                        ESP_LOGI(TAG, "Decoder format: %lu Hz, %u ch (reconfiguring codec)",
-                                 (unsigned long)info.sample_rate, info.channel);
-                        if (rock_audio_reconfig(info.sample_rate, info.channel) != 0) {
-                            ESP_LOGE(TAG, "rock_audio_reconfig failed, aborting local decode");
-                            return -1;
+                        if (gate->pending_fs != info.sample_rate || gate->pending_ch != info.channel) {
+                            gate->pending_fs = info.sample_rate;
+                            gate->pending_ch = info.channel;
+                            gate->stable_count = 1;
+                        } else {
+                            gate->stable_count++;
                         }
-                        atomic_store(&s_pcm_rate, info.sample_rate);
-                        atomic_store(&s_pcm_channels, info.channel);
-                        *current_fs = info.sample_rate;
-                        *current_channels = info.channel;
+                        int64_t now_us = esp_timer_get_time();
+                        bool stable = gate->stable_count >= FORMAT_STABLE_FRAMES;
+                        bool rate_ok = (now_us - gate->last_reconfig_us)
+                                       >= FORMAT_RECONFIG_MIN_INTERVAL_MS * 1000;
+                        bool grace_ok = (now_us - gate->decode_started_us)
+                                        >= FORMAT_INITIAL_GRACE_MS * 1000;
+                        if (stable && rate_ok && grace_ok) {
+                            ESP_LOGI(TAG, "Decoder format %lu Hz, %u ch stable (%u frames, reconfiguring codec)",
+                                     (unsigned long)info.sample_rate, info.channel, gate->stable_count);
+                            if (rock_audio_reconfig(info.sample_rate, info.channel) != 0) {
+                                ESP_LOGE(TAG, "rock_audio_reconfig failed, aborting local decode");
+                                return -1;
+                            }
+                            atomic_store(&s_pcm_rate, info.sample_rate);
+                            atomic_store(&s_pcm_channels, info.channel);
+                            *current_fs = info.sample_rate;
+                            *current_channels = info.channel;
+                            gate->last_reconfig_us = now_us;
+                            gate->stable_count = 0;
+                        }
+                    } else {
+                        // Live format reported again: the alternative lost the frame.
+                        gate->stable_count = 0;
                     }
                 }
 
@@ -294,6 +334,12 @@ static void stream_rx_task(void *arg)
     size_t in_len = 0;
     uint32_t current_fs = 0;
     uint8_t current_channels = 0;
+    rock_format_gate_t gate = {
+        .decode_started_us = esp_timer_get_time(),
+        // Zero means "never": the rate limit must not delay the first
+        // legitimate reconfig, only space out the ones after it.
+        .last_reconfig_us = 0,
+    };
 
     if (pcm_mode) {
         current_fs = 48000;
@@ -346,7 +392,7 @@ static void stream_rx_task(void *arg)
 
         // Decode loop
         int consumed = rock_decoder_step(dec, current_station, in_buf, in_len, out_buf,
-                                         &current_fs, &current_channels);
+                                         &current_fs, &current_channels, &gate);
         if (consumed < 0) {
             goto fail;
         }
