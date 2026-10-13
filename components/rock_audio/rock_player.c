@@ -273,11 +273,18 @@ static void stream_rx_task(void *arg)
             ESP_LOGE(TAG, "Unsupported Content-Type (not MP3/AAC): %s", content_type);
             goto fail;
         }
+        esp_aac_dec_cfg_t aac_cfg = ESP_AAC_DEC_CONFIG_DEFAULT();
         esp_audio_dec_cfg_t dec_cfg = {
             .type = codec_type,
             .cfg = NULL,
             .cfg_sz = 0,
         };
+        if (codec_type == ESP_AUDIO_TYPE_AAC) {
+            // HE-AAC (aacPlus) radio streams decode only with SBR/PS enabled.
+            aac_cfg.aac_plus_enable = true;
+            dec_cfg.cfg = &aac_cfg;
+            dec_cfg.cfg_sz = sizeof(aac_cfg);
+        }
         if (esp_audio_dec_open(&dec_cfg, &dec) != ESP_AUDIO_ERR_OK) {
             ESP_LOGE(TAG, "Failed to open audio decoder for type %d", codec_type);
             goto fail;

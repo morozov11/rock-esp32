@@ -12,6 +12,7 @@
 #include "esp_http_client.h"
 #include "esp_heap_caps.h"
 #include "esp_audio_dec.h"
+#include "esp_aac_dec.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -682,12 +683,21 @@ static bool upstream_open_decoder(relay_upstream_t *up)
     if (up->dec) {
         return true;
     }
+    esp_aac_dec_cfg_t aac_cfg = ESP_AAC_DEC_CONFIG_DEFAULT();
     esp_audio_dec_cfg_t dec_cfg = {
-        .type = strcasestr(up->headers.content_type, "aac")
-            ? ESP_AUDIO_TYPE_AAC : ESP_AUDIO_TYPE_MP3,
+        .type = ESP_AUDIO_TYPE_MP3,
         .cfg = NULL,
         .cfg_sz = 0,
     };
+    if (strcasestr(up->headers.content_type, "aac")) {
+        // Radio "audio/aac" streams are typically HE-AAC (aacPlus): without
+        // SBR/PS enabled the decoder rejects every frame (error 30) and the
+        // feeder starves with an error storm.
+        aac_cfg.aac_plus_enable = true;
+        dec_cfg.type = ESP_AUDIO_TYPE_AAC;
+        dec_cfg.cfg = &aac_cfg;
+        dec_cfg.cfg_sz = sizeof(aac_cfg);
+    }
     if (esp_audio_dec_open(&dec_cfg, &up->dec) != ESP_AUDIO_ERR_OK) {
         ESP_LOGE(TAG, "Failed to open upstream audio decoder (type=%d)", dec_cfg.type);
         return false;
@@ -802,7 +812,15 @@ static int upstream_decode_chunk(
                 break;
             }
         } else {
-            consumed++;
+            // Decode error: jump to the next frame sync (ADTS/MPEG 0xFFFx)
+            // instead of crawling one byte per decoder call, which floods
+            // the log and stalls the feeder on garbage input.
+            size_t skip = consumed + 1;
+            while (skip + 1 < up->raw_len &&
+                   !(up->raw[skip] == 0xFF && (up->raw[skip + 1] & 0xF0) == 0xF0)) {
+                skip++;
+            }
+            consumed = (skip + 1 < up->raw_len) ? skip : up->raw_len;
         }
     }
     if (consumed > 0) {
