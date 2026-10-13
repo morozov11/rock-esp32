@@ -164,6 +164,7 @@ fn station_play_stream_command_parsing_and_boundaries() {
         device_control::PlayerCommand::PlayStream {
             command_id: "60000000-0000-4000-8000-000000000001".into(),
             station_id: "station.rock_classic".into(),
+            station_name: None,
             stream_uri: "https://stream.rockcast.example:8443/live.mp3?token=abc".into(),
         }
     );
@@ -517,6 +518,42 @@ fn device_station_dto_and_catalog_page_parsing_and_boundaries() {
         device_control::parse_catalog_page(&bad_bytes),
         Err(device_control::CatalogError::Malformed)
     );
+
+    // 4. Over-tagged stations (the browser catalog has no tag cap): the page
+    // parses and only the first MAX_STATION_TAGS tags survive.
+    let overflow_tags: Vec<String> = (0..22).map(|i| format!("tag-{i}")).collect();
+    let overtagged_json = json!({
+        "request_id": "req-overtagged",
+        "stations": [
+            {
+                "id": "station.rb-heavy",
+                "name": "Over-tagged Radio",
+                "tags": overflow_tags,
+                "health": "unknown"
+            }
+        ]
+    });
+    let overtagged_bytes = serde_json::to_vec(&overtagged_json).unwrap();
+    let page = device_control::parse_catalog_page(&overtagged_bytes).unwrap();
+    assert_eq!(page.stations[0].tags.len(), 10);
+    assert_eq!(page.stations[0].tags[0], "tag-0");
+    assert_eq!(page.stations[0].tags[9], "tag-9");
+
+    // 4b. Same tolerance on the search page.
+    let overtagged_search = json!({
+        "request_id": "req-search-overtagged",
+        "stations": [
+            {
+                "id": "station.rb-search",
+                "name": "Over-tagged Search Hit",
+                "tags": overflow_tags,
+                "health": "unknown"
+            }
+        ]
+    });
+    let search_bytes = serde_json::to_vec(&overtagged_search).unwrap();
+    let search_page = device_control::parse_search_page(&search_bytes).unwrap();
+    assert_eq!(search_page.stations[0].tags.len(), 10);
 }
 
 #[test]
@@ -666,8 +703,6 @@ fn catalog_limits_and_utf8_query_are_enforced() {
     for (field, good, bad) in [
         ("id", json!("x".repeat(128)), json!("x".repeat(129))),
         ("name", json!("x".repeat(128)), json!("x".repeat(129))),
-        ("tags", json!(vec!["x"; 10]), json!(vec!["x"; 11])),
-        ("tags", json!(["x".repeat(64)]), json!(["x".repeat(65)])),
         (
             "homepage_url",
             json!("x".repeat(512)),
@@ -683,6 +718,19 @@ fn catalog_limits_and_utf8_query_are_enforced() {
         let mut invalid = station.clone();
         invalid[field] = bad;
         assert!(!parses(&page(invalid)), "invalid {field}");
+    }
+    // Over-tag tolerance (2026-10-13): the browser-side catalog has no tag
+    // cap, so extra tags are truncated and over-long tags dropped instead of
+    // failing the page.
+    {
+        let mut tolerant = station.clone();
+        let mut many_tags = vec![json!("x".repeat(200))];
+        many_tags.extend(vec![json!("t"); 25]);
+        tolerant["tags"] = json!(many_tags);
+        let parsed =
+            parse_catalog_page(&serde_json::to_vec(&page(tolerant)).unwrap()).unwrap();
+        assert_eq!(parsed.stations[0].tags.len(), 9);
+        assert_eq!(parsed.stations[0].tags[0], "t");
     }
     for field in ["id", "name", "health"] {
         let mut invalid = station.clone();

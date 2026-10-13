@@ -136,14 +136,27 @@ impl DeviceStationDto {
     }
 }
 
+/// RS-2 over-tag tolerance: the browser-side catalog has no tag cap, and a
+/// single over-tagged station must not fail the whole page (2026-10-13: a
+/// "black" search returned stations with 11 and 22 tags and the device showed
+/// "Некорректный формат поиска"). Extra or over-long tags are dropped like
+/// unknown JSON fields; everything else stays strictly validated.
+fn tolerate_overflow_tags(stations: &mut [DeviceStationDto]) {
+    for station in stations.iter_mut() {
+        station.tags.truncate(MAX_STATION_TAGS);
+        station.tags.retain(|tag| valid_text(tag, MAX_TAG_LEN));
+    }
+}
+
 /// Parses and validates one bounded catalog browse page from RS-2.
 /// Deterministically rejects pages exceeding MAX_CATALOG_PAGE_STATIONS (<= 20)
-/// or containing malformed station metadata.
+/// or containing malformed station metadata; overflow tags are truncated
+/// (see `tolerate_overflow_tags`).
 pub fn parse_catalog_page(bytes: &[u8]) -> Result<DeviceCatalogPageDto, CatalogError> {
     if bytes.len() > MAX_CATALOG_BYTES {
         return Err(CatalogError::Oversized);
     }
-    let page: DeviceCatalogPageDto =
+    let mut page: DeviceCatalogPageDto =
         serde_json::from_slice(bytes).map_err(|_| CatalogError::Malformed)?;
     if page.stations.len() > MAX_CATALOG_PAGE_STATIONS {
         return Err(CatalogError::Oversized);
@@ -156,6 +169,7 @@ pub fn parse_catalog_page(bytes: &[u8]) -> Result<DeviceCatalogPageDto, CatalogE
             return Err(CatalogError::Malformed);
         }
     }
+    tolerate_overflow_tags(&mut page.stations);
     for station in &page.stations {
         if !station.is_valid() {
             return Err(CatalogError::Malformed);
@@ -165,11 +179,12 @@ pub fn parse_catalog_page(bytes: &[u8]) -> Result<DeviceCatalogPageDto, CatalogE
 }
 
 /// Parses and validates one bounded catalog search page from RS-2.
+/// Overflow tags are truncated (see `tolerate_overflow_tags`).
 pub fn parse_search_page(bytes: &[u8]) -> Result<DeviceSearchPageDto, CatalogError> {
     if bytes.len() > MAX_CATALOG_BYTES {
         return Err(CatalogError::Oversized);
     }
-    let page: DeviceSearchPageDto =
+    let mut page: DeviceSearchPageDto =
         serde_json::from_slice(bytes).map_err(|_| CatalogError::Malformed)?;
     if page.stations.len() > MAX_CATALOG_PAGE_STATIONS {
         return Err(CatalogError::Oversized);
@@ -177,6 +192,7 @@ pub fn parse_search_page(bytes: &[u8]) -> Result<DeviceSearchPageDto, CatalogErr
     if page.request_id.is_empty() || !valid_text(&page.request_id, 64) {
         return Err(CatalogError::Malformed);
     }
+    tolerate_overflow_tags(&mut page.stations);
     for station in &page.stations {
         if !station.is_valid() {
             return Err(CatalogError::Malformed);
