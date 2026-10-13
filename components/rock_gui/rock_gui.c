@@ -329,15 +329,9 @@ int rock_gui_start(void)
     // Register 30 FPS update timer for FFT visualizer and ticker clock
     lv_timer_create(spectrum_timer_cb, 34, NULL);
 
-    // Seed Browse screen with initial radio stations
-    static const rock_gui_station_item_t s_default_stations[] = {
-        { .id = "st-01", .name = "Radio Maximum", .tags = "Alternative, Rock", .codec = "MP3", .bitrate_kbps = 128, .is_playing = false },
-        { .id = "st-02", .name = "Наше Радио", .tags = "Русский рок", .codec = "MP3", .bitrate_kbps = 128, .is_playing = false },
-        { .id = "st-03", .name = "Rock FM 95.2", .tags = "Classic Rock, Hard Rock", .codec = "AAC", .bitrate_kbps = 128, .is_playing = false },
-        { .id = "st-04", .name = "Radio Ultra", .tags = "Nu-Metal, Post-Grunge", .codec = "MP3", .bitrate_kbps = 192, .is_playing = false },
-        { .id = "st-05", .name = "Radio Record", .tags = "Electronic, Club", .codec = "AAC", .bitrate_kbps = 128, .is_playing = false },
-    };
-    rock_gui_set_browse_stations(s_default_stations, sizeof(s_default_stations) / sizeof(s_default_stations[0]), NULL);
+    // No built-in catalog: browse rows stay hidden until the server page
+    // arrives (ROCK_UI_EVT_CATALOG_BROWSE -> rock_gui_set_browse_stations).
+    gui_browse_hide_rows();
 
     s_gui_active = true;
 
