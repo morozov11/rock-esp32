@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 3 · GUI mockup — палитра rockcast (800×480)</title>
+<style>
+  :root{
+    --bg:#15110E; --panel:#201914; --panel2:#2A211B;
+    --border:#3B2C23; --bs:#2D211A;
+    --fg:#F3EEE9; --accent:#E56020; --muted:#9E8D82; --bardim:#5A4030;
+    --gold:#F59E0B; --green:#3DDC84; --rowalt:#201814; --selsec:#3A281C;
+    --mic:#E67E22; --warn:#FFAA00; --error:#E05353; --white:#FFFFFF;
+    --mono-text:#FAEEE4;
+    --mono-font:'Cascadia Mono',Consolas,'Courier New',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0B0806;color:var(--fg);font:14px/1.45 'Segoe UI',system-ui,sans-serif;padding:0 0 90px}
+  .page{max-width:960px;margin:0 auto;padding:30px 22px 0}
+
+  .page-head h1{font-size:22px;font-weight:700}
+  .page-head h1 em{color:var(--accent);font-style:normal}
+  .page-head p{color:var(--muted);font-size:13px;margin-top:6px;max-width:760px}
+  .gate{margin:14px 0 0;display:inline-flex;align-items:center;gap:10px;background:var(--panel);
+        border:1px solid var(--border);border-radius:10px;padding:9px 14px;font-size:12.5px;color:var(--muted)}
+  .gate b{color:var(--fg)} .gate .dot{width:9px;height:9px;border-radius:50%;background:var(--warn);flex:none}
+
+  nav{position:sticky;top:0;z-index:50;background:rgba(11,8,6,.94);backdrop-filter:blur(6px);
+      display:flex;flex-wrap:wrap;gap:6px;padding:12px 0;margin:20px 0 6px;border-bottom:1px solid #201914}
+  nav a{color:var(--muted);text-decoration:none;font-size:12.5px;font-weight:600;padding:7px 12px;
+        border:1px solid var(--border);border-radius:8px;background:var(--panel)}
+  nav a:hover{color:var(--fg);border-color:var(--accent)}
+
+  section{margin-top:54px;scroll-margin-top:64px}
+  h2{font-size:17px;font-weight:700;display:flex;align-items:center;gap:10px}
+  h2::before{content:"";width:4px;height:18px;background:var(--accent);border-radius:2px}
+  h2 small{color:var(--muted);font-weight:400;font-size:12.5px}
+  h3{font-size:13.5px;color:var(--muted);font-weight:600;margin:22px 0 8px;text-transform:uppercase;letter-spacing:.6px}
+
+  /* ---------- decision cards ---------- */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:14px}
+  .card{background:var(--panel);border:1px solid var(--bs);border-radius:10px;padding:14px 16px}
+  .card h4{font-size:13px;margin-bottom:8px}
+  .card.c1 h4{color:var(--accent)} .card.c2 h4{color:var(--green)} .card.c3 h4{color:var(--mic)}
+  .card ul{list-style:none;font-size:12.5px;color:var(--muted)}
+  .card li{padding:3px 0 3px 14px;position:relative}
+  .card li::before{content:"·";position:absolute;left:2px;color:var(--fg)}
+  .card li b{color:var(--fg);font-weight:600}
+
+  /* ---------- device frame ---------- */
+  .framebar{display:flex;align-items:center;justify-content:space-between;max-width:848px;margin:16px auto 8px}
+  .state-sw{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+  .state-sw button{background:var(--panel2);border:1px solid var(--border);color:var(--muted);
+      font:600 12px 'Segoe UI',sans-serif;padding:7px 14px;border-radius:8px;cursor:pointer}
+  .state-sw button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .shot{width:848px;max-width:100%;margin:0 auto;overflow-x:auto;padding-bottom:2px}
+  .bezel{width:848px;background:#0C0906;border:1px solid #241C15;border-radius:18px;padding:24px;
+         box-shadow:0 24px 60px rgba(0,0,0,.55)}
+  .screen{position:relative;width:800px;height:480px;background:var(--bg);border-radius:8px;overflow:hidden;flex:none}
+  .cap{width:848px;max-width:100%;margin:12px auto 0;font-size:12.5px;color:var(--muted)}
+  .cap b{color:var(--fg);font-weight:600} .cap code{color:var(--accent);font-family:var(--mono-font);font-size:11.5px}
+
+  /* ---------- shell ---------- */
+  .hdr{position:absolute;left:0;top:0;width:800px;height:40px;background:var(--panel);
+       display:flex;align-items:center;padding:0 16px;gap:0;border-bottom:1px solid var(--bs)}
+  .hdr .logo{color:var(--accent);font-weight:700;font-size:18px;letter-spacing:1px}
+  .hdr .sect{color:var(--muted);font-size:14px;padding-left:10px;flex:1}
+  .hdr .wifi{color:var(--fg);font-size:13px;display:flex;align-items:center;gap:6px;padding-right:14px}
+  .hdr .srv{color:var(--fg);font-size:13px;padding-right:14px}
+  .hdr .clk{color:var(--fg);font-family:var(--mono-font);font-size:16px}
+  .ticker{position:absolute;left:0;bottom:0;width:800px;height:36px;background:var(--panel2);
+       display:flex;align-items:center;padding:0 16px;gap:10px;border-top:1px solid var(--bs)}
+  .ticker .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .ticker .dot.g{background:var(--green)} .ticker .dot.a{background:var(--accent)}
+  .ticker .dot.m{background:var(--muted)} .ticker .dot.e{background:var(--error)}
+  .ticker .txt{color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  svg{display:block}
+  .ic{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .icf{fill:currentColor;stroke:none}
+
+  /* ---------- now playing / player deck ---------- */
+  .deck{position:absolute;left:16px;top:52px;width:768px;height:300px;background:var(--panel);
+        border:1px solid var(--bs);border-radius:10px;padding:12px 16px;display:flex;flex-direction:column}
+  .deck-top{flex:1;display:flex;align-items:center;gap:18px;min-height:0}
+  .mono{border-radius:8px;display:flex;align-items:center;justify-content:center;
+        color:var(--mono-text);font-weight:700;flex:none}
+  .deck .mono{width:96px;height:96px;font-size:24px;border:2px solid var(--accent)}
+  .deck-info{width:288px;flex:none;display:flex;flex-direction:column;gap:7px;min-width:0}
+  .np-badge{color:var(--accent);font-weight:700;font-size:13px;letter-spacing:1.6px}
+  .np-name{color:var(--fg);font-weight:700;font-size:24px;white-space:nowrap;overflow:hidden}
+  .np-sub{color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden}
+  .np-trackrow{display:flex;align-items:center;gap:9px;padding-top:2px}
+  .livedot{width:9px;height:9px;border-radius:50%;background:var(--green);flex:none}
+  .idle .livedot{display:none}
+  .np-track{font-size:18px;white-space:nowrap;overflow:hidden;color:var(--accent)}
+  .idle .np-track{color:var(--muted)}
+  .when-idle{display:none} .idle .when-idle{display:inline} .idle .when-play{display:none}
+  .capsule{display:inline-flex;align-self:flex-start;background:var(--panel2);border:1px solid var(--bs);
+           border-radius:6px;padding:3px 10px;color:var(--muted);font-size:13px}
+  .spec{margin-left:auto;width:296px;height:168px;flex:none;display:flex;align-items:flex-end;gap:3px}
+  .spec .bar{position:relative;flex:1;height:100%;border-radius:2px;background:var(--accent);
+             transform-origin:bottom;animation:eq var(--d,1.1s) ease-in-out var(--dl,0s) infinite}
+  .spec .peak{position:absolute;left:0;right:0;bottom:var(--p,50%);height:2px;background:#fff;border-radius:1px;
+              animation:pk var(--pd,2.6s) ease-in-out var(--dl,0s) infinite}
+  .idle .spec .bar{background:var(--bardim);animation:none;transform:scaleY(.07)}
+  .idle .spec .peak{display:none}
+  @keyframes eq{0%,100%{transform:scaleY(.1)}50%{transform:scaleY(var(--s,.8))}}
+  @keyframes pk{0%,100%{bottom:calc(var(--p,50%) - 5%)}45%,60%{bottom:var(--p,50%)}}
+  .deck-sep{height:1px;background:var(--border);flex:none}
+  .deck-foot{height:30px;flex:none;display:flex;align-items:center;justify-content:space-between}
+  .deck-foot .l{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+  .deck-foot .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+  .idle .deck-foot .dot{background:var(--muted)}
+  .deck-foot .srvlabel{color:var(--muted);font-size:11px;letter-spacing:.4px}
+
+  .transport{position:absolute;left:16px;top:364px;width:768px;height:64px;background:var(--panel);
+        border:1px solid var(--bs);border-radius:10px;display:flex;align-items:center;justify-content:center;gap:16px}
+  .tb{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--fg);
+      font-size:13.5px;font-weight:600;background:var(--panel2);border:1px solid var(--border);cursor:default;flex:none}
+  .tb.pill{height:48px;border-radius:24px;padding:0 16px}
+  .tb.circ{width:56px;height:56px;border-radius:50%}
+  .tb-play{width:64px;height:64px;border-radius:50%;background:var(--accent);color:#fff;border:none;
+           display:flex;align-items:center;justify-content:center;flex:none}
+  .idle .tb-play{background:var(--panel2);border:2px solid var(--accent)}
+  .volval{width:64px;text-align:center;color:var(--fg);font-family:var(--mono-font);font-size:16px;flex:none}
+
+  /* ---------- station rows ---------- */
+  .subhdr{position:absolute;left:16px;top:52px;width:768px;height:48px;display:flex;align-items:center;gap:16px}
+  .back{height:44px;border-radius:10px;padding:0 14px}
+  .subhdr .title{color:var(--fg);font-weight:700;font-size:18px;letter-spacing:.6px;white-space:nowrap}
+  .subhdr .spacer{flex:1}
+  .subhdr .count{color:var(--muted);font-size:13px}
+  .stlist{position:absolute;left:16px;width:768px;display:flex;flex-direction:column;gap:4px}
+  .row{height:56px;border-radius:8px;display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--panel)}
+  .row.alt{background:var(--rowalt)}
+  .row .mono{width:40px;height:40px;font-size:16px}
+  .row .rtxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .row .nm{color:var(--fg);font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .tg{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .cd{width:92px;text-align:right;color:var(--muted);font-size:13px;flex:none}
+  .row .pl{width:26px;display:flex;justify-content:center;color:var(--accent);flex:none}
+  .row.cur{background:var(--accent)}
+  .row.cur .nm{color:#15110E}
+  .row.cur .tg,.row.cur .cd{color:var(--selsec)}
+  .row.cur .pl{display:none}
+  .minieq{display:flex;gap:3px;align-items:flex-end;height:16px;width:26px;justify-content:center}
+  .minieq i{width:4px;background:#fff;border-radius:1px;transform-origin:bottom;
+            animation:eq 0.9s ease-in-out var(--dl,0s) infinite}
+  .row .minieq{display:none} .row.cur .minieq{display:flex}
+
+  /* ---------- search ---------- */
+  .searchbar{flex:1;height:44px;background:var(--panel);border:1px solid var(--border);border-radius:8px;
+             display:flex;align-items:center;gap:10px;padding:0 6px 0 14px}
+  .searchbar .sic{color:var(--muted);flex:none}
+  .searchbar .q{flex:1;color:var(--fg);font-size:17px;white-space:nowrap;overflow:hidden;min-width:0}
+  .searchbar .q .ph{color:var(--muted)}
+  .searchbar .caret{width:2px;height:22px;background:var(--accent);flex:none}
+  .searchbar .clr{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+                  color:var(--muted);flex:none}
+  .searchbar .micbtn{width:36px;height:36px;border-radius:50%;background:var(--mic);opacity:.45;
+                     display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+  .chips{position:absolute;left:16px;top:108px;width:768px;height:48px;display:flex;gap:8px;align-items:center}
+  .chip{height:48px;border-radius:24px;border:1px solid var(--border);color:var(--muted);
+        display:flex;align-items:center;padding:0 18px;font-size:13.5px;font-weight:600;background:transparent;flex:none}
+  .chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  .kb{position:absolute;left:16px;top:164px;width:768px;height:236px;background:var(--panel);
+      border:1px solid var(--bs);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px}
+  .kbrow{flex:1;display:flex;gap:6px;min-height:0}
+  .key{flex:1;background:var(--panel2);border:1px solid var(--bs);border-radius:8px;color:var(--fg);
+       font-size:17px;display:flex;align-items:center;justify-content:center;min-width:0}
+  .key.sp{background:var(--panel);border-color:var(--border);color:var(--muted);font-size:13px;font-weight:600}
+  .key.ok{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;font-size:14px}
+  .key.space{flex:4.5}
+
+  /* ---------- overlays ---------- */
+  .ovl{position:absolute;left:0;top:0;width:800px;height:404px;background:rgba(21,17,14,.9);
+       display:flex;align-items:center;justify-content:center}
+  .ovlcard{background:var(--panel);border:1px solid var(--bs);border-radius:10px;display:flex;
+           flex-direction:column;align-items:center;justify-content:center;gap:14px}
+  .spin{border-radius:50%;border:4px solid var(--panel2);border-top-color:var(--accent);
+        animation:rot 1s linear infinite}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  .ovlcard .t{font-size:18px;font-weight:700;color:var(--fg)}
+  .ovlcard .d{font-size:14px;color:var(--muted)}
+  .obtnrow{display:flex;gap:12px}
+  .obtn{height:48px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+        font-size:14px;font-weight:600;padding:0 30px}
+  .obtn.acc{background:var(--accent);color:#fff}
+  .obtn.sec{background:var(--panel2);border:1px solid var(--border);color:var(--fg)}
+
+  /* ---------- cast ---------- */
+  .castcard{width:600px;background:var(--panel);border:1px solid var(--bs);border-radius:10px;
+            padding:16px;display:flex;flex-direction:column;gap:10px}
+  .cast-hdr{display:flex;align-items:center;gap:12px}
+  .cast-hdr .t{font-size:18px;font-weight:700;color:var(--fg);flex:1}
+  .cast-hdr .tb.pill{height:44px}
+  .cast-hdr .tb.circ{width:44px;height:44px;padding:0}
+  .cast-row{height:52px;border-radius:8px;display:flex;align-items:center;gap:12px;padding:0 12px;
+            background:var(--panel2);border:1px solid var(--bs)}
+  .cast-row .ibox{width:40px;height:40px;border-radius:8px;background:var(--panel);border:1px solid var(--border);
+                  display:flex;align-items:center;justify-content:center;color:var(--fg);flex:none}
+  .cast-row .nm{color:var(--fg);font-size:15px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden}
+  .cast-row .bdg{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--green);flex:none}
+  .cast-row .bdg .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+  .cast-row.cur{background:var(--accent);border-color:var(--accent)}
+  .cast-row.cur .ibox{background:rgba(21,17,14,.25);border-color:rgba(21,17,14,.35);color:#fff}
+  .cast-row.cur .nm{color:#15110E}
+  .cast-row.cur .bdg{color:var(--selsec)}
+  .cast-row.cur .bdg .dot{background:#fff}
+  .cast-note{color:var(--muted);font-size:12.5px;padding:2px 4px 0}
+
+  /* ---------- tables ---------- */
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}
+  th{text-align:left;color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;
+     letter-spacing:.5px;padding:6px 10px;border-bottom:1px solid var(--border)}
+  td{padding:7px 10px;border-bottom:1px solid #241C15;color:var(--muted);vertical-align:top}
+  td b{color:var(--fg);font-weight:600}
+  td code{font-family:var(--mono-font);font-size:11.5px;color:var(--accent)}
+  .sw{display:inline-block;width:15px;height:15px;border-radius:4px;vertical-align:-3px;
+      margin-right:8px;border:1px solid rgba(255,255,255,.12)}
+  .monorow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+  .monosw{width:120px;border-radius:8px;padding:8px 10px;font-size:11.5px;color:var(--mono-text);
+          font-weight:700;border:1px solid rgba(255,255,255,.08)}
+  .monosw span{display:block;font-weight:400;opacity:.75;font-family:var(--mono-font);font-size:10.5px}
+
+  ol.cons{margin:12px 0 0 18px;font-size:13px;color:var(--muted)}
+  ol.cons li{padding:5px 0}
+  ol.cons b{color:var(--fg);font-weight:600}
+  .foot{margin-top:60px;color:var(--muted);font-size:12px;border-top:1px solid #201914;padding-top:14px}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="page-head">
+    <h1>rock-esp32 · <em>Фаза 3</em> — редизайн GUI под палитру rockcast</h1>
+    <p>Мокап всех экранов прошивки в реальной геометрии матрицы 800×480 (ST7701, софт-поворот).
+       Источник палитры и компонентного языка — десктопный rockcast (<code>src/app/theme.rs</code>,
+       <code>ui/controls.rs</code>, <code>ui/stations/*</code>). Размеры в пикселях 1:1 к будущему LVGL-лейауту.</p>
+    <div class="gate"><span class="dot"></span><span><b>Стадия 1 — мокап.</b> Файл является проектным артефактом:
+      до явного утверждения код прошивки не меняется. Замечания правятся только в этом HTML.</span></div>
+  </div>
+
+  <nav>
+    <a href="#s-dec">Решения</a><a href="#s-np">Now Playing</a><a href="#s-browse">Browse</a>
+    <a href="#s-search">Поиск</a><a href="#s-kb">Клавиатура</a><a href="#s-cast">Каст-меню</a>
+    <a href="#s-ovl">Оверлеи</a><a href="#s-tokens">Токены</a><a href="#s-cons">Последствия</a>
+  </nav>
+
+  <!-- ================================================================ decisions -->
+  <section id="s-dec">
+    <h2>Ключевые решения <small>· что откуда взято</small></h2>
+    <div class="cards">
+      <div class="card c1">
+        <h4>Перенесено с десктопа 1:1</h4>
+        <ul>
+          <li><b>Палитра theme.rs:</b> BG #15110E, PANEL #201914, PANEL_2 #2A211B, BORDER #3B2C23,
+              BORDER_SUBTLE #2D211A, FG #F3EEE9, ACCENT #E56020, MUTED #9E8D82, GREEN #3DDC84</li>
+          <li><b>Панель-рецепт:</b> fill PANEL · radius 10 · рамка 1px BORDER_SUBTLE · паддинг 12</li>
+          <li><b>Монограммы станций:</b> 8 цветов + выбор по хэшу имени (порт <code>station_color</code>),
+              инициалы 1–2 символа, текст #FAEEE4; в деке — кольцо ACCENT</li>
+          <li><b>Строка трека:</b> ACCENT при воспроизведении, MUTED в покое + зелёная live-точка</li>
+          <li><b>Круглый транспорт Play:</b> ACCENT-заливка в игре / PANEL_2 + кольцо ACCENT в покое</li>
+          <li><b>Спектр:</b> бары r2 gap 3 прямо на панели (без коробки), ACCENT/BAR_DIM, белые 2px peak-тики</li>
+          <li><b>Футер дека:</b> статусная точка + мелкий MUTED-текст + micro-подпись «RockServer Cloud»</li>
+          <li><b>Строка поиска:</b> PANEL · 1px BORDER · r8 · иконка лупы · ✕ очистки · кнопка микрофона</li>
+          <li><b>Список:</b> зебра #201814, текущая строка — ACCENT, вторичный текст на ней #3A281C</li>
+          <li><b>Чипы жанров:</b> прозрачные с рамкой BORDER, активный — ACCENT</li>
+        </ul>
+      </div>
+      <div class="card c2">
+        <h4>Адаптировано под тач 800×480</h4>
+        <ul>
+          <li><b>Транспорт-бар 768×64 сохраняет весь набор кнопок</b> (Каталог · Поиск · Play/Pause · Stop ·
+              Vol− · Vol+ · Cast) — обработчики фаз 1–2 не трогаем, меняется только стиль:
+              нав-пилюли 48px, круглая Play 64px, вторичные круги 56px</li>
+          <li>Слайдер громкости десктопа → существующие кнопки Vol−/+ с процентами hack_16 (как сейчас)</li>
+          <li>Монограмма дека 96×96 (у десктопа 48) — станция главный объект экрана; имя inter_24 marquee</li>
+          <li>Спектр 296×168 справа в деке (был 256×80 в коробке PANEL_2 под арт-блоком 80×80)</li>
+          <li>Строки списка 56px: монограмма 40×40 вместо серого бокса-инициала; вся строка — тач-зона (как сейчас)</li>
+          <li>Клавиши поиска ≥48px, кнопки оверлеев и каст-меню 44–48px (сейчас 32–42)</li>
+          <li>Чипы жанров 48px-пилюли (тач-таргет ≥48 по правилу токенов)</li>
+          <li>Hover/двойной клик десктопа не переносятся — отклик только по нажатию</li>
+        </ul>
+      </div>
+      <div class="card c3">
+        <h4>Новое на девайсе</h4>
+        <ul>
+          <li><b>Кнопка микрофона в строке поиска:</b> статичный янтарный #E67E22, визуальный задел фазы 4 —
+              выводится неактивной (без обработчика, нажатие игнорирует молча)</li>
+          <li><b>Статусная точка в тикере</b> слева: зелёная / янтарная / серая / красная — только стиль,
+              тексты тикера не меняются</li>
+          <li>Бейдж «СЕЙЧАС ИГРАЕТ» сохраняется (существующий виджет); при касте показывает имя ресивера (как сейчас)</li>
+          <li>Счётчик «N станций» в шапке каталога — статичная подпись, данных не требует</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ now playing -->
+  <section id="s-np">
+    <h2>Now Playing · player deck <small>· 800×480</small></h2>
+    <div class="framebar">
+      <div class="state-sw">Состояние:
+        <button id="sw-play" class="on">Играет</button>
+        <button id="sw-idle">Стоп / пауза</button>
+      </div>
+    </div>
+    <div class="shot"><div class="bezel"><div class="screen" id="np-screen">
+
+      <div class="hdr">
+        <span class="logo">ROCKCAST</span><span class="sect">• Сейчас играет</span>
+        <span class="wifi"><svg width="15" height="15" viewBox="0 0 24 24" class="ic"><path d="M2.5 9a15 15 0 0 1 19 0"/><path d="M5.5 12.5a10.5 10.5 0 0 1 13 0"/><path d="M8.5 16a6 6 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor" stroke="none"/></svg>−52 dBm</span>
+        <span class="srv">RockServer: OK</span><span class="clk">14:32</span>
+      </div>
+
+      <div class="deck">
+        <div class="deck-top">
+          <div class="mono" data-name="Radio Maximum">RA</div>
+          <div class="deck-info">
+            <span class="np-badge">СЕЙЧАС ИГРАЕТ</span>
+            <div class="np-name">Radio Maximum</div>
+            <div class="np-sub">Alternative · Rock · 103.7 FM</div>
+            <div class="np-trackrow">
+              <span class="livedot"></span>
+              <span class="np-track"><span class="when-play">Linkin Park — In The End</span><span class="when-idle">Воспроизведение остановлено</span></span>
+            </div>
+            <span class="capsule">128k MP3</span>
+          </div>
+          <div class="spec">
+            <div class="bar" style="--s:.30;--d:.9s;  --dl:0s;   --p:34%;--pd:2.4s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.55;--d:1.2s; --dl:-.3s; --p:60%;--pd:2.8s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.42;--d:1.0s; --dl:-.6s; --p:48%;--pd:2.2s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.72;--d:1.3s; --dl:-.1s; --p:78%;--pd:3.0s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.38;--d:.85s; --dl:-.45s;--p:42%;--pd:2.6s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.65;--d:1.15s;--dl:-.25s;--p:70%;--pd:2.9s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.88;--d:1.05s;--dl:-.7s; --p:92%;--pd:3.1s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.50;--d:1.25s;--dl:-.15s;--p:55%;--pd:2.5s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.76;--d:.95s; --dl:-.55s;--p:80%;--pd:2.7s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.35;--d:1.1s; --dl:-.35s;--p:38%;--pd:2.3s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.60;--d:1.3s; --dl:-.05s;--p:66%;--pd:3.2s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.92;--d:1.0s; --dl:-.65s;--p:95%;--pd:2.75s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.47;--d:1.2s; --dl:-.2s; --p:52%;--pd:2.45s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.70;--d:.9s;  --dl:-.5s; --p:74%;--pd:2.95s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.33;--d:1.15s;--dl:-.4s; --p:36%;--pd:2.35s"><span class="peak"></span></div>
+            <div class="bar" style="--s:.58;--d:1.05s;--dl:-.75s;--p:63%;--pd:2.65s"><span class="peak"></span></div>
+          </div>
+        </div>
+        <div class="deck-sep"></div>
+        <div class="deck-foot">
+          <div class="l"><span class="dot"></span>
+            <span class="when-play">Прямой эфир · буфер 100% · underruns 0</span><span class="when-idle">Плеер остановлен</span>
+          </div>
+          <span class="srvlabel">ROCKSERVER CLOUD</span>
+        </div>
+      </div>
+
+      <div class="transport">
+        <span class="tb pill"><svg width="17" height="17" viewBox="0 0 24 24" class="ic"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="3.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="3.5" cy="18" r="1" fill="currentColor" stroke="none"/></svg>Каталог</span>
+        <span class="tb pill"><svg width="17" height="17" viewBox="0 0 24 24" class="ic"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>Поиск</span>
+        <span class="tb-play">
+          <svg class="when-play" width="26" height="26" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg>
+          <svg class="when-idle" width="26" height="26" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5z" fill="currentColor"/></svg>
+        </span>
+        <span class="tb circ"><svg width="18" height="18" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/></svg></span>
+        <span class="volval">65%</span>
+        <span class="tb circ"><svg width="16" height="16" viewBox="0 0 24 24" class="ic"><path d="M5 12h14"/></svg></span>
+        <span class="tb circ"><svg width="16" height="16" viewBox="0 0 24 24" class="ic"><path d="M12 5v14M5 12h14"/></svg></span>
+        <span class="tb pill"><svg width="18" height="18" viewBox="0 0 24 24" class="ic"><path d="M2 7V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7"/><path d="M2 15a2 2 0 0 1 2 2 2 2 0 0 1 2 2"/><path d="M2 11a6 6 0 0 1 6 6 6 6 0 0 1 6 6"/><circle cx="2.5" cy="20.5" r="1" fill="currentColor" stroke="none"/></svg>Cast</span>
+      </div>
+
+      <div class="ticker">
+        <span class="dot g when-play"></span><span class="dot m when-idle"></span>
+        <span class="txt"><span class="when-play">Воспроизведение: Radio Maximum · Linkin Park — In The End</span><span class="when-idle">Воспроизведение остановлено</span></span>
+      </div>
+
+    </div></div></div>
+    <div class="cap">
+      <b>Геометрия.</b> Шапка 800×40 (PANEL) · дек 768×300 @(16,52): PANEL, r10, 1px BORDER_SUBTLE, паддинг 12/16 ·
+      монограмма 96×96 r8, кольцо 2px ACCENT · блок текста 288px (бейдж inter_14, станция inter_24, субтитр inter_14,
+      трек inter_18 + live-точка 9px, капсула кодека PANEL_2 r6) · спектр 296×168 справа: 16 баров, ширина ≈15px,
+      gap 3, r2, peak-тики 2px WHITE · разделитель 1px BORDER · футер: точка + inter_13 MUTED / micro 11px ·
+      транспорт 768×64 @(16,364): без изменений набора кнопок, все таргеты ≥48. Переключатель сверху показывает
+      состояния «играет» (по умолчанию) и «стоп».
+    </div>
+  </section>
+
+  <!-- ================================================================ browse -->
+  <section id="s-browse">
+    <h2>Browse · каталог станций <small>· 800×480</small></h2>
+    <div class="shot"><div class="bezel"><div class="screen">
+
+      <div class="hdr">
+        <span class="logo">ROCKCAST</span><span class="sect">• Каталог станций</span>
+        <span class="wifi"><svg width="15" height="15" viewBox="0 0 24 24" class="ic"><path d="M2.5 9a15 15 0 0 1 19 0"/><path d="M5.5 12.5a10.5 10.5 0 0 1 13 0"/><path d="M8.5 16a6 6 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor" stroke="none"/></svg>−52 dBm</span>
+        <span class="srv">RockServer: OK</span><span class="clk">14:32</span>
+      </div>
+
+      <div class="subhdr">
+        <span class="tb pill back"><svg width="16" height="16" viewBox="0 0 24 24" class="ic"><path d="M19 12H5"/><path d="m11 18-6-6 6-6"/></svg>Плеер</span>
+        <span class="title">КАТАЛОГ РАДИОСТАНЦИЙ</span>
+        <span class="spacer"></span>
+        <span class="count">20 станций</span>
+      </div>
+
+      <div class="stlist" style="top:108px;height:296px">
+        <div class="row cur">
+          <div class="mono" data-name="Radio Maximum">RA</div>
+          <div class="rtxt"><div class="nm">Radio Maximum</div><div class="tg">Alternative · Rock</div></div>
+          <div class="cd">128k MP3</div>
+          <div class="pl"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5z" fill="currentColor"/></svg></div>
+          <div class="minieq"><i style="--s:.5;--dl:0s"></i><i style="--s:1;--dl:-.3s"></i><i style="--s:.7;--dl:-.6s"></i><i style="--s:.9;--dl:-.15s"></i></div>
+        </div>
+        <div class="row alt">
+          <div class="mono" data-name="Наше Радио">НР</div>
+          <div class="rtxt"><div class="nm">Наше Радио</div><div class="tg">Русский рок</div></div>
+          <div class="cd">128k MP3</div>
+          <div class="pl"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5z" fill="currentColor"/></svg></div>
+          <div class="minieq"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="row">
+          <div class="mono" data-name="Rock FM 95.2">RO</div>
+          <div class="rtxt"><div class="nm">Rock FM 95.2</div><div class="tg">Classic Rock · Hard Rock</div></div>
+          <div class="cd">128k AAC</div>
+          <div class="pl"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5z" fill="currentColor"/></svg></div>
+          <div class="minieq"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="row alt">
+          <div class="mono" data-name="Radio Ultra">RU</div>
+          <div class="rtxt"><div class="nm">Radio Ultra</div><div class="tg">Nu-Metal · Post-Grunge</div></div>
+          <div class="cd">192k MP3</div>
+          <div class="pl"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5z" fill="currentColor"/></svg></div>
+          <div class="minieq"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="row">
+          <div class="mono" data-name="Radio Record">RR</div>
+          <div class="rtxt"><div class="nm">Radio Record</div><div class="tg">Electronic · Club</div></div>
+          <div class="cd">128k AAC</div>
+          <div class="pl"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5z" fill="currentColor"/></svg></div>
+          <div class="minieq"><i></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
+
+      <div class="ticker"><span class="dot m"></span><span class="txt">Каталог загружен: 20 станций · прокрутка свайпом</span></div>
+
+    </div></div></div>
+    <div class="cap">
+      <b>Геометрия.</b> Подшапка 768×48 @(16,52): «← Плеер» пилюля 44px + заголовок inter_18 + счётчик MUTED ·
+      список 768×296 @(16,108): ровно 5 видимых строк 56px (gap 4), дальше — свайп-скролл (20 строк в модели) ·
+      <b>строка:</b> монограмма 40×40 r8 (цвет по хэшу имени), имя inter_18, теги inter_14 MUTED, метапоток
+      inter_13 справа; <b>текущая станция</b> — заливка ACCENT, имя #15110E, вторичный #3A281C, мини-эквалайзер
+      вместо ▶. Зебра: PANEL / #201814. Вся строка — единая тач-зона (обработчик прежний).
+    </div>
+  </section>
+
+  <!-- ================================================================ search results -->
+  <section id="s-search">
+    <h2>Search · результаты <small>· 800×480</small></h2>
+    <div class="shot"><div class="bezel"><div class="screen">
+
+      <div class="hdr">
+        <span class="logo">ROCKCAST</span><span class="sect">• Поиск станций</span>
+        <span class="wifi"><svg width="15" height="15" viewBox="0 0 24 24" class="ic"><path d="M2.5 9a15 15 0 0 1 19 0"/><path d="M5.5 12.5a10.5 10.5 0 0 1 13 0"/><path d="M8.5 16a6 6 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor" stroke="none"/></svg>−52 dBm</span>
+        <span class="srv">RockServer: OK</span><span class="clk">14:32</span>
+      </div>
+
+      <div class="subhdr">
+        <span class="tb pill back"><svg width="16" height="16" viewBox="0 0 24 24" class="ic"><path d="M19 12H5"/><path d="m11 18-6-6 6-6"/></svg>Назад</span>
+        <div class="searchbar">
+          <span class="sic"><svg width="17" height="17" viewBox="0 0 24 24" class="ic"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></span>
+          <span class="q">rock</span>
+          <span class="clr"><svg width="15" height="15" viewBox="0 0 24 24" class="ic"><path d="M6 6l12 12M18 6 6 18"/></svg></span>
+          <span class="micbtn" title="Фаза 4 — неактивна"><svg width="16" height="16" viewBox="0 0 24 24" class="ic"><path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4"/></svg></span>
+        </div>
+      </div>
+
+      <div class="chips">
+        <span class="chip active">Rock</span><span class="chip">Pop</span><span class="chip">Jazz</span>
+        <span class="chip">Metal</span><span class="chip">Classical</span><span class="chip">News</span>
+        <span class="chip">Electronic</span>
+      </div>
+
+      <div class="stlist" style="top:164px;height:236px">
+        <div class="row">
+          <div class="mono" data-name="Rock Antenne">RA</div>
+          <div class="rtxt"><div class="nm">Rock Antenne</div><div class="tg">Rock · Classic Rock</div></div>
+          <div class="cd">128k AAC</div>
+          <div class="pl"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5z" fill="currentColor"/></svg></div>
+          <div class="minieq"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="row alt">
+          <div class="mono" data-name="RockNation">RN</div>
+          <div class="rtxt"><div class="nm">RockNation</div><div class="tg">Rock · Alternative</div></div>
+          <div class="cd">192k MP3</div>
+          <div class="pl"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5z" fill="currentColor"/></svg></div>
+          <div class="minieq"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="row">
+          <div class="mono" data-name="Rockklassiker">RO</div>
+          <div class="rtxt"><div class="nm">Rockklassiker</div><div class="tg">Classic Rock</div></div>
+          <div class="cd">128k MP3</div>
+          <div class="pl"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5z" fill="currentColor"/></svg></div>
+          <div class="minieq"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="row alt">
+          <div class="mono" data-name="Hard Radio">HR</div>
+          <div class="rtxt"><div class="nm">Hard Radio</div><div class="tg">Hard Rock · Metal</div></div>
+          <div class="cd">96k AAC</div>
+          <div class="pl"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5z" fill="currentColor"/></svg></div>
+          <div class="minieq"><i></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
+
+      <div class="ticker"><span class="dot m"></span><span class="txt">Поиск «rock» — найдено 4 станции</span></div>
+
+    </div></div></div>
+    <div class="cap">
+      <b>Строка поиска</b> (язык desktop <code>search_bar.rs</code>): контейнер PANEL, 1px BORDER, r8, высота 44:
+      лупа MUTED → текст inter_18 → <b>✕ очистки</b> (заменяет текстовую кнопку «Очистить», колбэк тот же) →
+      <b>кнопка микрофона</b> 36×36 янтарная #E67E22, полупрозрачная = неактивна (задел фазы 4, без обработчика) ·
+      чипы 48px · результаты — общие ряды списка ниже (4 видимых строки).
+    </div>
+  </section>
+
+  <!-- ================================================================ keyboard -->
+  <section id="s-kb">
+    <h2>Search · экранная клавиатура <small>· раскладка RU, переключатели EN / 123</small></h2>
+    <div class="shot"><div class="bezel"><div class="screen">
+
+      <div class="hdr">
+        <span class="logo">ROCKCAST</span><span class="sect">• Поиск станций</span>
+        <span class="wifi"><svg width="15" height="15" viewBox="0 0 24 24" class="ic"><path d="M2.5 9a15 15 0 0 1 19 0"/><path d="M5.5 12.5a10.5 10.5 0 0 1 13 0"/><path d="M8.5 16a6 6 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor" stroke="none"/></svg>−52 dBm</span>
+        <span class="srv">RockServer: OK</span><span class="clk">14:32</span>
+      </div>
+
+      <div class="subhdr">
+        <span class="tb pill back"><svg width="16" height="16" viewBox="0 0 24 24" class="ic"><path d="M19 12H5"/><path d="m11 18-6-6 6-6"/></svg>Назад</span>
+        <div class="searchbar">
+          <span class="sic"><svg width="17" height="17" viewBox="0 0 24 24" class="ic"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></span>
+          <span class="q">на<i style="opacity:.35">|</i></span>
+          <span class="clr"><svg width="15" height="15" viewBox="0 0 24 24" class="ic"><path d="M6 6l12 12M18 6 6 18"/></svg></span>
+          <span class="micbtn" title="Фаза 4 — неактивна"><svg width="16" height="16" viewBox="0 0 24 24" class="ic"><path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4"/></svg></span>
+        </div>
+      </div>
+
+      <div class="chips">
+        <span class="chip active">Rock</span><span class="chip">Pop</span><span class="chip">Jazz</span>
+        <span class="chip">Metal</span><span class="chip">Classical</span><span class="chip">News</span>
+        <span class="chip">Electronic</span>
+      </div>
+
+      <div class="kb">
+        <div class="kbrow">
+          <span class="key">ё</span><span class="key">й</span><span class="key">ц</span><span class="key">у</span>
+          <span class="key">к</span><span class="key">е</span><span class="key">н</span><span class="key">г</span>
+          <span class="key">ш</span><span class="key">щ</span><span class="key">з</span><span class="key">х</span>
+          <span class="key">ъ</span><span class="key sp" style="flex:1.5">⌫</span>
+        </div>
+        <div class="kbrow">
+          <span class="key sp" style="flex:1.3">EN</span>
+          <span class="key">ф</span><span class="key">ы</span><span class="key">в</span><span class="key">а</span>
+          <span class="key">п</span><span class="key">р</span><span class="key">о</span><span class="key">л</span>
+          <span class="key">д</span><span class="key">ж</span><span class="key">э</span>
+        </div>
+        <div class="kbrow">
+          <span class="key sp" style="flex:1.3">123</span>
+          <span class="key">я</span><span class="key">ч</span><span class="key">с</span><span class="key">м</span>
+          <span class="key">и</span><span class="key">т</span><span class="key">ь</span><span class="key">б</span>
+          <span class="key">ю</span><span class="key">.</span><span class="key">-</span>
+        </div>
+        <div class="kbrow">
+          <span class="key sp">←</span><span class="key space">пробел</span><span class="key sp">→</span>
+          <span class="key ok" style="flex:1.8">OK</span>
+        </div>
+      </div>
+
+      <div class="ticker"><span class="dot m"></span><span class="txt">Ввод запроса · OK — начать поиск</span></div>
+
+    </div></div></div>
+    <div class="cap">
+      <b>Клавиатура</b> 768×236 @(16,164): контейнер PANEL r10, 4 ряда клавиш ≥48px (gap 6) ·
+      буквенные клавиши PANEL_2 r8 + 1px BORDER_SUBTLE, inter_18 · служебные (EN / 123 / ⌫ / стрелки) —
+      PANEL + BORDER, inter_14 MUTED · «OK» — ACCENT с белым текстом (запуск поиска, колбэк прежний) ·
+      раскладки и логика переключения RU/EN/123 не меняются. При вводе список результатов скрыт (как сейчас).
+    </div>
+  </section>
+
+  <!-- ================================================================ cast -->
+  <section id="s-cast">
+    <h2>Каст-меню <small>· оверлей поверх Now Playing</small></h2>
+    <div class="shot"><div class="bezel"><div class="screen" data-state="idle">
+      <div class="base" data-base="np"></div>
+      <div class="ovl">
+        <div class="castcard">
+          <div class="cast-hdr">
+            <span class="t">Выход звука</span>
+            <span class="tb pill"><svg width="15" height="15" viewBox="0 0 24 24" class="ic"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 3v5h-5"/></svg>Обновить</span>
+            <span class="tb circ"><svg width="15" height="15" viewBox="0 0 24 24" class="ic"><path d="M6 6l12 12M18 6 6 18"/></svg></span>
+          </div>
+          <div class="cast-row">
+            <span class="ibox"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+            <span class="nm">Динамик радио (локальный)</span>
+            <span class="bdg"><span class="dot"></span>Активен</span>
+          </div>
+          <div class="cast-row cur">
+            <span class="ibox"><svg width="18" height="18" viewBox="0 0 24 24" class="ic"><path d="M2 7V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7"/><path d="M2 15a2 2 0 0 1 2 2 2 2 0 0 1 2 2"/><path d="M2 11a6 6 0 0 1 6 6 6 6 0 0 1 6 6"/><circle cx="2.5" cy="20.5" r="1" fill="currentColor" stroke="none"/></svg></span>
+            <span class="nm">Kitchen Speaker</span>
+            <span class="bdg"><span class="dot"></span>Играет</span>
+          </div>
+          <div class="cast-row">
+            <span class="ibox"><svg width="18" height="18" viewBox="0 0 24 24" class="ic"><path d="M2 7V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7"/><path d="M2 15a2 2 0 0 1 2 2 2 2 0 0 1 2 2"/><path d="M2 11a6 6 0 0 1 6 6 6 6 0 0 1 6 6"/><circle cx="2.5" cy="20.5" r="1" fill="currentColor" stroke="none"/></svg></span>
+            <span class="nm">Living Room TV</span>
+            <span class="bdg" style="visibility:hidden">—</span>
+          </div>
+          <div class="cast-note">Во время сканирования над списком — спиннер ACCENT 24px + «Поиск устройств Chromecast…» (MUTED)</div>
+        </div>
+      </div>
+    </div></div></div>
+    <div class="cap">
+      <b>Карточка</b> 600px по центру оверлея (затемнение фона 90%): PANEL r10, 1px BORDER_SUBTLE ·
+      шапка: заголовок inter_18 + «Обновить» 44px + закрытие ✕ 44px (было 32px — доведено до тач-нормы) ·
+      строки 52px: иконка-бокс 40×40 PANEL + имя inter_15 + бейдж состояния ·
+      <b>локальный динамик</b> — зелёная точка + «Активен» · <b>текущий каст-приёмник</b> — строка ACCENT
+      (имя #15110E, «Играет» #3A281C). Набор строк и обработчики (выбор / локальный выход / обновление / закрытие) не меняются.
+    </div>
+  </section>
+
+  <!-- ================================================================ overlays -->
+  <section id="s-ovl">
+    <h2>State-оверлеи <small>· загрузка и ошибка</small></h2>
+    <div class="shot"><div class="bezel"><div class="screen">
+      <div class="base" data-base="np"></div>
+      <div class="ovl">
+        <div class="ovlcard" style="width:520px;height:260px">
+          <span class="spin" style="width:56px;height:56px"></span>
+          <span class="t">Загрузка каталога…</span>
+          <span class="d">Пожалуйста, подождите</span>
+        </div>
+      </div>
+    </div></div></div>
+    <div class="cap"><b>Загрузка:</b> карточка 520×260, PANEL r10, спиннер 56px (дуга ACCENT / трек PANEL_2), inter_18 + inter_14 MUTED. Кнопок нет (отмена по «Назад» не для этого состояния).</div>
+
+    <div class="shot" style="margin-top:26px"><div class="bezel"><div class="screen">
+      <div class="base" data-base="np"></div>
+      <div class="ovl">
+        <div class="ovlcard" style="width:520px;height:280px">
+          <span style="width:56px;height:56px;border-radius:50%;background:var(--panel2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--error)">
+            <svg width="26" height="26" viewBox="0 0 24 24" class="ic"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4.5"/><circle cx="12" cy="17.2" r=".5" fill="currentColor"/></svg>
+          </span>
+          <span class="t">Ошибка воспроизведения</span>
+          <span class="d">Поток станции временно недоступен</span>
+          <div class="obtnrow">
+            <span class="obtn acc">Повторить</span>
+            <span class="obtn sec">Назад</span>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+    <div class="cap"><b>Ошибка:</b> иконка в круге 56px (#E05353), кнопки 176×48: главная «Повторить» — ACCENT
+      (сейчас акцент у «Назад» — меняем местами по языку десктопа, колбэки прежние), «Назад» — PANEL_2 + BORDER.</div>
+  </section>
+
+  <!-- ================================================================ tokens -->
+  <section id="s-tokens">
+    <h2>Токены <small>· роль → hex → где используется</small></h2>
+
+    <h3>Палитра (новые значения rockcast theme.rs)</h3>
+    <table>
+      <tr><th>Токен C</th><th>Роль</th><th>Hex</th><th>Где используется</th></tr>
+      <tr><td><code>ROCK_COLOR_BG</code></td><td><b>Фон экрана</b></td><td><span class="sw" style="background:#15110E"></span><code>#15110E</code></td><td>подложка всех экранов, под списками, затемнение оверлеев</td></tr>
+      <tr><td><code>ROCK_COLOR_PANEL</code></td><td><b>Панели</b></td><td><span class="sw" style="background:#201914"></span><code>#201914</code></td><td>шапка 40px, дек, транспорт, подшапка списков, клавиатура, карточки оверлеев/каста, чётная строка зебры</td></tr>
+      <tr><td><code>ROCK_COLOR_PANEL_2</code></td><td><b>Поверхность 2</b></td><td><span class="sw" style="background:#2A211B"></span><code>#2A211B</code></td><td>вторичные кнопки транспорта, капсула кодека, тикер, буквенные клавиши, трек спиннера, иконка ошибки</td></tr>
+      <tr><td><code>ROCK_COLOR_BORDER</code></td><td><b>Рамка акцентная</b></td><td><span class="sw" style="background:#3B2C23"></span><code>#3B2C23</code></td><td>рамка строки поиска, служебные клавиши, кольца вторичных кнопок, разделитель дека, кнопки 2-го плана</td></tr>
+      <tr><td><code>ROCK_COLOR_BORDER_SUBTLE</code></td><td><b>Рамка панелей</b> (новый)</td><td><span class="sw" style="background:#2D211A"></span><code>#2D211A</code></td><td>рамка 1px всех панелей (панель-рецепт), буквенные клавиши, строка каста</td></tr>
+      <tr><td><code>ROCK_COLOR_FG</code></td><td><b>Основной текст</b></td><td><span class="sw" style="background:#F3EEE9"></span><code>#F3EEE9</code></td><td>имена станций, заголовки, значения, иконки вторичных кнопок</td></tr>
+      <tr><td><code>ROCK_COLOR_ACCENT</code></td><td><b>Акцент</b></td><td><span class="sw" style="background:#E56020"></span><code>#E56020</code></td><td>бейдж «СЕЙЧАС ИГРАЕТ», Play, активные бары спектра, строка трека в игре, текущая строка списка, активный чип, клавиша OK, «Повторить», кольца монограммы/Play-в-покое</td></tr>
+      <tr><td><code>ROCK_COLOR_MUTED</code></td><td><b>Вторичный текст</b></td><td><span class="sw" style="background:#9E8D82"></span><code>#9E8D82</code></td><td>субтитры, теги, тикер, футер дека, строка трека в покое, служебные подписи</td></tr>
+      <tr><td><code>ROCK_COLOR_BAR_DIM</code></td><td><b>Неактивные шкалы</b></td><td><span class="sw" style="background:#5A4030"></span><code>#5A4030</code></td><td>бары спектра в покое / без сигнала (без изм.)</td></tr>
+      <tr><td><code>ROCK_COLOR_WHITE</code></td><td><b>Белый</b></td><td><span class="sw" style="background:#FFFFFF"></span><code>#FFFFFF</code></td><td>peak-тики спектра, иконки/текст на ACCENT</td></tr>
+      <tr><td><code>ROCK_COLOR_GREEN</code></td><td><b>Live / активен</b> (новый)</td><td><span class="sw" style="background:#3DDC84"></span><code>#3DDC84</code></td><td>live-точка у трека, точка тикера в игре, точка футера, «Активен» в каст-меню</td></tr>
+      <tr><td><code>ROCK_COLOR_MIC_AMBER</code></td><td><b>Кнопка микрофона</b> (новый)</td><td><span class="sw" style="background:#E67E22"></span><code>#E67E22</code></td><td>статичный цвет кнопки mic в строке поиска (фаза 4; сейчас неактивна)</td></tr>
+      <tr><td><code>ROCK_COLOR_ROW_ALT</code></td><td><b>Зебра</b></td><td><span class="sw" style="background:#201814"></span><code>#201814</code></td><td>нечётная строка списка (без изм.)</td></tr>
+      <tr><td><code>ROCK_COLOR_SEL_TEXT_SEC</code></td><td><b>Вторичный на ACCENT</b> (новый)</td><td><span class="sw" style="background:#3A281C"></span><code>#3A281C</code></td><td>теги/метапоток/«Играет» на выделенной оранжевой строке</td></tr>
+      <tr><td><code>ROCK_COLOR_ERROR</code></td><td><b>Ошибка</b></td><td><span class="sw" style="background:#E05353"></span><code>#E05353</code></td><td>иконка и точка тикера ошибки (без изм.)</td></tr>
+      <tr><td><code>ROCK_COLOR_WARN</code></td><td><b>Предупреждение</b></td><td><span class="sw" style="background:#FFAA00"></span><code>#FFAA00</code></td><td>офлайн-икка, Wi-Fi нет связи (без изм.)</td></tr>
+      <tr><td><code>ROCK_COLOR_GOLD_STAR</code></td><td><b>Избранное</b> (резерв)</td><td><span class="sw" style="background:#F59E0B"></span><code>#F59E0B</code></td><td>задел под избранное (в фазе 3 не используется)</td></tr>
+    </table>
+
+    <h3>Монограммы станций (палитра 8 + правило цвета)</h3>
+    <div class="monorow">
+      <div class="monosw" style="background:#382216">Dark Burnt Iron<span>#382216</span></div>
+      <div class="monosw" style="background:#481A16">Deep Blood Maroon<span>#481A16</span></div>
+      <div class="monosw" style="background:#302824">Heavy Metal Gunmetal<span>#302824</span></div>
+      <div class="monosw" style="background:#522814">Dark Charred Copper<span>#522814</span></div>
+      <div class="monosw" style="background:#3D2C1D">Dark Raw Bronze<span>#3D2C1D</span></div>
+      <div class="monosw" style="background:#441B17">Dark Crimson Rust<span>#441B17</span></div>
+      <div class="monosw" style="background:#282523">Smoked Carbon Steel<span>#282523</span></div>
+      <div class="monosw" style="background:#5A2E15">Deep Scorched Amber<span>#5A2E15</span></div>
+    </div>
+    <div class="cap" style="margin-top:10px">
+      Цвет выбирается хэшем имени станции: <code>h = h*31 + byte(name)</code> (u32) → <code>palette[h % 8]</code> —
+      порт <code>station_color()</code> из theme.rs:46 на C. Текст монограммы <code>#FAEEE4</code>, инициалы — первые
+      1–2 буквенно-цифровых символа имени. В деке монограмма 96×96 + кольцо ACCENT; в строках списка 40×40 без кольца.
+      Цвета монограмм на всех экранах этого мокапа посчитаны этим же алгоритмом.
+    </div>
+
+    <h3>Типографика (существующие шрифты, кириллица уже в C-массивах)</h3>
+    <table>
+      <tr><th>Шрифт</th><th>Роли</th></tr>
+      <tr><td><code>inter_14</code></td><td>бейдж «СЕЙЧАС ИГРАЕТ», субтитр станции, теги строк, метапоток, лейблы кнопок, тикер, футер дека, бейджи каста</td></tr>
+      <tr><td><code>inter_18</code></td><td>имя станции в деке — <b>inter_24</b>… см. ниже; строка трека, имена станций в списке, поле поиска, буквенные клавиши, заголовки экранов</td></tr>
+      <tr><td><code>inter_24</code></td><td>название станции в деке (marquee), инициалы монограммы дека</td></tr>
+      <tr><td><code>hack_16</code></td><td>часы в шапке, проценты громкости в транспорте</td></tr>
+      <tr><td><code>inter_11</code> <b>(новый, опция)</b></td><td>микролейблы: «ROCKSERVER CLOUD» в футере дека, счётчик строк; генерируется по образцу fonts/ с кириллицей только если утвердим футер с micro-текстом — иначе подписи делаем inter_14</td></tr>
+    </table>
+
+    <h3>Геометрия (без изменений против текущих правил)</h3>
+    <table>
+      <tr><th>Токен</th><th>Значение</th><th>Примечание</th></tr>
+      <tr><td><code>ROCK_TOUCH_TARGET_MIN</code></td><td>48</td><td>все интерактивные элементы; в мокапе доведены: кнопки каст-меню 44–48 (было 32), чипы 48 (было 32)</td></tr>
+      <tr><td><code>ROCK_LIST_ROW_HEIGHT</code></td><td>56</td><td>5 видимых строк в Browse, 4 в Search</td></tr>
+      <tr><td><code>ROCK_HEADER_HEIGHT / TRANSPORT / STATUS</code></td><td>40 / 64 / 36</td><td>без изменений</td></tr>
+      <tr><td><code>ROCK_RADIUS_PANEL / WIDGET</code></td><td>10 / 8</td><td>было 8 / 6 — панели и кнопки чуть круглее по десктопу; бары спектра r2, монограммы r8</td></tr>
+    </table>
+  </section>
+
+  <!-- ================================================================ consequences -->
+  <section id="s-cons">
+    <h2>Поведенческие последствия <small>· что меняется кроме стилей — прочитать до утверждения</small></h2>
+    <ol class="cons">
+      <li><b>Арт-блок 80×80 удаляется</b> (плейсхолдер с иконкой ▶ справа). Вместо него — монограмма 96×96
+          в составе дека, цвет детерминирован хэшем имени станции. Обработчика у арта не было — меняются только виджеты.</li>
+      <li><b>Спектр переезжает и меняет отрисовку:</b> коробка PANEL_2 256×80 → бары прямо на панели дека
+          296×168 + белые peak-тики. Таймер 34 мс должен дополнительно вести пик-значения с медленным спадом —
+          это новая мини-логика внутри <code>gui_now_playing_spectrum_update()</code> (не событийная, FPS проверить на девайсе).</li>
+      <li><b>Набор кнопок транспорт-бара сохранён полностью</b> (Каталог, Поиск, Play/Pause, Stop, Vol−, Vol+, Cast,
+          % громкости) — обработчики и события очереди не меняются; меняются только стили (круглые кнопки ≥48).</li>
+      <li><b>Поиск:</b> текстовая кнопка «Очистить» заменяется иконкой ✕ внутри строки поиска (колбэк тот же);
+          добавляется <b>неактивная</b> кнопка микрофона — без обработчика, нажатие ничего не делает и не логирует (задел фазы 4).</li>
+      <li><b>Клавиатура</b> занимает 236px вместо 220px (клавиши ≥48px): при вводе контент выше не меняется,
+          результаты всё равно скрыты — поведения не меняет.</li>
+      <li><b>Browse-ряд:</b> серый бокс-инициал 40×40 → монограмма station_color; текущая станция подсвечивается
+          заливкой ACCENT всей строки (сейчас — только ▶ справа); клик по строке — тот же обработчик, мини-эквалайзер
+          в текущей строке — чисто индикативный виджет без события.</li>
+      <li><b>Каст-меню:</b> строки 42→52px, «Обновить»/✕ доведены до 44–48px; активный приёмник — строка ACCENT
+          вместо текстового бейджа; локальный выход — зелёная точка вместо [Активен] ACCENT. Обработчики те же.</li>
+      <li><b>State-оверлей:</b> главная кнопка «Повторить» становится ACCENT (сейчас ACCENT у «Назад»);
+          порядок кнопок и колбэки не меняются.</li>
+      <li><b>Тикер:</b> добавляется статусная точка слева (green/amber/muted/red по состоянию плеера) —
+          только стиль, тексты и логика тикера не меняются.</li>
+      <li><b>Футер дека:</b> новые статические подписи (статус + «RockServer Cloud») — только отображение;
+          имя сервера берём из существующей конфигурации, при отсутствии подпись «RockServer».</li>
+    </ol>
+    <div class="foot">
+      Артефакт стадии 1 (мокап на утверждение) · файл не подключается к прошивке ·
+      при утверждении коммитится как <code>docs(gui): phase 3 approved design mockup</code>,
+      реализация — отдельным коммитом <code>feat(gui): phase 3 design refresh to rockcast palette</code>.
+      Обновление docs/rockcast-device-preview.html не входит в фазу 3.
+    </div>
+  </section>
+</div>
+
+<script>
+  // Порт station_color() из rockcast theme.rs:46 — те же цвета получит прошивка.
+  const PAL = [0x382216,0x481A16,0x302824,0x522814,0x3D2C1D,0x441B17,0x282523,0x5A2E15];
+  function stationColor(name){
+    let h = 0;
+    for (const b of new TextEncoder().encode(name)) h = (Math.imul(h, 31) + b) >>> 0;
+    return '#' + PAL[h % PAL.length].toString(16).padStart(6, '0');
+  }
+  function initialsOf(name){
+    const m = (name.match(/[a-z0-9а-яё]/gi) || ['?']).slice(0, 2).join('');
+    return m.toUpperCase();
+  }
+
+  // Клоны Now-Playing как подложка оверлеев (каст, загрузка, ошибка).
+  const np = document.getElementById('np-screen');
+  document.querySelectorAll('[data-base]').forEach(function(placeholder){
+    const clone = np.cloneNode(true);
+    clone.removeAttribute('id');
+    const state = placeholder.closest('[data-state]');
+    if (state && state.dataset.state) clone.classList.add(state.dataset.state);
+    placeholder.replaceWith(clone);
+  });
+
+  // Монограммы — цвета и инициалы по алгоритму прошивки.
+  document.querySelectorAll('.mono').forEach(function(el){
+    const n = el.dataset.name;
+    if (!n) return;
+    el.style.background = stationColor(n);
+    el.textContent = initialsOf(n);
+  });
+
+  // Переключатель «играет / стоп» для Now Playing.
+  const swPlay = document.getElementById('sw-play');
+  const swIdle = document.getElementById('sw-idle');
+  function setState(idle){
+    np.classList.toggle('idle', idle);
+    swPlay.classList.toggle('on', !idle);
+    swIdle.classList.toggle('on', idle);
+  }
+  swPlay.addEventListener('click', function(){ setState(false); });
+  swIdle.addEventListener('click', function(){ setState(true); });
+</script>
+</body>
+</html>
