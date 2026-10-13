@@ -13,6 +13,10 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288
 CONFIG_LV_USE_CLIB_MALLOC=y
 CONFIG_LV_FONT_MONTSERRAT_16=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
+# P4 PPA hardware rotation for the LVGL flush path: without it every flushed
+# strip pays a per-pixel lv_draw_sw_rotate and the GUI drops to ~10 FPS while
+# the HE-AAC decoder is running.
+CONFIG_LVGL_PORT_ENABLE_PPA=y
 
 # ESP32-C6 radio companion, JC4880P443C_I_W v1.3 wiring.
 CONFIG_ESP_HOSTED_HOST=y

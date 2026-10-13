@@ -175,13 +175,14 @@ int rock_display_init(void)
         return -1;
     }
 
-    // LVGL port owns the render task; a small single internal-RAM buffer is
-    // enough for the clock (the vendor demo uses the same shape). Task
-    // settings mirror the vendor demo: 16 KiB stack, priority 4, 5 ms tick.
+    // LVGL port owns the render task. Stack 16 KiB / 5 ms tick mirror the
+    // vendor demo. The task is pinned to Core 0 at priority 5: floating at 4
+    // let the Core-1 HE-AAC decode bursts (rock_st_rx prio 5, rock_au_tx 6)
+    // starve the GUI down to ~10 FPS.
     lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    port_cfg.task_priority = 4;
+    port_cfg.task_priority = 5;
     port_cfg.task_stack = 16384;
-    port_cfg.task_affinity = -1;
+    port_cfg.task_affinity = 0;
     port_cfg.task_max_sleep_ms = 500;
     port_cfg.timer_period_ms = 5;
     if (lvgl_port_init(&port_cfg) != ESP_OK) {
@@ -192,7 +193,7 @@ int rock_display_init(void)
         .io_handle = io,
         .panel_handle = panel,
         .buffer_size = 480 * 50,
-        .double_buffer = false,
+        .double_buffer = true,
         .hres = 480,
         .vres = 800,
         .monochrome = false,
@@ -203,8 +204,12 @@ int rock_display_init(void)
         },
         .color_format = LV_COLOR_FORMAT_RGB565,
         .flags = {
+            // P4 PSRAM is DMA-capable: keeping the draw buffers (and the PPA
+            // rotation buffer) in PSRAM frees ~144 KiB of internal RAM that
+            // the I2S DMA descriptors need during codec reconfigs, and double
+            // buffering lets the DMA2D flush overlap the next strip render.
             .buff_dma = false,
-            .buff_spiram = false,
+            .buff_spiram = true,
             .sw_rotate = true,
         },
     };

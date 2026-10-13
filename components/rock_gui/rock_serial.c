@@ -96,7 +96,10 @@ static void serial_cmd_task(void *arg)
 
 int rock_serial_start(void)
 {
-    if (xTaskCreatePinnedToCore(serial_cmd_task, "serial_cmd", 32768, NULL, 3, NULL, 0) != pdPASS) {
+    // 16 KiB: the screenshot path renders lv_snapshot on this stack (the
+    // former 32 KiB was the single largest internal-RAM consumer after the
+    // LVGL draw buffer and pushed MALLOC_CAP_INTERNAL to ~28 KiB free).
+    if (xTaskCreatePinnedToCore(serial_cmd_task, "serial_cmd", 16384, NULL, 3, NULL, 0) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create serial command task");
         return -1;
     }
