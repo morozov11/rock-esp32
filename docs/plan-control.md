@@ -11,6 +11,7 @@
 | Что | Где |
 | --- | --- |
 | План (переработан 2026-09-09 по аудиту) | `C:\repos\rock-esp32\docs\rockcast-device-plan.md` |
+| План единого каталога UC (2026-10-13, без изменений rockserver) | `C:\repos\rock-esp32\docs\plan-unified-catalog.md` |
 | Прошивка | `C:\repos\rock-esp32` |
 | Сервер (контракты + реализация) | `C:\repos\rockserver` |
 | Мобильный контроллер | `C:\repos\rockmobile` |
