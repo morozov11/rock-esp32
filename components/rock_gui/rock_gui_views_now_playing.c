@@ -456,44 +456,75 @@ void gui_now_playing_apply_cast_state(bool is_casting, const char *receiver_name
 
 void gui_now_playing_spectrum_update(const float *bands, bool playing)
 {
+    // Render-cost control (phase-3 fix): the visualizer runs at half the GUI
+    // timer rate (~12-15 Hz — plenty for bars), heights are quantized to 3px
+    // and every object is touched only when its cached value actually
+    // changes. A stationary bar costs no LVGL invalidation at all.
+    static uint32_t s_tick;
+    static int s_last_h[SPECTRUM_BANDS_COUNT];
+    static int s_last_peak_y[SPECTRUM_BANDS_COUNT];
+    static bool s_last_accent[SPECTRUM_BANDS_COUNT];
+    static bool s_was_playing;
+    static bool s_init;
+
+    if (playing && (++s_tick & 1)) return;   // idle passes stay cheap via caches
+
+    const bool state_flip = !s_init || (playing != s_was_playing);
     for (int i = 0; i < SPECTRUM_BANDS_COUNT; i++) {
-        if (!s_spectrum_bars[i]) continue;
+        lv_obj_t *bar = s_spectrum_bars[i];
+        if (!bar) continue;
         float val = bands[i];
         if (val < 0.0f) val = 0.0f;
         if (val > 1.0f) val = 1.0f;
 
-        int h = playing ? NP_SPEC_MIN_H + (int)(val * (NP_SPEC_MAX_H - NP_SPEC_MIN_H))
-                        : NP_SPEC_MIN_H;
-        lv_obj_set_height(s_spectrum_bars[i], h);
-        lv_obj_set_y(s_spectrum_bars[i], NP_SPEC_H - h);
+        bool accent = playing && val > 0.06f;
+        int h = playing
+            ? NP_SPEC_MIN_H + (((int)(val * (NP_SPEC_MAX_H - NP_SPEC_MIN_H))) / 3) * 3
+            : NP_SPEC_MIN_H;
+        if (h > NP_SPEC_MAX_H) h = NP_SPEC_MAX_H;
 
-        if (val > 0.06f && playing) {
-            lv_obj_set_style_bg_color(s_spectrum_bars[i], ROCK_COLOR_ACCENT, 0);
-        } else {
-            lv_obj_set_style_bg_color(s_spectrum_bars[i], ROCK_COLOR_BAR_DIM, 0);
+        if (state_flip || !s_init || h != s_last_h[i]) {
+            lv_obj_set_height(bar, h);
+            lv_obj_set_y(bar, NP_SPEC_H - h);
+            s_last_h[i] = h;
+        }
+        if (state_flip || !s_init || accent != s_last_accent[i]) {
+            lv_obj_set_style_bg_color(bar, accent ? ROCK_COLOR_ACCENT : ROCK_COLOR_BAR_DIM, 0);
+            s_last_accent[i] = accent;
         }
 
-        // Peak tick: fast rise, slow decay, hidden while idle
+        // Peak tick: fast rise, slow decay (2x step for the half rate),
+        // repositioned only when the quantized y actually moves.
+        lv_obj_t *pk = s_spectrum_peaks[i];
         if (playing) {
             if (val > s_peak_level[i]) s_peak_level[i] = val;
             else {
-                s_peak_level[i] -= 0.012f;
+                s_peak_level[i] -= 0.024f;
                 if (s_peak_level[i] < 0.0f) s_peak_level[i] = 0.0f;
             }
-            if (s_spectrum_peaks[i]) {
+            if (pk) {
                 if (s_peak_level[i] > 0.04f) {
-                    int ph = NP_SPEC_MIN_H + (int)(s_peak_level[i] * (NP_SPEC_MAX_H - NP_SPEC_MIN_H));
-                    lv_obj_set_y(s_spectrum_peaks[i], NP_SPEC_H - ph - 2);
-                    lv_obj_remove_flag(s_spectrum_peaks[i], LV_OBJ_FLAG_HIDDEN);
-                } else {
-                    lv_obj_add_flag(s_spectrum_peaks[i], LV_OBJ_FLAG_HIDDEN);
+                    int ph = NP_SPEC_MIN_H +
+                             (((int)(s_peak_level[i] * (NP_SPEC_MAX_H - NP_SPEC_MIN_H))) / 3) * 3;
+                    int py = NP_SPEC_H - ph - 2;
+                    if (state_flip || !s_init || py != s_last_peak_y[i]) {
+                        lv_obj_set_y(pk, py);
+                        lv_obj_remove_flag(pk, LV_OBJ_FLAG_HIDDEN);
+                        s_last_peak_y[i] = py;
+                    }
+                } else if (!lv_obj_has_flag(pk, LV_OBJ_FLAG_HIDDEN)) {
+                    lv_obj_add_flag(pk, LV_OBJ_FLAG_HIDDEN);
                 }
             }
         } else {
             s_peak_level[i] = 0.0f;
-            if (s_spectrum_peaks[i]) lv_obj_add_flag(s_spectrum_peaks[i], LV_OBJ_FLAG_HIDDEN);
+            if (pk && !lv_obj_has_flag(pk, LV_OBJ_FLAG_HIDDEN)) {
+                lv_obj_add_flag(pk, LV_OBJ_FLAG_HIDDEN);
+            }
         }
     }
+    s_was_playing = playing;
+    s_init = true;
 }
 
 void gui_now_playing_present(const char *station_id, const char *title, const char *subtitle)
