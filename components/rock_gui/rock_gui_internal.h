@@ -47,6 +47,10 @@ lv_obj_t *gui_make_button(lv_obj_t *parent, int32_t w, int32_t h, const char *la
 // Shared "back to Now Playing" header button callback (browse + search).
 void gui_on_back_to_np_click(lv_event_t *e);
 
+// Station monogram: deterministic fill from rock_ui_station_color() plus the
+// first 1-2 alphanumeric initials of the name (rock_ui_tokens.h palette).
+void gui_monogram_apply(lv_obj_t *box, lv_obj_t *lbl, const char *name);
+
 // One station list row (shared by Browse and Search views).
 typedef struct {
     lv_obj_t *row;
@@ -56,6 +60,7 @@ typedef struct {
     lv_obj_t *desc_lbl;
     lv_obj_t *codec_lbl;
     lv_obj_t *play_lbl;
+    lv_obj_t *eq_box;      // mini equalizer shown in the ACCENT "playing" row
     char station_id[129];
 } station_row_ui_t;
 

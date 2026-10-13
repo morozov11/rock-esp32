@@ -67,59 +67,102 @@ void gui_search_build(lv_obj_t *parent)
     lv_obj_set_pos(s_view_search, 0, 0);
     lv_obj_add_flag(s_view_search, LV_OBJ_FLAG_HIDDEN);
 
-    // Header bar with Back + Input + Clear
+    // Header bar: Back pill + search field (loupe / text / clear / mic)
     s_search_header = lv_obj_create(s_view_search);
     lv_obj_remove_style_all(s_search_header);
-    lv_obj_set_size(s_search_header, 800, 48);
-    lv_obj_set_pos(s_search_header, 0, 0);
-    lv_obj_set_style_pad_left(s_search_header, 16, 0);
-    lv_obj_set_style_pad_right(s_search_header, 16, 0);
+    lv_obj_set_size(s_search_header, 768, 48);
+    lv_obj_set_pos(s_search_header, 16, 12);
     lv_obj_set_flex_flow(s_search_header, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_search_header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(s_search_header, 16, 0);
 
-    gui_make_button(s_search_header, 110, 40, ROCK_ICON_ARROW_LEFT " Назад",
-                    &font_inter_14, gui_on_back_to_np_click, NULL);
+    lv_obj_t *btn_back = gui_make_button(s_search_header, 110, 44,
+                                         ROCK_ICON_ARROW_LEFT " Назад",
+                                         &font_inter_14, gui_on_back_to_np_click, NULL);
+    lv_obj_set_style_radius(btn_back, ROCK_RADIUS_BUTTON, 0);
+    lv_obj_set_style_border_color(btn_back, ROCK_COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(btn_back, 1, 0);
 
-    s_ta_search = lv_textarea_create(s_search_header);
-    lv_obj_set_size(s_ta_search, 520, 40);
-    lv_obj_set_style_bg_color(s_ta_search, ROCK_COLOR_PANEL_2, 0);
+    lv_obj_t *bar = lv_obj_create(s_search_header);
+    lv_obj_remove_style_all(bar);
+    lv_obj_set_size(bar, 0, 44);
+    lv_obj_set_flex_grow(bar, 1);
+    lv_obj_set_style_bg_color(bar, ROCK_COLOR_PANEL, 0);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(bar, ROCK_COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(bar, 1, 0);
+    lv_obj_set_style_radius(bar, ROCK_RADIUS_WIDGET, 0);
+    lv_obj_set_style_pad_left(bar, 14, 0);
+    lv_obj_set_style_pad_right(bar, 6, 0);
+    lv_obj_set_style_pad_column(bar, 8, 0);
+    lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *loupe = lv_label_create(bar);
+    lv_label_set_text(loupe, ROCK_ICON_SEARCH);
+    lv_obj_set_style_text_font(loupe, &font_inter_18, 0);
+    lv_obj_set_style_text_color(loupe, ROCK_COLOR_MUTED, 0);
+
+    s_ta_search = lv_textarea_create(bar);
+    lv_obj_set_height(s_ta_search, 40);
+    lv_obj_set_flex_grow(s_ta_search, 1);
+    lv_obj_set_style_bg_opa(s_ta_search, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_ta_search, 0, 0);
+    lv_obj_set_style_pad_all(s_ta_search, 0, 0);
     lv_obj_set_style_text_color(s_ta_search, ROCK_COLOR_FG, 0);
     lv_obj_set_style_text_font(s_ta_search, &font_inter_18, 0);
-    lv_obj_set_style_radius(s_ta_search, ROCK_RADIUS_BUTTON, 0);
-    lv_obj_set_style_border_color(s_ta_search, ROCK_COLOR_STROKE, 0);
-    lv_obj_set_style_border_width(s_ta_search, 1, 0);
     lv_textarea_set_one_line(s_ta_search, true);
     lv_textarea_set_max_length(s_ta_search, 128);
     lv_obj_add_event_cb(s_ta_search, on_search_edit, LV_EVENT_CLICKED, NULL);
     lv_textarea_set_placeholder_text(s_ta_search, "Поиск станций...");
 
-    lv_obj_t *btn_clear = gui_make_button(s_search_header, 90, 40, "Очистить",
-                                          &font_inter_14, on_search_clear_click, NULL);
-    lv_obj_set_style_pad_left(btn_clear, 8, 0);
+    // Clear (icon ✕, same callback as the former text button)
+    lv_obj_t *btn_clear = gui_make_button(bar, 36, 36, ROCK_ICON_CROSS,
+                                          &font_inter_18, on_search_clear_click, NULL);
+    lv_obj_set_style_bg_opa(btn_clear, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn_clear, 0, 0);
+    lv_obj_set_style_radius(btn_clear, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_text_color(lv_obj_get_child(btn_clear, 0), ROCK_COLOR_MUTED, 0);
 
-    // Genre Chips Container (x=16, y=50, w=768, h=36)
+    // Microphone: static phase-4 stub — amber at 45% opacity, deliberately
+    // non-interactive (no event callback; a press is a silent no-op).
+    lv_obj_t *mic = lv_obj_create(bar);
+    lv_obj_remove_style_all(mic);
+    lv_obj_set_size(mic, 36, 36);
+    lv_obj_set_style_radius(mic, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(mic, ROCK_COLOR_MIC_AMBER, 0);
+    lv_obj_set_style_bg_opa(mic, 115, 0);
+    lv_obj_t *mic_lbl = lv_label_create(mic);
+    lv_label_set_text(mic_lbl, ROCK_ICON_MIC);
+    lv_obj_set_style_text_font(mic_lbl, &font_inter_18, 0);
+    lv_obj_set_style_text_color(mic_lbl, ROCK_COLOR_WHITE, 0);
+    lv_obj_center(mic_lbl);
+
+    // Genre Chips (48px pills)
     s_cont_chips = lv_obj_create(s_view_search);
     lv_obj_remove_style_all(s_cont_chips);
-    lv_obj_set_size(s_cont_chips, 768, 36);
-    lv_obj_set_pos(s_cont_chips, 16, 50);
+    lv_obj_set_size(s_cont_chips, 768, 48);
+    lv_obj_set_pos(s_cont_chips, 16, 68);
     lv_obj_set_flex_flow(s_cont_chips, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(s_cont_chips, 8, 0);
 
     static const char *genres[] = {"Rock", "Pop", "Jazz", "Metal", "Classical", "News", "Electronic"};
     for (size_t i = 0; i < sizeof(genres) / sizeof(genres[0]); i++) {
-        lv_obj_t *chip = gui_make_button(s_cont_chips, LV_SIZE_CONTENT, 32, genres[i],
+        lv_obj_t *chip = gui_make_button(s_cont_chips, LV_SIZE_CONTENT, 48, genres[i],
                                          &font_inter_14, on_genre_chip_click, (void *)genres[i]);
-        lv_obj_set_style_radius(chip, 16, 0);
-        lv_obj_set_style_pad_left(chip, 12, 0);
-        lv_obj_set_style_pad_right(chip, 12, 0);
+        lv_obj_set_style_radius(chip, 24, 0);
+        lv_obj_set_style_bg_opa(chip, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_color(chip, ROCK_COLOR_BORDER, 0);
+        lv_obj_set_style_border_width(chip, 1, 0);
+        lv_obj_set_style_text_color(lv_obj_get_child(chip, 0), ROCK_COLOR_MUTED, 0);
+        lv_obj_set_style_pad_hor(chip, 18, 0);
     }
 
     // Results container (scrollable list, initially hidden or under keyboard)
     s_list_search = lv_obj_create(s_view_search);
     lv_obj_remove_style_all(s_list_search);
-    lv_obj_set_size(s_list_search, 768, 308);
-    lv_obj_set_pos(s_list_search, 16, 90);
+    lv_obj_set_size(s_list_search, 768, 236);
+    lv_obj_set_pos(s_list_search, 16, 124);
     lv_obj_set_flex_flow(s_list_search, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(s_list_search, 4, 0);
     lv_obj_add_flag(s_list_search, LV_OBJ_FLAG_HIDDEN);
@@ -128,19 +171,37 @@ void gui_search_build(lv_obj_t *parent)
         gui_station_row_setup(&s_search_rows[i], s_list_search, i);
     }
 
-    // On-Screen Virtual Keyboard (x=16, y=92, w=768, h=220)
-    // Four rows with 55 px each before gaps (satisfies the 44 px target).
+    // On-Screen Virtual Keyboard (768x236, keys >=48px)
     s_kb_search = lv_keyboard_create(s_view_search);
-    lv_obj_set_size(s_kb_search, 768, 220);
+    lv_obj_set_size(s_kb_search, 768, 236);
     lv_obj_set_align(s_kb_search, LV_ALIGN_TOP_LEFT);
-    lv_obj_set_pos(s_kb_search, 16, 92);
+    lv_obj_set_pos(s_kb_search, 16, 124);
     lv_keyboard_set_textarea(s_kb_search, s_ta_search);
     gui_keyboard_install(s_kb_search);
-    lv_obj_set_style_pad_all(s_kb_search, 4, 0);
-    lv_obj_set_style_pad_row(s_kb_search, 4, 0);
-    lv_obj_set_style_pad_column(s_kb_search, 4, 0);
-    lv_obj_set_style_text_font(s_kb_search, &font_inter_18, 0);
     lv_obj_set_style_bg_color(s_kb_search, ROCK_COLOR_PANEL, 0);
+    lv_obj_set_style_bg_opa(s_kb_search, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(s_kb_search, ROCK_COLOR_BORDER_SUBTLE, 0);
+    lv_obj_set_style_border_width(s_kb_search, 1, 0);
+    lv_obj_set_style_radius(s_kb_search, ROCK_RADIUS_PANEL, 0);
+    lv_obj_set_style_pad_all(s_kb_search, 10, 0);
+    lv_obj_set_style_pad_row(s_kb_search, 6, 0);
+    lv_obj_set_style_pad_column(s_kb_search, 6, 0);
+    // Keys: PANEL_2 r8 + BORDER_SUBTLE ring
+    lv_obj_set_style_bg_color(s_kb_search, ROCK_COLOR_PANEL_2, LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(s_kb_search, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_border_color(s_kb_search, ROCK_COLOR_BORDER_SUBTLE, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(s_kb_search, 1, LV_PART_ITEMS);
+    lv_obj_set_style_radius(s_kb_search, ROCK_RADIUS_WIDGET, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(s_kb_search, ROCK_COLOR_FG, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(s_kb_search, &font_inter_18, LV_PART_ITEMS);
+#ifdef LV_BTNMATRIX_CTRL_CUSTOM_1
+    // OK key (CHECKED ctrl, see rock_gui_keyboard.c): ACCENT with white glyph
+    lv_obj_set_style_bg_color(s_kb_search, ROCK_COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_opa(s_kb_search, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(s_kb_search, ROCK_COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_border_width(s_kb_search, 0, LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(s_kb_search, ROCK_COLOR_WHITE, LV_PART_ITEMS | LV_STATE_CHECKED);
+#endif
     lv_obj_add_event_cb(s_kb_search, on_kb_event, LV_EVENT_READY, NULL);
 }
 

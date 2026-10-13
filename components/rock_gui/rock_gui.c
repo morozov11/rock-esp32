@@ -59,6 +59,7 @@ static lv_obj_t *s_viewport = NULL;
 
 // Bottom Ticker
 static lv_obj_t *s_ticker_bar = NULL;
+static lv_obj_t *s_ticker_dot = NULL;
 static lv_obj_t *s_lbl_ticker = NULL;
 
 // View registry (phase 4): adding a screen = one view file + one row here;
@@ -252,13 +253,22 @@ static void make_ticker(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(s_ticker_bar, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_left(s_ticker_bar, 16, 0);
     lv_obj_set_style_pad_right(s_ticker_bar, 16, 0);
+    lv_obj_set_style_pad_column(s_ticker_bar, 10, 0);
     lv_obj_set_flex_flow(s_ticker_bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_ticker_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    // Status dot (phase 3): green playing / amber buffering / red error / muted idle
+    s_ticker_dot = lv_obj_create(s_ticker_bar);
+    lv_obj_remove_style_all(s_ticker_dot);
+    lv_obj_set_size(s_ticker_dot, 9, 9);
+    lv_obj_set_style_radius(s_ticker_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(s_ticker_dot, ROCK_COLOR_MUTED, 0);
+    lv_obj_set_style_bg_opa(s_ticker_dot, LV_OPA_COVER, 0);
 
     s_lbl_ticker = lv_label_create(s_ticker_bar);
     lv_label_set_text(s_lbl_ticker, "Готов к воспроизведению. Выберите станцию из каталога.");
     lv_label_set_long_mode(s_lbl_ticker, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_set_width(s_lbl_ticker, 768);
+    lv_obj_set_width(s_lbl_ticker, 725);
     lv_obj_set_style_text_color(s_lbl_ticker, ROCK_COLOR_MUTED, 0);
     lv_obj_set_style_text_font(s_lbl_ticker, &font_inter_14, 0);
 }
@@ -361,6 +371,23 @@ void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id
 
     gui_now_playing_update_meta(station_id, station_name, title, subtitle);
     gui_now_playing_update_transport(status, volume, muted);
+
+    if (s_ticker_dot) {
+        switch (status) {
+            case ROCK_GUI_PLAYBACK_PLAYING:
+                lv_obj_set_style_bg_color(s_ticker_dot, ROCK_COLOR_GREEN, 0);
+                break;
+            case ROCK_GUI_PLAYBACK_BUFFERING:
+                lv_obj_set_style_bg_color(s_ticker_dot, ROCK_COLOR_WARN, 0);
+                break;
+            case ROCK_GUI_PLAYBACK_ERROR:
+                lv_obj_set_style_bg_color(s_ticker_dot, ROCK_COLOR_ERROR, 0);
+                break;
+            default:
+                lv_obj_set_style_bg_color(s_ticker_dot, ROCK_COLOR_MUTED, 0);
+                break;
+        }
+    }
 
     if (s_lbl_ticker) {
         switch (status) {

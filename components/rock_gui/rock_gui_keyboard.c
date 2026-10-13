@@ -26,6 +26,10 @@ static const char * const kb_map_num[] = {
 };
 static lv_buttonmatrix_ctrl_t kb_controls[3][48];
 
+// Style class (phase 3): the OK key is marked CHECKED — this LVGL version's
+// btnmatrix CUSTOM_* ctrl bits carry no state mapping, while CHECKED maps to
+// LV_STATE_CHECKED — and matched by LV_PART_ITEMS|LV_STATE_CHECKED styles in
+// the search view. Special keys stay uniform (readable, minor mockup trim).
 static void keyboard_input(lv_event_t *e)
 {
     lv_obj_t *kb = lv_event_get_target(e);
@@ -45,7 +49,14 @@ void gui_keyboard_install(lv_obj_t *kb)
         int button = 0;
         for (int i = 0; maps[m][i][0]; i++) {
             if (!strcmp(maps[m][i], "\n")) continue;
-            kb_controls[m][button++] = LV_KEYBOARD_CTRL_BUTTON_FLAGS | (!strcmp(maps[m][i], " ") ? 5 : 1);
+            // Note: LV_KEYBOARD_CTRL_BUTTON_FLAGS carries CHECKED for EVERY
+            // key, which would make the CHECKED-styled OK style hit all keys;
+            // build the base explicitly and mark only OK as checked.
+            lv_buttonmatrix_ctrl_t ctrl =
+                LV_BUTTONMATRIX_CTRL_NO_REPEAT | LV_BUTTONMATRIX_CTRL_CLICK_TRIG |
+                (!strcmp(maps[m][i], " ") ? 5 : 1);
+            if (!strcmp(maps[m][i], LV_SYMBOL_OK)) ctrl |= LV_BUTTONMATRIX_CTRL_CHECKED;
+            kb_controls[m][button++] = ctrl;
         }
         lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_USER_1 + m, maps[m], kb_controls[m]);
     }
