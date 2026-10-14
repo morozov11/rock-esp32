@@ -7,6 +7,9 @@ use crate::presentation::ui_strings as tr;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use super::session::Session;
+use super::{message_id, send, HEARTBEAT_MS};
+
 static CATALOG_CACHE: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
 
 /// Station names come from the server only: catalog/search pages and the
@@ -87,30 +90,70 @@ fn log_catalog_page_reject(bytes: &[u8]) {
     }
 }
 
-pub(super) fn load_catalog(token: &mut String, query: Option<&str>) {
-    let Ok(path) = device_control::catalog::catalog_path(query, None) else {
-        platform::gui_show_error(tr::CATALOG_QUERY_INVALID);
-        return;
-    };
-    platform::gui_show_loading(if query.is_some() {
-        tr::SEARCH_LOADING
-    } else {
-        tr::CATALOG_LOADING
-    });
-    let mut response = platform::get(&path, Some(token));
-    if let Ok((status, _)) = &response {
-        if device_control::catalog::should_retry_catalog_with_fresh_token(*status, false) {
-            // The long-lived WebSocket session outlives the access token TTL;
-            // obtain a fresh session token and retry the catalog request once.
-            if let Ok(credentials) = pairing::credentials() {
-                *token = credentials.access_token;
-                response = platform::get(&path, Some(token));
+/// Typed catalog routing: `Refresh` reloads the first page, `LoadMore`
+/// fetches the page after a keyset cursor, `Search` replaces the visible
+/// list with a single query result page (search is never cursor-paginated).
+pub(super) enum CatalogRequest {
+    Refresh,
+    LoadMore { cursor: String },
+    Search { query: String },
+}
+
+/// Serial-log helper: cursors are opaque server tokens, so cap them to keep
+/// a garbage value from flooding the serial line.
+pub(super) fn cursor_for_log(cursor: &str) -> &str {
+    match cursor.char_indices().nth(64) {
+        Some((idx, _)) => &cursor[..idx],
+        None => cursor,
+    }
+}
+
+impl Session {
+    pub(super) fn load_catalog(&mut self, request: CatalogRequest) {
+        let (query, cursor, mode) = match &request {
+            CatalogRequest::Refresh => (None, None, "refresh"),
+            CatalogRequest::LoadMore { cursor } => (None, Some(cursor.as_str()), "load-more"),
+            CatalogRequest::Search { query } => (Some(query.as_str()), None, "search"),
+        };
+        let Ok(path) = device_control::catalog::catalog_path(query, cursor) else {
+            platform::gui_show_error(tr::CATALOG_QUERY_INVALID);
+            return;
+        };
+        platform::log_msg(&format!(
+            "catalog fetch: mode={mode} cursor='{}'",
+            cursor_for_log(cursor.unwrap_or(""))
+        ));
+        platform::gui_show_loading(if query.is_some() {
+            tr::SEARCH_LOADING
+        } else {
+            tr::CATALOG_LOADING
+        });
+        // The fetch below is synchronous in the session tick (10 s HTTP
+        // timeout, plus one 401 retry with a fresh-token round trip), so
+        // handle_inbound cannot read heartbeat ACKs while it blocks. Send a
+        // heartbeat up front and reopen the watchdog window around it (the
+        // same handoff pattern as on_cast_select).
+        let _ = send(&device_control::heartbeat(
+            &message_id(),
+            &platform::now().unwrap_or_default(),
+            self.heartbeat_sequence,
+        ));
+        self.heartbeat_sequence = self.heartbeat_sequence.wrapping_add(1);
+        self.next_heartbeat = platform::uptime_ms() + HEARTBEAT_MS;
+        self.last_heartbeat_ack = platform::uptime_ms();
+        let mut response = platform::get(&path, Some(&self.token));
+        if let Ok((status, _)) = &response {
+            if device_control::catalog::should_retry_catalog_with_fresh_token(*status, false) {
+                // The long-lived WebSocket session outlives the access token TTL;
+                // obtain a fresh session token and retry the catalog request once.
+                if let Ok(credentials) = pairing::credentials() {
+                    self.token = credentials.access_token;
+                    response = platform::get(&path, Some(&self.token));
+                }
             }
         }
-    }
-    match response {
-        Ok((200, bytes)) => {
-            if query.is_some() {
+        match response {
+            Ok((200, bytes)) if query.is_some() => {
                 match device_control::parse_search_page(&bytes) {
                     Ok(page) => {
                         cache_catalog_stations(&page.stations);
@@ -124,14 +167,27 @@ pub(super) fn load_catalog(token: &mut String, query: Option<&str>) {
                         platform::gui_show_error(tr::SEARCH_BAD_FORMAT);
                     }
                 }
-            } else {
+            }
+            Ok((200, bytes)) => {
                 match device_control::parse_catalog_page(&bytes) {
                     Ok(page) => {
                         cache_catalog_stations(&page.stations);
+                        // Until UC-4 appends pages in the GUI, both browse
+                        // variants land here: LoadMore temporarily REPLACES
+                        // the list with page N instead of extending it.
                         platform::gui_set_browse_stations(
                             &page.stations,
                             page.next_cursor.as_deref(),
-                        )
+                        );
+                        // Track the cursor of the last delivered page so
+                        // on_catalog_browse can drop a queued LoadMore that
+                        // re-sends it. Failed fetches keep the previous
+                        // value, letting Retry re-fetch the same cursor.
+                        self.catalog_last_cursor = match &request {
+                            CatalogRequest::LoadMore { cursor } => Some(cursor.clone()),
+                            // Refresh restarts pagination from page one.
+                            _ => None,
+                        };
                     }
                     Err(_) => {
                         log_catalog_page_reject(&bytes);
@@ -139,8 +195,8 @@ pub(super) fn load_catalog(token: &mut String, query: Option<&str>) {
                     }
                 }
             }
+            _ => platform::gui_show_error(tr::CATALOG_UNAVAILABLE),
         }
-        _ => platform::gui_show_error(tr::CATALOG_UNAVAILABLE),
     }
 }
 

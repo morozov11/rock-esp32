@@ -14,7 +14,9 @@ pub(crate) enum GuiEvent {
     PlaybackPause,
     PlaybackStop,
     VolumeChange(i16),
-    CatalogBrowse,
+    // Empty cursor = first-page refresh (what C sends today); non-empty =
+    // load-more after that keyset cursor.
+    CatalogBrowse(String),
     CatalogSearch(String),
     Retry,
     CastBrowse,
@@ -40,7 +42,7 @@ pub(crate) fn gui_poll_event(timeout_ms: u32) -> Option<GuiEvent> {
             crate::abi::ROCK_UI_EVT_PLAYBACK_PAUSE => Some(GuiEvent::PlaybackPause),
             crate::abi::ROCK_UI_EVT_PLAYBACK_STOP => Some(GuiEvent::PlaybackStop),
             crate::abi::ROCK_UI_EVT_VOLUME_CHANGE => Some(GuiEvent::VolumeChange(raw.value)),
-            crate::abi::ROCK_UI_EVT_CATALOG_BROWSE => Some(GuiEvent::CatalogBrowse),
+            crate::abi::ROCK_UI_EVT_CATALOG_BROWSE => Some(GuiEvent::CatalogBrowse(text)),
             crate::abi::ROCK_UI_EVT_CATALOG_SEARCH => Some(GuiEvent::CatalogSearch(text)),
             crate::abi::ROCK_UI_EVT_RETRY => Some(GuiEvent::Retry),
             crate::abi::ROCK_UI_EVT_CAST_BROWSE => Some(GuiEvent::CastBrowse),

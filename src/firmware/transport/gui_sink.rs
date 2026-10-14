@@ -1,6 +1,6 @@
 //! GUI event handling and user action dispatch (`GuiEventSink` implementation for `Session`).
 
-use super::catalog::load_catalog;
+use super::catalog::{cursor_for_log, CatalogRequest};
 use super::media::{cast_play_stream, play_local_station};
 use super::session::Session;
 use super::{message_id, send, HEARTBEAT_MS};
@@ -116,14 +116,33 @@ impl GuiEventSink for Session {
         }
     }
 
-    fn on_catalog_browse(&mut self) {
-        self.retry = Some(platform::GuiEvent::CatalogBrowse);
-        load_catalog(&mut self.token, None);
+    fn on_catalog_browse(&mut self, cursor: String) {
+        if cursor.is_empty() {
+            // C today always sends an empty cursor (e.g. the "Каталог"
+            // button): empty means first-page refresh, which is what every
+            // existing browse event keeps doing.
+            self.retry = Some(platform::GuiEvent::CatalogBrowse(cursor));
+            self.load_catalog(CatalogRequest::Refresh);
+            return;
+        }
+        // The fetch runs synchronously in the session tick, so by the time
+        // the next queued event drains, a LoadMore re-sending the cursor of
+        // the last delivered page is a stale duplicate of a request that
+        // already completed — fast scrolling can queue several.
+        if self.catalog_last_cursor.as_deref() == Some(cursor.as_str()) {
+            platform::log_msg(&format!(
+                "catalog load-more dropped as duplicate: cursor='{}'",
+                cursor_for_log(&cursor)
+            ));
+            return;
+        }
+        self.retry = Some(platform::GuiEvent::CatalogBrowse(cursor.clone()));
+        self.load_catalog(CatalogRequest::LoadMore { cursor });
     }
 
     fn on_catalog_search(&mut self, query: String) {
         self.retry = Some(platform::GuiEvent::CatalogSearch(query.clone()));
-        load_catalog(&mut self.token, Some(&query));
+        self.load_catalog(CatalogRequest::Search { query });
     }
 
     fn on_retry(&mut self) {

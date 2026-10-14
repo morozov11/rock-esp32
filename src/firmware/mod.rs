@@ -25,7 +25,7 @@ pub(crate) trait GuiEventSink {
     fn on_playback_pause(&mut self);
     fn on_playback_stop(&mut self);
     fn on_volume_change(&mut self, delta: i16);
-    fn on_catalog_browse(&mut self);
+    fn on_catalog_browse(&mut self, cursor: String);
     fn on_catalog_search(&mut self, query: String);
     fn on_retry(&mut self);
     fn on_cast_browse(&mut self);
@@ -40,7 +40,7 @@ pub(crate) trait GuiEventSink {
             GuiEvent::PlaybackPause => self.on_playback_pause(),
             GuiEvent::PlaybackStop => self.on_playback_stop(),
             GuiEvent::VolumeChange(delta) => self.on_volume_change(delta),
-            GuiEvent::CatalogBrowse => self.on_catalog_browse(),
+            GuiEvent::CatalogBrowse(cursor) => self.on_catalog_browse(cursor),
             GuiEvent::CatalogSearch(query) => self.on_catalog_search(query),
             GuiEvent::Retry => self.on_retry(),
             GuiEvent::CastBrowse => self.on_cast_browse(),
@@ -92,7 +92,7 @@ impl GuiEventSink for OfflineHandler {
         let new_vol = (vol as i32 + delta as i32).clamp(0, 100) as u8;
         let _ = platform::player_set_volume(new_vol);
     }
-    fn on_catalog_browse(&mut self) {
+    fn on_catalog_browse(&mut self, _cursor: String) {
         platform::gui_show_offline(crate::presentation::ui_strings::SERVER_LINK_LOST);
     }
     fn on_catalog_search(&mut self, _query: String) {

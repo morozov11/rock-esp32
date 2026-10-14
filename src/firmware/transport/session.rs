@@ -25,6 +25,10 @@ pub(super) struct Session {
     pub(super) source: SourceState,
     pub(super) pending: Option<(String, u64)>,
     pub(super) retry: Option<platform::GuiEvent>,
+    /// Cursor of the last successfully delivered browse page. A queued
+    /// LoadMore re-sending that same cursor is a stale duplicate (no data
+    /// update since) and is dropped in `on_catalog_browse`.
+    pub(super) catalog_last_cursor: Option<String>,
     pub(super) network_check: u64,
     pub(super) next_heartbeat: u64,
     pub(super) next_token_refresh: u64,
@@ -52,6 +56,7 @@ impl Session {
             source: SourceState { station: None },
             pending: None,
             retry: None,
+            catalog_last_cursor: None,
             network_check: 0,
             next_heartbeat: platform::uptime_ms() + HEARTBEAT_MS,
             next_token_refresh: platform::uptime_ms() + 10 * 60_000,
