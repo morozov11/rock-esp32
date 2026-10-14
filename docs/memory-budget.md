@@ -18,6 +18,7 @@ free heap when an I2S format change reallocates descriptors.
 | Local stream task stack and static decode buffers | task heap / static RAM | 8 KiB stack + 16 KiB buffers |
 | Audio output and spectrum task stacks | task heap | 4 KiB each |
 | I2S TX/RX DMA, 6 × 256 stereo frames per channel | DMA-capable internal RAM | about 12 KiB plus descriptors |
+| Unified station catalog (128 items PSRAM, UC-4) | PSRAM, allocated on first use | 48 KiB |
 | Wi-Fi, ESP-Hosted, TLS, WebSocket, decoder, LVGL objects | mixed | variable; measure at runtime |
 
 The I2S driver rounds the configured 240-frame DMA blocks to 256 frames. The
@@ -29,7 +30,14 @@ block; allocation failed and the board rebooted.
 Observed with the 2 MiB PCM ring: roughly 115 KiB internal free while idle,
 33–44 KiB during playback, and 1.8–4 KiB as the largest free DMA-capable
 block. Total free heap during playback was about 30.5 MiB, mostly PSRAM.
-Large non-DMA buffers must stay in PSRAM. A later codec/channel change that
+Large non-DMA buffers must stay in PSRAM.
+
+Unified station catalog (UC-4..UC-6, hardware measurement on 2026-10-14):
+The 128-station accumulated buffer is allocated strictly in PSRAM
+(`MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT`), consuming 48 KiB (128 × 378 B).
+During full catalog accumulation (60+ stations), search, load-more, and offline
+stale-recovery cycles on ESP32-P4 v1.3 (COM6), internal free heap stayed stable
+at ~164 KiB, with total free heap at ~30.58 MiB. Internal RAM did not degrade.
 forces fresh DMA allocation remains a risk and should be tested before adding
 more internal allocations. Current PSRAM allocation policy prefers internal
 RAM for allocations up to 16 KiB and reserves 32 KiB of internal RAM, so new

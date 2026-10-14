@@ -1,6 +1,6 @@
 # UC: Единый список станций (каталог + поиск) — план работ
 
-Статус: утверждён 2026-10-13.
+Статус: завершён 2026-10-14 (UC-0..UC-7 выполнены, физическая приёмка пройдена).
 Владелец: план-coordination см. [`plan-control.md`](plan-control.md) (таблица «Точки входа»).
 Эталон поведения: приложение rockmobile (`C:\repos\rockmobile`).
 Область: **только rock-esp32**. Репозиторий rockserver НЕ меняется (см. «Ключевое решение»).
@@ -504,7 +504,18 @@ FFI-имена сохранены: `rock_gui_set_browse_stations(items, count, n
 5. [`plan-control.md`](plan-control.md): отметить план выполненным.
 6. Итоговая физическая приёмка: полный чек-лист из раздела 7 на железе.
 
-**Приёмка.** Документы обновлены; скриншоты приложены; финальный прогон зелёный.
+**Приёмка.** Выполнена 2026-10-14 на железе (ESP32-P4 v1.3, COM6, сквозной прогон `tools/uc6_acceptance.py`):
+- Все 6 сценариев успешно пройдены:
+  1. `Refresh` → модальный оверлей → 20 станций ([docs/uc6-refresh.png](uc6-refresh.png), [docs/uc-catalog-browse.png](uc-catalog-browse.png)).
+  2. `LoadMore` → инлайн-пилюля «Подгрузка...» без модального оверлея → 40 станций ([docs/uc6-loadmore.png](uc6-loadmore.png), [docs/uc-catalog-loadmore.png](uc-catalog-loadmore.png)).
+  3. `Search` → инлайн-спиннер в строке поиска без скрытия списка → результаты получены ([docs/uc6-search.png](uc6-search.png), [docs/uc-catalog-search.png](uc-catalog-search.png)).
+  4. Пустой поиск → оверлей «Ничего не найдено» ([docs/uc6-search-empty.png](uc6-search-empty.png)) → мгновенный возврат к 40 станциям по `BACK` без сетевого GET ([docs/uc6-search-restored.png](uc6-search-restored.png)).
+  5. Инлайн-ошибка догрузки сети → список цел, красная пилюля ошибки ([docs/uc6-loadmore-error.png](uc6-loadmore-error.png), [docs/uc-catalog-error.png](uc-catalog-error.png)); повтор по `RETRY` догружает до 60 станций ([docs/uc6-loadmore-recovered.png](uc6-loadmore-recovered.png)).
+  6. `Stale reset` (`rock_gui_mark_catalog_stale`) → оверлей «Связь с сервером потеряна» ([docs/uc6-offline.png](uc6-offline.png), [docs/uc-catalog-offline.png](uc-catalog-offline.png)); возврат по `BACK` в плеер ([docs/uc6-offline-recovered.png](uc6-offline-recovered.png)).
+- Метрики памяти: internal heap стабилен (~164 КиБ free, при норме >33 КиБ), total free: 30.58 МБ.
+- `cargo test --target x86_64-pc-windows-msvc`: 33 теста успешно пройдены.
+- `idf.py build`: 0 предупреждений, 0 ошибок.
+- Документация обновлена: [`refactoring-audit.md`](refactoring-audit.md) закрыл пункт дублирования списков; [`memory-budget.md`](memory-budget.md) зафиксировал факт +48 КиБ PSRAM; [`plan-control.md`](plan-control.md) и настоящий план отмечены завершёнными.
 
 ---
 

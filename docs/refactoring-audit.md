@@ -93,8 +93,7 @@ GUI/platform-группа, audio/display/OTA-группа, Rust/FFI-группа
 - **Кнопка+лейбл бойлерплейт ×~20** в `rock_gui.c` (нет `make_button`).
 - **Оверлей-квартет**: `show_loading/empty/offline/error`
   (`rock_gui.c:1478-1540`) — один и тот же каркас ×4.
-- **Списки станций**: `set_browse_stations` ≡ `set_search_results`
-  (`rock_gui.c:1387-1419` vs `:1434-1466`) — ~30 строк дословно.
+- ~~**Списки станций**: `set_browse_stations` ≡ `set_search_results`~~ — **ЗАКРЫТО** в UC-3..UC-6 (2026-10-14): Browse и Search объединены в единый экран `rock_gui_views_catalog.c` с общим скользящим окном строк (`gui_station_rows_fill`), хранилищем в PSRAM и FFI `rock_gui_catalog_begin`/`append`.
 - **JSON-скрейпинг ×3** в `cast_bsp.c:69-116`; IP-форматирование ×2
   (`:176-180`, `:228-232`).
 - **Bearer-форматирование/валидация** ×3 (`relay_bsp.c:630,1305` vs
@@ -584,14 +583,12 @@ CMD:SCREENSHOT (маркеры START/END), CMD:UI:STATION/PLAYPAUSE/STOP/SEARCH.
    `rock_decoder_process(...)`; pcm_ring → `rock_ring.c`; UI уже на
    колбеках (фаза 3); bringup уже за Kconfig (фаза 2). Остаётся
    ~300-400 строк собственно плеера.
-4. **`rock_gui.c` (1968)** → каталог `gui/`: `gui_views_now_playing.c`,
-   `gui_views_browse.c` (+search — общий list-widget закрывает дубли
-   `set_browse/set_search`), `gui_views_cast.c`, `gui_widgets.c`
-   (`make_button`, row-list, единый `overlay_set(kind,title,desc,buttons)`),
-   `gui_keyboard.c`, `gui_events.c`. View-registry (таблица
-   `{id, build, show, hide}`) вместо enum+7 мест правки — добавление экрана
-   = один файл + одна строка в таблице (OCP). Заголовок `rock_gui.h` —
-   фасад, сигнатуры сохраняются для Rust.
+4. **`rock_gui.c` (1968)** → каталог `components/rock_gui/`: `rock_gui_views_now_playing.c`,
+   `rock_gui_views_catalog.c` (общий экран единого каталога и поиска UC-3..UC-6, закрыл дубли
+   `set_browse/set_search` и объединил Browse/Search), `rock_gui_views_cast.c`, `rock_gui_widgets.c`
+   (`make_button`, row-list, единый `gui_overlay_set(kind,title,desc,buttons)`),
+   `rock_gui_keyboard.c`, `rock_serial.c`, `rock_screenshot.c`. [ВЫПОЛНЕНО: фасад сохранён,
+   ABI неизменно].
 5. **Rust `platform.rs` (803)** → подмодули `platform/{ffi,http,gui,cast,tls}.rs`
    с сохранением pub-интерфейса модуля (consumers не меняются). Доменную
    политику (ключи устройства, RSSI-эвристику) вынести из FFI-слоя в
