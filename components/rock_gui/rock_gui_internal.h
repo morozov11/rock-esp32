@@ -114,6 +114,10 @@ bool gui_now_playing_trigger(const char *action);   // CATALOG, PLAYPAUSE, STOP,
 void gui_catalog_build(lv_obj_t *parent);
 void gui_catalog_show(void);
 void gui_catalog_hide(void);
+void gui_catalog_begin(const rock_gui_station_item_t *items, size_t count, const char *next_cursor);
+void gui_catalog_append(const rock_gui_station_item_t *items, size_t count, const char *next_cursor);
+void gui_catalog_clear(void);
+void gui_catalog_reset_fetching(void);
 // Fill the rows: catalog pages and search results share the list.
 // search_results=false — catalog page (counter update, "Каталог пуст" on 0);
 // search_results=true — search results (keyboard down, list up, row logging).
@@ -122,7 +126,7 @@ void gui_catalog_hide_rows(void);
 void gui_catalog_begin_edit(void);                  // show keyboard, hide list
 station_row_ui_t *gui_catalog_rows(void);
 size_t gui_catalog_rows_count(void);
-bool gui_catalog_trigger(const char *action);       // SEARCH, SEARCH:<query>
+bool gui_catalog_trigger(const char *action);       // SEARCH, SEARCH:<query>, LOADMORE
 
 // ---- virtual keyboard (rock_gui_keyboard.c) ----
 

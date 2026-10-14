@@ -442,14 +442,28 @@ void rock_gui_update_connectivity(int rssi, bool wifi_connected, bool server_con
     lvgl_port_unlock();
 }
 
+void rock_gui_catalog_begin(const rock_gui_station_item_t *items, size_t count,
+                            const char *next_cursor)
+{
+    if (!lvgl_port_lock(1000)) return;
+    s_catalog_stale = false;
+    gui_catalog_begin(items, count, next_cursor);
+    lvgl_port_unlock();
+}
+
+void rock_gui_catalog_append(const rock_gui_station_item_t *items, size_t count,
+                             const char *next_cursor)
+{
+    if (!lvgl_port_lock(1000)) return;
+    s_catalog_stale = false;
+    gui_catalog_append(items, count, next_cursor);
+    lvgl_port_unlock();
+}
+
 void rock_gui_set_browse_stations(const rock_gui_station_item_t *items, size_t count,
                                   const char *next_cursor)
 {
-    (void)next_cursor;
-    if (!lvgl_port_lock(1000)) return;
-    s_catalog_stale = false;
-    gui_catalog_set_rows(items, count, false);
-    lvgl_port_unlock();
+    rock_gui_catalog_begin(items, count, next_cursor);
 }
 
 void rock_gui_set_search_results(const rock_gui_station_item_t *items, size_t count)
@@ -484,6 +498,7 @@ void rock_gui_show_offline(const char *message)
 void rock_gui_show_error(const char *message)
 {
     if (!lvgl_port_lock(500)) return;
+    gui_catalog_reset_fetching();
     gui_overlay_set(GUI_OVERLAY_ERROR, NULL, message, true);
     lvgl_port_unlock();
 }
@@ -537,6 +552,7 @@ void rock_gui_mark_catalog_stale(void)
     if (!lvgl_port_lock(500)) return;
 
     s_catalog_stale = true;
+    gui_catalog_clear();
     gui_catalog_hide_rows();
     if (gui_active_view() == VIEW_CATALOG) {
         gui_overlay_set(GUI_OVERLAY_OFFLINE, "Связь с сервером потеряна", NULL, true);

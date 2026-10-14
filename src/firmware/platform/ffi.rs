@@ -43,6 +43,17 @@ unsafe extern "C" {
         muted: bool,
     );
     pub(crate) fn rock_gui_update_connectivity(rssi: c_int, wifi_connected: bool, server_connected: bool);
+    pub(crate) fn rock_gui_catalog_begin(
+        items: *const RockGuiStationItem,
+        count: usize,
+        next_cursor: *const c_char,
+    );
+    pub(crate) fn rock_gui_catalog_append(
+        items: *const RockGuiStationItem,
+        count: usize,
+        next_cursor: *const c_char,
+    );
+    #[allow(dead_code)]
     pub(crate) fn rock_gui_set_browse_stations(
         items: *const RockGuiStationItem,
         count: usize,

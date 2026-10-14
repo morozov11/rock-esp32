@@ -101,10 +101,9 @@ pub(crate) fn gui_update_connectivity(rssi: i32, wifi: bool, server: bool) {
     unsafe { rock_gui_update_connectivity(rssi, wifi, server) };
 }
 
-pub(crate) fn gui_set_browse_stations(
+fn convert_stations(
     stations: &[crate::device_control::catalog::DeviceStationDto],
-    next_cursor: Option<&str>,
-) {
+) -> ([RockGuiStationItem; 20], usize) {
     let mut items = [RockGuiStationItem {
         id: [0; 129],
         name: [0; 129],
@@ -124,36 +123,47 @@ pub(crate) fn gui_set_browse_stations(
         items[i].bitrate_kbps = stations[i].bitrate_kbps.unwrap_or(0);
         items[i].is_playing = false;
     }
+    (items, count)
+}
+
+pub(crate) fn gui_catalog_begin(
+    stations: &[crate::device_control::catalog::DeviceStationDto],
+    next_cursor: Option<&str>,
+) {
+    let (items, count) = convert_stations(stations);
     let cursor_c = next_cursor.and_then(|c| cstring(c).ok());
     let cursor_ptr = cursor_c
         .as_ref()
         .map(|c| c.as_ptr())
         .unwrap_or(core::ptr::null());
-    unsafe { rock_gui_set_browse_stations(items.as_ptr(), count, cursor_ptr) };
+    unsafe { rock_gui_catalog_begin(items.as_ptr(), count, cursor_ptr) };
+}
+
+pub(crate) fn gui_catalog_append(
+    stations: &[crate::device_control::catalog::DeviceStationDto],
+    next_cursor: Option<&str>,
+) {
+    let (items, count) = convert_stations(stations);
+    let cursor_c = next_cursor.and_then(|c| cstring(c).ok());
+    let cursor_ptr = cursor_c
+        .as_ref()
+        .map(|c| c.as_ptr())
+        .unwrap_or(core::ptr::null());
+    unsafe { rock_gui_catalog_append(items.as_ptr(), count, cursor_ptr) };
+}
+
+#[allow(dead_code)]
+pub(crate) fn gui_set_browse_stations(
+    stations: &[crate::device_control::catalog::DeviceStationDto],
+    next_cursor: Option<&str>,
+) {
+    gui_catalog_begin(stations, next_cursor);
 }
 
 pub(crate) fn gui_set_search_results(
     stations: &[crate::device_control::catalog::DeviceStationDto],
 ) {
-    let mut items = [RockGuiStationItem {
-        id: [0; 129],
-        name: [0; 129],
-        tags: [0; 64],
-        codec: [0; 16],
-        bitrate_kbps: 0,
-        is_playing: false,
-    }; 20];
-    let count = stations.len().min(20);
-    for i in 0..count {
-        copy_str_to_buf(&stations[i].id, &mut items[i].id);
-        copy_str_to_buf(&stations[i].name, &mut items[i].name);
-        copy_str_to_buf(&stations[i].tags.join(", "), &mut items[i].tags);
-        if let Some(ref c) = stations[i].codec {
-            copy_str_to_buf(c, &mut items[i].codec);
-        }
-        items[i].bitrate_kbps = stations[i].bitrate_kbps.unwrap_or(0);
-        items[i].is_playing = false;
-    }
+    let (items, count) = convert_stations(stations);
     unsafe { rock_gui_set_search_results(items.as_ptr(), count) };
 }
 

@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 #define ROCK_GUI_MAX_STATIONS 20
+#define ROCK_GUI_CATALOG_MAX_ACCUMULATED 128
 
 // Numeric mirror of rock_player_status_t (player_bsp.h). The Rust binding
 // passes this field as a raw int (platform.rs rock_gui_update_playback), so
@@ -88,9 +89,23 @@ void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id
 void rock_gui_update_connectivity(int rssi, bool wifi_connected, bool server_connected);
 
 /**
- * Set stations list for the Catalog screen — catalog page (replaces the
- * visible list with up to 20 stations). next_cursor is reserved for the
- * upcoming load-more support and currently ignored.
+ * Initialize / refresh the Catalog screen with the first page of stations (UC-4).
+ * Clears accumulated stations in PSRAM and stages the first page.
+ * next_cursor is the keyset cursor for the subsequent page, or NULL if end of catalog.
+ */
+void rock_gui_catalog_begin(const rock_gui_station_item_t *items, size_t count,
+                            const char *next_cursor);
+
+/**
+ * Append the next page of stations to the accumulated catalog in PSRAM (UC-4).
+ * Deduplicates incoming items against existing ones by station id, updates the
+ * keyset cursor, and advances the visible window if the user reached the bottom.
+ */
+void rock_gui_catalog_append(const rock_gui_station_item_t *items, size_t count,
+                             const char *next_cursor);
+
+/**
+ * Backward-compatible wrapper over rock_gui_catalog_begin.
  */
 void rock_gui_set_browse_stations(const rock_gui_station_item_t *items, size_t count,
                                   const char *next_cursor);

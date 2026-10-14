@@ -172,13 +172,20 @@ impl Session {
                 match device_control::parse_catalog_page(&bytes) {
                     Ok(page) => {
                         cache_catalog_stations(&page.stations);
-                        // Until UC-4 appends pages in the GUI, both browse
-                        // variants land here: LoadMore temporarily REPLACES
-                        // the list with page N instead of extending it.
-                        platform::gui_set_browse_stations(
-                            &page.stations,
-                            page.next_cursor.as_deref(),
-                        );
+                        match &request {
+                            CatalogRequest::LoadMore { .. } => {
+                                platform::gui_catalog_append(
+                                    &page.stations,
+                                    page.next_cursor.as_deref(),
+                                );
+                            }
+                            _ => {
+                                platform::gui_catalog_begin(
+                                    &page.stations,
+                                    page.next_cursor.as_deref(),
+                                );
+                            }
+                        }
                         // Track the cursor of the last delivered page so
                         // on_catalog_browse can drop a queued LoadMore that
                         // re-sends it. Failed fetches keep the previous
