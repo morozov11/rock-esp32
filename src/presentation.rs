@@ -15,6 +15,7 @@ pub mod ui_strings {
     pub const CATALOG_QUERY_INVALID: &str = "Запрос должен содержать от 1 до 128 символов";
     pub const SEARCH_LOADING: &str = "Поиск станций...";
     pub const CATALOG_LOADING: &str = "Загрузка каталога...";
+    pub const CATALOG_EMPTY: &str = "Каталог пуст";
     pub const SEARCH_EMPTY: &str = "Ничего не найдено";
     pub const SEARCH_BAD_FORMAT: &str = "Некорректный формат поиска";
     pub const CATALOG_BAD_FORMAT: &str = "Некорректный формат каталога";

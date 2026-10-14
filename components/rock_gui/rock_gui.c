@@ -474,6 +474,25 @@ void rock_gui_set_search_results(const rock_gui_station_item_t *items, size_t co
     lvgl_port_unlock();
 }
 
+void rock_gui_catalog_load_more_error(void)
+{
+    if (!lvgl_port_lock(1000)) return;
+    gui_catalog_load_more_error();
+    lvgl_port_unlock();
+}
+
+void rock_gui_catalog_search_busy(bool busy)
+{
+    if (!lvgl_port_lock(500)) return;
+    gui_catalog_search_busy(busy);
+    lvgl_port_unlock();
+}
+
+void rock_gui_catalog_set_busy(bool busy)
+{
+    rock_gui_catalog_search_busy(busy);
+}
+
 void rock_gui_show_loading(const char *message)
 {
     if (!lvgl_port_lock(500)) return;
@@ -484,7 +503,11 @@ void rock_gui_show_loading(const char *message)
 void rock_gui_show_empty(const char *message)
 {
     if (!lvgl_port_lock(500)) return;
-    gui_overlay_set(GUI_OVERLAY_EMPTY, message, NULL, true);
+    const char *desc = NULL;
+    if (message && !strcmp(message, "Каталог пуст")) {
+        desc = "Список станций на сервере пуст";
+    }
+    gui_overlay_set(GUI_OVERLAY_EMPTY, message, desc, true);
     lvgl_port_unlock();
 }
 
@@ -616,7 +639,13 @@ void rock_gui_switch_view(int view_index)
 void rock_gui_trigger(const char *action)
 {
     if (!action || !lvgl_port_lock(500)) return;
-    if (gui_now_playing_trigger(action)) {
+    if (!strcmp(action, "STALE")) {
+        rock_gui_mark_catalog_stale();
+    } else if (!strcmp(action, "LOADMORE_ERR")) {
+        gui_catalog_load_more_error();
+    } else if (!strcmp(action, "CATALOG_EMPTY")) {
+        gui_overlay_set(GUI_OVERLAY_EMPTY, "Каталог пуст", "Список станций на сервере пуст", true);
+    } else if (gui_now_playing_trigger(action)) {
     } else if (gui_overlay_trigger(action)) {
     } else if (gui_catalog_trigger(action)) {
     } else if (gui_cast_trigger(action)) {

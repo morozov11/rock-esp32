@@ -182,6 +182,14 @@ pub(crate) fn gui_set_search_results(
     unsafe { rock_gui_set_search_results(items_ptr, items.len()) };
 }
 
+pub(crate) fn gui_catalog_load_more_error() {
+    unsafe { rock_gui_catalog_load_more_error() };
+}
+
+pub(crate) fn gui_catalog_search_busy(busy: bool) {
+    unsafe { rock_gui_catalog_search_busy(busy) };
+}
+
 pub(crate) fn gui_show_loading(msg: &str) {
     if let Ok(c) = cstring(msg) {
         unsafe { rock_gui_show_loading(c.as_ptr()) };

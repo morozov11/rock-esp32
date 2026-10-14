@@ -117,6 +117,8 @@ void gui_catalog_begin(const rock_gui_station_item_t *items, size_t count, const
 void gui_catalog_append(const rock_gui_station_item_t *items, size_t count, const char *next_cursor);
 void gui_catalog_clear(void);
 void gui_catalog_reset_fetching(void);
+void gui_catalog_load_more_error(void);
+void gui_catalog_search_busy(bool busy);
 // Fill the rows: catalog pages and search results share the list.
 // search_results=false — catalog page (counter update, "Каталог пуст" on 0);
 // search_results=true — search results (keyboard down, list up, row logging).

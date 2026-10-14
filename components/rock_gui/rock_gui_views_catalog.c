@@ -23,6 +23,8 @@ static lv_obj_t *s_kb_catalog = NULL;
 static lv_obj_t *s_list_catalog = NULL;
 static lv_obj_t *s_pill_box = NULL;
 static lv_obj_t *s_lbl_pill = NULL;
+static lv_obj_t *s_loupe = NULL;
+static lv_obj_t *s_search_spinner = NULL;
 static station_row_ui_t s_catalog_rows[ROCK_GUI_MAX_STATIONS];
 static size_t s_catalog_rows_count = 0;
 
@@ -32,6 +34,7 @@ static size_t s_catalog_count = 0;
 static char s_catalog_cursor[513] = {0};
 static size_t s_window_start = 0;
 static bool s_fetching_more = false;
+static bool s_load_more_error = false;
 static lv_timer_t *s_fetch_timer = NULL;
 static bool s_in_scroll_adjust = false;
 
@@ -40,6 +43,19 @@ static rock_gui_station_item_t s_search_items[ROCK_GUI_MAX_STATIONS];
 static size_t s_search_count = 0;
 static bool s_search_active = false;
 static int32_t s_catalog_saved_scroll_y = 0;
+
+void gui_catalog_search_busy(bool busy)
+{
+    if (s_search_spinner && s_loupe) {
+        if (busy) {
+            lv_obj_add_flag(s_loupe, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(s_search_spinner, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_search_spinner, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(s_loupe, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
 
 static void on_genre_chip_click(lv_event_t *e)
 {
@@ -52,8 +68,8 @@ static void on_genre_chip_click(lv_event_t *e)
     if (s_ta_query) {
         lv_textarea_set_text(s_ta_query, genre);
     }
+    gui_catalog_search_busy(true);
     gui_enqueue_event(ROCK_UI_EVT_CATALOG_SEARCH, genre, 0);
-    rock_gui_show_loading("Поиск по жанру...");
 }
 
 void gui_catalog_begin_edit(void)
@@ -96,8 +112,8 @@ static void on_kb_event(lv_event_t *e)
                 s_catalog_saved_scroll_y = lv_obj_get_scroll_y(s_list_catalog);
             }
             s_search_active = true;
+            gui_catalog_search_busy(true);
             gui_enqueue_event(ROCK_UI_EVT_CATALOG_SEARCH, txt, 0);
-            rock_gui_show_loading("Поиск станций...");
         } else {
             gui_catalog_exit_search();
         }
@@ -105,6 +121,8 @@ static void on_kb_event(lv_event_t *e)
         gui_catalog_exit_search();
     }
 }
+
+static void update_pill(void);
 
 static void on_fetch_timeout(lv_timer_t *timer)
 {
@@ -114,10 +132,12 @@ static void on_fetch_timeout(lv_timer_t *timer)
         lv_timer_delete(s_fetch_timer);
         s_fetch_timer = NULL;
     }
+    s_load_more_error = true;
+    update_pill();
     if (s_pill_box) {
-        lv_obj_add_flag(s_pill_box, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_scroll_to_view(s_pill_box, LV_ANIM_OFF);
     }
-    ESP_LOGW(TAG, "Catalog fetch more timed out (15s)");
+    ESP_LOGW(TAG, "Catalog fetch more timed out (15s), switched pill to error");
 }
 
 void gui_catalog_reset_fetching(void)
@@ -127,9 +147,25 @@ void gui_catalog_reset_fetching(void)
         s_fetch_timer = NULL;
     }
     s_fetching_more = false;
+    s_load_more_error = false;
     if (s_pill_box) {
         lv_obj_add_flag(s_pill_box, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+void gui_catalog_load_more_error(void)
+{
+    if (s_fetch_timer) {
+        lv_timer_delete(s_fetch_timer);
+        s_fetch_timer = NULL;
+    }
+    s_fetching_more = false;
+    s_load_more_error = true;
+    update_pill();
+    if (s_pill_box) {
+        lv_obj_scroll_to_view(s_pill_box, LV_ANIM_OFF);
+    }
+    ESP_LOGW(TAG, "Catalog load-more error displayed in pill");
 }
 
 static bool ensure_catalog_buf(void)
@@ -162,6 +198,20 @@ static void update_pill(void)
         lv_obj_add_flag(s_pill_box, LV_OBJ_FLAG_HIDDEN);
         return;
     }
+    if (s_load_more_error) {
+        lv_label_set_text(s_lbl_pill, ROCK_ICON_CROSS " Ошибка загрузки. Нажмите для повтора");
+        lv_obj_set_style_bg_color(s_pill_box, lv_color_hex(0x3B1D1D), 0);
+        lv_obj_set_style_border_color(s_pill_box, lv_color_hex(0x8B2E2E), 0);
+        lv_obj_set_style_border_width(s_pill_box, 1, 0);
+        lv_obj_set_style_text_color(s_lbl_pill, ROCK_COLOR_ERROR, 0);
+        lv_obj_remove_flag(s_pill_box, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    lv_obj_set_style_bg_color(s_pill_box, ROCK_COLOR_PANEL, 0);
+    lv_obj_set_style_border_width(s_pill_box, 0, 0);
+    lv_obj_set_style_text_color(s_lbl_pill, ROCK_COLOR_MUTED, 0);
+
     if (s_fetching_more) {
         lv_label_set_text(s_lbl_pill, "Подгрузка...");
         lv_obj_remove_flag(s_pill_box, LV_OBJ_FLAG_HIDDEN);
@@ -174,6 +224,24 @@ static void update_pill(void)
         }
     } else {
         lv_obj_add_flag(s_pill_box, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void on_pill_click(lv_event_t *e)
+{
+    (void)e;
+    if (s_load_more_error) {
+        ESP_LOGI(TAG, "Pill clicked in error state, retrying cursor='%s'", s_catalog_cursor);
+        s_load_more_error = false;
+        if (s_catalog_cursor[0] != '\0') {
+            s_fetching_more = true;
+            update_pill();
+            if (s_fetch_timer) lv_timer_delete(s_fetch_timer);
+            s_fetch_timer = lv_timer_create(on_fetch_timeout, 15000, NULL);
+            gui_enqueue_event(ROCK_UI_EVT_CATALOG_BROWSE, s_catalog_cursor, 0);
+        } else {
+            update_pill();
+        }
     }
 }
 
@@ -221,7 +289,7 @@ static void on_catalog_list_scrolled(lv_event_t *e)
                 lv_obj_scroll_to_y(s_list_catalog, new_y, LV_ANIM_OFF);
                 s_in_scroll_adjust = false;
             }
-        } else if (s_catalog_cursor[0] != '\0' && !s_fetching_more) {
+        } else if (s_catalog_cursor[0] != '\0' && !s_fetching_more && !s_load_more_error) {
             s_fetching_more = true;
             update_pill();
             if (s_fetch_timer) lv_timer_delete(s_fetch_timer);
@@ -287,10 +355,19 @@ void gui_catalog_build(lv_obj_t *parent)
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    lv_obj_t *loupe = lv_label_create(bar);
-    lv_label_set_text(loupe, ROCK_ICON_SEARCH);
-    lv_obj_set_style_text_font(loupe, &font_inter_18, 0);
-    lv_obj_set_style_text_color(loupe, ROCK_COLOR_MUTED, 0);
+    s_loupe = lv_label_create(bar);
+    lv_label_set_text(s_loupe, ROCK_ICON_SEARCH);
+    lv_obj_set_style_text_font(s_loupe, &font_inter_18, 0);
+    lv_obj_set_style_text_color(s_loupe, ROCK_COLOR_MUTED, 0);
+
+    s_search_spinner = lv_spinner_create(bar);
+    lv_obj_set_size(s_search_spinner, 20, 20);
+    lv_obj_set_style_arc_width(s_search_spinner, 3, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s_search_spinner, 3, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(s_search_spinner, true, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(s_search_spinner, ROCK_COLOR_ACCENT, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(s_search_spinner, ROCK_COLOR_PANEL_2, LV_PART_MAIN);
+    lv_obj_add_flag(s_search_spinner, LV_OBJ_FLAG_HIDDEN);
 
     s_ta_query = lv_textarea_create(bar);
     lv_obj_set_height(s_ta_query, 40);
@@ -384,6 +461,8 @@ void gui_catalog_build(lv_obj_t *parent)
     lv_obj_set_style_text_color(s_lbl_pill, ROCK_COLOR_MUTED, 0);
     lv_label_set_text(s_lbl_pill, "");
     lv_obj_add_flag(s_pill_box, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_pill_box, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_pill_box, on_pill_click, LV_EVENT_CLICKED, NULL);
 
     lv_obj_add_event_cb(s_list_catalog, on_catalog_list_scrolled, LV_EVENT_SCROLL, NULL);
 
@@ -437,16 +516,25 @@ void gui_catalog_hide(void)
 void gui_catalog_clear(void)
 {
     gui_catalog_reset_fetching();
+    gui_catalog_search_busy(false);
     s_catalog_count = 0;
     s_window_start = 0;
     s_catalog_cursor[0] = '\0';
     s_search_count = 0;
     s_search_active = false;
     s_catalog_saved_scroll_y = 0;
+    s_load_more_error = false;
+    s_catalog_rows_count = 0;
     memset(s_search_items, 0, sizeof(s_search_items));
     if (s_catalog) {
         free(s_catalog);
         s_catalog = NULL;
+    }
+    if (s_kb_catalog) {
+        lv_obj_add_flag(s_kb_catalog, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_list_catalog) {
+        lv_obj_remove_flag(s_list_catalog, LV_OBJ_FLAG_HIDDEN);
     }
     if (s_pill_box) {
         lv_obj_add_flag(s_pill_box, LV_OBJ_FLAG_HIDDEN);
@@ -465,7 +553,9 @@ void gui_catalog_clear(void)
 void gui_catalog_begin(const rock_gui_station_item_t *items, size_t count, const char *next_cursor)
 {
     gui_catalog_reset_fetching();
+    gui_catalog_search_busy(false);
     s_search_active = false;
+    s_load_more_error = false;
     if (s_btn_back) {
         lv_label_set_text(lv_obj_get_child(s_btn_back, 0), ROCK_ICON_ARROW_LEFT " Плеер");
     }
@@ -502,14 +592,16 @@ void gui_catalog_begin(const rock_gui_station_item_t *items, size_t count, const
     gui_overlay_hide();
     gui_switch_view(VIEW_CATALOG);
     if (s_catalog_count == 0) {
-        gui_overlay_set(GUI_OVERLAY_EMPTY, "Каталог пуст", NULL, true);
+        gui_overlay_set(GUI_OVERLAY_EMPTY, "Каталог пуст", "Список станций на сервере пуст", true);
     }
 }
 
 void gui_catalog_append(const rock_gui_station_item_t *items, size_t count, const char *next_cursor)
 {
     gui_catalog_reset_fetching();
+    gui_catalog_search_busy(false);
     s_search_active = false;
+    s_load_more_error = false;
     if (s_btn_back) {
         lv_label_set_text(lv_obj_get_child(s_btn_back, 0), ROCK_ICON_ARROW_LEFT " Плеер");
     }
@@ -574,6 +666,8 @@ void gui_catalog_set_search_results(const rock_gui_station_item_t *items, size_t
     }
     s_search_active = true;
     gui_catalog_reset_fetching();
+    gui_catalog_search_busy(false);
+    s_load_more_error = false;
 
     s_search_count = count > ROCK_GUI_MAX_STATIONS ? ROCK_GUI_MAX_STATIONS : count;
     for (size_t i = 0; i < s_search_count; i++) {
@@ -610,6 +704,8 @@ void gui_catalog_set_search_results(const rock_gui_station_item_t *items, size_t
 
 void gui_catalog_exit_search(void)
 {
+    gui_catalog_search_busy(false);
+    s_load_more_error = false;
     if (s_kb_catalog) lv_obj_add_flag(s_kb_catalog, LV_OBJ_FLAG_HIDDEN);
     if (s_list_catalog) lv_obj_remove_flag(s_list_catalog, LV_OBJ_FLAG_HIDDEN);
 
@@ -716,12 +812,30 @@ bool gui_catalog_trigger(const char *action)
         lv_obj_send_event(s_kb_catalog, LV_EVENT_READY, NULL);
         return true;
     }
+    if (!strcmp(action, "RETRY")) {
+        if (s_load_more_error) {
+            ESP_LOGI(TAG, "RETRY trigger in load-more error state, cursor='%s'", s_catalog_cursor);
+            s_load_more_error = false;
+            if (s_catalog_cursor[0] != '\0') {
+                s_fetching_more = true;
+                update_pill();
+                if (s_fetch_timer) lv_timer_delete(s_fetch_timer);
+                s_fetch_timer = lv_timer_create(on_fetch_timeout, 15000, NULL);
+                gui_enqueue_event(ROCK_UI_EVT_CATALOG_BROWSE, s_catalog_cursor, 0);
+            } else {
+                update_pill();
+            }
+            return true;
+        }
+        return false;
+    }
     if (!strcmp(action, "LOADMORE")) {
         if (s_search_active) {
             ESP_LOGI(TAG, "LOADMORE ignored in search mode");
             return true;
         }
         gui_switch_view(VIEW_CATALOG);
+        s_load_more_error = false;
         // If there are already accumulated stations beyond the window, advance window:
         if (s_window_start + ROCK_GUI_MAX_STATIONS < s_catalog_count) {
             s_window_start += ROCK_GUI_MAX_STATIONS;

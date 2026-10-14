@@ -118,6 +118,9 @@ impl Session {
             CatalogRequest::Search { query } => (Some(query.as_str()), None, "search"),
         };
         let Ok(path) = device_control::catalog::catalog_path(query, cursor) else {
+            if matches!(request, CatalogRequest::Search { .. }) {
+                platform::gui_catalog_search_busy(false);
+            }
             platform::gui_show_error(tr::CATALOG_QUERY_INVALID);
             return;
         };
@@ -125,11 +128,18 @@ impl Session {
             "catalog fetch: mode={mode} cursor='{}'",
             cursor_for_log(cursor.unwrap_or(""))
         ));
-        platform::gui_show_loading(if query.is_some() {
-            tr::SEARCH_LOADING
-        } else {
-            tr::CATALOG_LOADING
-        });
+        match &request {
+            CatalogRequest::Refresh => {
+                platform::gui_show_loading(tr::CATALOG_LOADING);
+            }
+            CatalogRequest::LoadMore { .. } => {
+                // Inline loading: no fullscreen overlay, pill is already active.
+            }
+            CatalogRequest::Search { .. } => {
+                // Inline busy indicator in search bar: no blocking overlay.
+                platform::gui_catalog_search_busy(true);
+            }
+        }
         // The fetch below is synchronous in the session tick (10 s HTTP
         // timeout, plus one 401 retry with a fresh-token round trip), so
         // handle_inbound cannot read heartbeat ACKs while it blocks. Send a
@@ -154,12 +164,18 @@ impl Session {
                 }
             }
         }
+        if matches!(request, CatalogRequest::Search { .. }) {
+            platform::gui_catalog_search_busy(false);
+        }
         match response {
             Ok((200, bytes)) if query.is_some() => {
                 match device_control::parse_search_page(&bytes) {
                     Ok(page) => {
                         cache_catalog_stations(&page.stations);
                         platform::gui_set_search_results(&page.stations);
+                        if page.stations.is_empty() {
+                            platform::gui_show_empty(tr::SEARCH_EMPTY);
+                        }
                     }
                     Err(_) => {
                         log_search_page_reject(&bytes);
@@ -183,6 +199,9 @@ impl Session {
                                     &page.stations,
                                     page.next_cursor.as_deref(),
                                 );
+                                if page.stations.is_empty() {
+                                    platform::gui_show_empty(tr::CATALOG_EMPTY);
+                                }
                             }
                         }
                         // Track the cursor of the last delivered page so
@@ -197,11 +216,25 @@ impl Session {
                     }
                     Err(_) => {
                         log_catalog_page_reject(&bytes);
-                        platform::gui_show_error(tr::CATALOG_BAD_FORMAT);
+                        match &request {
+                            CatalogRequest::LoadMore { .. } => {
+                                platform::gui_catalog_load_more_error();
+                            }
+                            _ => {
+                                platform::gui_show_error(tr::CATALOG_BAD_FORMAT);
+                            }
+                        }
                     }
                 }
             }
-            _ => platform::gui_show_error(tr::CATALOG_UNAVAILABLE),
+            _ => match &request {
+                CatalogRequest::LoadMore { .. } => {
+                    platform::gui_catalog_load_more_error();
+                }
+                _ => {
+                    platform::gui_show_error(tr::CATALOG_UNAVAILABLE);
+                }
+            },
         }
     }
 }
@@ -230,5 +263,41 @@ mod tests {
         assert_eq!(query, Some("rock"));
         assert_eq!(cursor, None);
         assert_eq!(mode, "search");
+    }
+
+    #[test]
+    fn load_more_request_parameters() {
+        let req = CatalogRequest::LoadMore {
+            cursor: "cursor-123".to_string(),
+        };
+        let (query, cursor, mode) = match &req {
+            CatalogRequest::Refresh => (None, None, "refresh"),
+            CatalogRequest::LoadMore { cursor } => (None, Some(cursor.as_str()), "load-more"),
+            CatalogRequest::Search { query } => (Some(query.as_str()), None, "search"),
+        };
+        assert_eq!(query, None);
+        assert_eq!(cursor, Some("cursor-123"));
+        assert_eq!(mode, "load-more");
+    }
+
+    #[test]
+    fn refresh_request_parameters() {
+        let req = CatalogRequest::Refresh;
+        let (query, cursor, mode) = match &req {
+            CatalogRequest::Refresh => (None, None, "refresh"),
+            CatalogRequest::LoadMore { cursor } => (None, Some(cursor.as_str()), "load-more"),
+            CatalogRequest::Search { query } => (Some(query.as_str()), None, "search"),
+        };
+        assert_eq!(query, None);
+        assert_eq!(cursor, None);
+        assert_eq!(mode, "refresh");
+    }
+
+    #[test]
+    fn presentation_empty_strings() {
+        assert_eq!(tr::CATALOG_EMPTY, "Каталог пуст");
+        assert_eq!(tr::SEARCH_EMPTY, "Ничего не найдено");
+        assert_eq!(tr::CATALOG_LOADING, "Загрузка каталога...");
+        assert_eq!(tr::SEARCH_LOADING, "Поиск станций...");
     }
 }

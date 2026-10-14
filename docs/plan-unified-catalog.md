@@ -465,9 +465,26 @@ FFI-имена сохранены: `rock_gui_set_browse_stations(items, count, n
 4. `rock_gui_mark_catalog_stale`: погасить строки, освободить PSRAM-список,
    сбросить счётчики/курсор/окно; сообщение о потере связи — как сейчас.
 
-**Приёмка.** Скриптовый прогон по serial: все переходы (первая загрузка /
-догрузка / поиск / пусто / ошибка / offline) не оставляют «застрявших» оверлеев;
-список виден во время догрузки и поиска.
+**Приёмка.** Выполнена 2026-10-14 на железе (ESP32-P4 v1.3, COM6, скрипт `tools/uc6_acceptance.py`):
+- **Шаг 1: Начальная загрузка (Refresh)**
+  - Показывается модальный оверлей «Загрузка каталога...» (`tr::CATALOG_LOADING`), после ответа загружаются первые 20 станций ([docs/uc6-refresh.png](file:///c:/repos/rock-esp32/docs/uc6-refresh.png)).
+- **Шаг 2: Догрузка страниц (LoadMore)**
+  - Полноэкранный оверлей **НЕ появляется** (список станций остаётся видимым и интерактивным). Внизу списка пилюля переключается в состояние «Подгрузка...», после чего список расширяется до 40 станций ([docs/uc6-loadmore.png](file:///c:/repos/rock-esp32/docs/uc6-loadmore.png)).
+- **Шаг 3: Поиск (Search)**
+  - Полноэкранный оверлей **НЕ появляется**. Иконка лупы в строке поиска сменяется инлайн-спиннером (`gui_catalog_search_busy(true)`), после ответа отображаются результаты ([docs/uc6-search.png](file:///c:/repos/rock-esp32/docs/uc6-search.png)).
+- **Шаг 4: Пустые состояния**
+  - При пустом поиске (0 результатов) отображается оверлей «Ничего не найдено» (`tr::SEARCH_EMPTY`, [docs/uc6-search-empty.png](file:///c:/repos/rock-esp32/docs/uc6-search-empty.png)).
+  - Нажатие «Назад» (`CMD:UI:BACK`) восстанавливает накопленный список каталога без повторных сетевых запросов ([docs/uc6-search-restored.png](file:///c:/repos/rock-esp32/docs/uc6-search-restored.png)).
+  - Пустой каталог (`Refresh` с 0 результатов) отображает «Каталог пуст» (`tr::CATALOG_EMPTY`) с кнопкой возврата в плеер.
+- **Шаг 5: Инлайн-ошибка и повтор догрузки (LoadMore error & retry)**
+  - При ошибке сети/таймауте во время `LoadMore` модальный оверлей **НЕ показывается**, список станций остаётся на экране.
+  - Нижняя пилюля переключается в инлайн-состояние ошибки с красной рамкой: «✕ Ошибка загрузки. Нажмите для повтора» (`s_load_more_error = true`, [docs/uc6-loadmore-error.png](file:///c:/repos/rock-esp32/docs/uc6-loadmore-error.png)).
+  - Курсор пагинации `catalog_last_cursor` сохраняется.
+  - Нажатие на пилюлю ошибки (или `CMD:UI:RETRY` / `CMD:UI:LOADMORE`) перезапускает запрос и успешно расширяет список до 60 станций ([docs/uc6-loadmore-recovered.png](file:///c:/repos/rock-esp32/docs/uc6-loadmore-recovered.png)).
+- **Шаг 6: Разрыв связи и сброс состояния (stale reset)**
+  - Вызов `rock_gui_mark_catalog_stale()` освобождает PSRAM-буфер `s_catalog`, обнуляет счётчики, сбрасывает курсор и флаг поиска, скрывает строки и переводит экран в оверлей `GUI_OVERLAY_OFFLINE` («Связь с сервером потеряна», [docs/uc6-offline.png](file:///c:/repos/rock-esp32/docs/uc6-offline.png)).
+  - Нажатие «Назад» возвращает в `VIEW_NOW_PLAYING` ([docs/uc6-offline-recovered.png](file:///c:/repos/rock-esp32/docs/uc6-offline-recovered.png)).
+  - Метрики памяти стабильны: internal heap ~164 КиБ free, total free heap ~30.58 МБ.
 
 ---
 

@@ -60,6 +60,8 @@ unsafe extern "C" {
         next_cursor: *const c_char,
     );
     pub(crate) fn rock_gui_set_search_results(items: *const RockGuiStationItem, count: usize);
+    pub(crate) fn rock_gui_catalog_load_more_error();
+    pub(crate) fn rock_gui_catalog_search_busy(busy: bool);
     pub(crate) fn rock_gui_show_loading(message: *const c_char);
     pub(crate) fn rock_gui_show_empty(message: *const c_char);
     #[allow(dead_code)]

@@ -421,7 +421,15 @@ void gui_overlay_set(gui_overlay_kind_t kind, const char *title, const char *des
         }
     }
     if (s_overlay_title) lv_label_set_text(s_overlay_title, title ? title : k->default_title);
-    if (s_overlay_desc) lv_label_set_text(s_overlay_desc, desc ? desc : k->default_desc);
+    if (s_overlay_desc) {
+        if (desc) {
+            lv_label_set_text(s_overlay_desc, desc);
+        } else if (title && !strcmp(title, "Каталог пуст")) {
+            lv_label_set_text(s_overlay_desc, "Список станций на сервере пуст");
+        } else {
+            lv_label_set_text(s_overlay_desc, k->default_desc);
+        }
+    }
     if (s_overlay_btn1) {
         if (show_buttons) lv_obj_remove_flag(lv_obj_get_parent(s_overlay_btn1), LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(lv_obj_get_parent(s_overlay_btn1), LV_OBJ_FLAG_HIDDEN);

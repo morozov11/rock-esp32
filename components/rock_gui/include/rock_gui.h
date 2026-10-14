@@ -117,6 +117,19 @@ void rock_gui_set_browse_stations(const rock_gui_station_item_t *items, size_t c
 void rock_gui_set_search_results(const rock_gui_station_item_t *items, size_t count);
 
 /**
+ * Inline load-more error notification (UC-6).
+ * Swaps bottom pill to error retry state without hiding the station list.
+ */
+void rock_gui_catalog_load_more_error(void);
+
+/**
+ * Toggle search busy state indicator (UC-6).
+ * Shows inline spinner in search bar without blocking the station list.
+ */
+void rock_gui_catalog_search_busy(bool busy);
+void rock_gui_catalog_set_busy(bool busy);
+
+/**
  * Show state overlay screens (loading, empty, offline, error).
  */
 void rock_gui_show_loading(const char *message);
