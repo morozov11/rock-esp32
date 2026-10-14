@@ -62,8 +62,8 @@ typedef struct {
 
 /**
  * Initializes and displays the native RockCast radio GUI on the ST7701 display.
- * Creates the Shell (Header, Viewport, Ticker), initializes Now-Playing,
- * Browse, and Search screens, and starts the real spectrum FFT analysis task.
+ * Creates the Shell (Header, Viewport, Ticker), initializes the Now-Playing
+ * and Catalog screens, and starts the real spectrum FFT analysis task.
  */
 int rock_gui_start(void);
 void rock_gui_present(const char *station_id, const char *title, const char *subtitle);
@@ -88,13 +88,16 @@ void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id
 void rock_gui_update_connectivity(int rssi, bool wifi_connected, bool server_connected);
 
 /**
- * Set stations list for the Browse screen (replaces existing page with up to 20 stations).
+ * Set stations list for the Catalog screen — catalog page (replaces the
+ * visible list with up to 20 stations). next_cursor is reserved for the
+ * upcoming load-more support and currently ignored.
  */
 void rock_gui_set_browse_stations(const rock_gui_station_item_t *items, size_t count,
                                   const char *next_cursor);
 
 /**
- * Set search results list (transitions to list display with search results).
+ * Set stations list for the Catalog screen — search results (replaces the
+ * visible list, hides the keyboard).
  */
 void rock_gui_set_search_results(const rock_gui_station_item_t *items, size_t count);
 
@@ -133,7 +136,7 @@ bool rock_gui_is_active(void);
 
 /**
  * Switch active UI view programmatically:
- * 0 = Now Playing, 1 = Browse, 2 = Search
+ * 0 = Now Playing, 1 = Catalog
  */
 void rock_gui_switch_view(int view_index);
 
@@ -147,7 +150,8 @@ void rock_gui_trigger(const char *action);
 
 /**
  * Log one diagnostics line with the GUI's internal view/catalog state
- * (format parsed by tools/rock_hwtest.py — keep verbatim).
+ * ("ui view=NP|CATALOG rows=%u stale=%d playback=%d volume=%u").
+ * tools/rock_hwtest.py greps the playback= field — keep it verbatim.
  */
 void rock_gui_log_debug_state(void);
 

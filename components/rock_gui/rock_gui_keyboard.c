@@ -1,5 +1,5 @@
 // Virtual keyboard, phase-4 split out of rock_gui.c: RU/EN/123 keymaps and
-// the language-switch input callback shared by the search view.
+// the language-switch input callback shared by the catalog view.
 
 #include "rock_gui_internal.h"
 

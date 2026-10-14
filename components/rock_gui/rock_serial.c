@@ -78,11 +78,12 @@ static void serial_cmd_task(void *arg)
                     } else if (strcmp(cmd, "CMD:VIEW:NP") == 0) {
                         rock_gui_switch_view(0);
                         rock_gui_dump_screenshot();
-                    } else if (strcmp(cmd, "CMD:VIEW:BROWSE") == 0) {
+                    } else if (strcmp(cmd, "CMD:VIEW:CATALOG") == 0 ||
+                               strcmp(cmd, "CMD:VIEW:BROWSE") == 0 ||
+                               strcmp(cmd, "CMD:VIEW:SEARCH") == 0) {
+                        // BROWSE/SEARCH stay as aliases of CATALOG (UC-3 merged
+                        // the two screens) so existing tool runs keep working.
                         rock_gui_switch_view(1);
-                        rock_gui_dump_screenshot();
-                    } else if (strcmp(cmd, "CMD:VIEW:SEARCH") == 0) {
-                        rock_gui_switch_view(2);
                         rock_gui_dump_screenshot();
                     }
                     cmd_idx = 0;

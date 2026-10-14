@@ -74,8 +74,7 @@ typedef struct {
 
 static const rock_gui_view_reg_t s_view_registry[] = {
     { VIEW_NOW_PLAYING, gui_now_playing_build, gui_now_playing_show, gui_now_playing_hide, "• Сейчас играет" },
-    { VIEW_BROWSE, gui_browse_build, gui_browse_show, gui_browse_hide, "• Каталог станций" },
-    { VIEW_SEARCH, gui_search_build, gui_search_show, gui_search_hide, "• Поиск станций" },
+    { VIEW_CATALOG, gui_catalog_build, gui_catalog_show, gui_catalog_hide, "• Каталог станций" },
 };
 
 // ------------------------------------------------- state & shell accessors ---
@@ -329,9 +328,9 @@ int rock_gui_start(void)
     // Register 30 FPS update timer for FFT visualizer and ticker clock
     lv_timer_create(spectrum_timer_cb, 34, NULL);
 
-    // No built-in catalog: browse rows stay hidden until the server page
-    // arrives (ROCK_UI_EVT_CATALOG_BROWSE -> rock_gui_set_browse_stations).
-    gui_browse_hide_rows();
+    // No built-in catalog: rows stay hidden until the server page arrives
+    // (ROCK_UI_EVT_CATALOG_BROWSE -> rock_gui_set_browse_stations).
+    gui_catalog_hide_rows();
 
     s_gui_active = true;
 
@@ -449,7 +448,7 @@ void rock_gui_set_browse_stations(const rock_gui_station_item_t *items, size_t c
     (void)next_cursor;
     if (!lvgl_port_lock(1000)) return;
     s_catalog_stale = false;
-    gui_browse_set_stations(items, count);
+    gui_catalog_set_rows(items, count, false);
     lvgl_port_unlock();
 }
 
@@ -457,7 +456,7 @@ void rock_gui_set_search_results(const rock_gui_station_item_t *items, size_t co
 {
     if (!lvgl_port_lock(1000)) return;
     s_catalog_stale = false;
-    gui_search_set_results(items, count);
+    gui_catalog_set_rows(items, count, true);
     lvgl_port_unlock();
 }
 
@@ -538,9 +537,8 @@ void rock_gui_mark_catalog_stale(void)
     if (!lvgl_port_lock(500)) return;
 
     s_catalog_stale = true;
-    gui_browse_hide_rows();
-    gui_search_hide_rows();
-    if (gui_active_view() == VIEW_BROWSE || gui_active_view() == VIEW_SEARCH) {
+    gui_catalog_hide_rows();
+    if (gui_active_view() == VIEW_CATALOG) {
         gui_overlay_set(GUI_OVERLAY_OFFLINE, "Связь с сервером потеряна", NULL, true);
     }
 
@@ -604,7 +602,7 @@ void rock_gui_trigger(const char *action)
     if (!action || !lvgl_port_lock(500)) return;
     if (gui_now_playing_trigger(action)) {
     } else if (gui_overlay_trigger(action)) {
-    } else if (gui_search_trigger(action)) {
+    } else if (gui_catalog_trigger(action)) {
     } else if (gui_cast_trigger(action)) {
     } else if (!strncmp(action, "STATIONID:", 10)) {
         const char *station_id = action + 10;
@@ -616,7 +614,7 @@ void rock_gui_trigger(const char *action)
     }
     else if (!strncmp(action, "STATION:", 8)) {
         int row = atoi(action + 8);
-        station_row_ui_t *rows = gui_active_view() == VIEW_SEARCH ? gui_search_rows() : gui_browse_rows();
+        station_row_ui_t *rows = gui_catalog_rows();
         if (row >= 0 && row < ROCK_GUI_MAX_STATIONS && !gui_catalog_stale() &&
             !lv_obj_has_flag(rows[row].row, LV_OBJ_FLAG_HIDDEN)) {
             ESP_LOGI(TAG, "Serial trigger station row=%d id='%s'", row, rows[row].station_id);
@@ -632,8 +630,8 @@ void rock_gui_trigger(const char *action)
 
 void rock_gui_log_debug_state(void)
 {
-    ESP_LOGI(TAG, "ui view=%d browse=%u search=%u stale=%d playback=%d volume=%u",
-             (int)s_active_view, (unsigned)gui_browse_rows_count(),
-             (unsigned)gui_search_rows_count(), (int)s_catalog_stale,
+    ESP_LOGI(TAG, "ui view=%s rows=%u stale=%d playback=%d volume=%u",
+             s_active_view == VIEW_CATALOG ? "CATALOG" : "NP",
+             (unsigned)gui_catalog_rows_count(), (int)s_catalog_stale,
              (int)s_playback_status, (unsigned)s_volume_level);
 }

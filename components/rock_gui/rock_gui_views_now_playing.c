@@ -42,8 +42,7 @@ static float s_peak_level[SPECTRUM_BANDS_COUNT];
 
 // Transport controls (created on the shell screen, owned here)
 static lv_obj_t *s_cont_transport = NULL;
-static lv_obj_t *s_btn_browse = NULL;
-static lv_obj_t *s_btn_search = NULL;
+static lv_obj_t *s_btn_catalog = NULL;
 static lv_obj_t *s_btn_play_pause = NULL;
 static lv_obj_t *s_lbl_play_pause = NULL;
 static lv_obj_t *s_btn_stop = NULL;
@@ -53,17 +52,11 @@ static lv_obj_t *s_btn_vol_up = NULL;
 static lv_obj_t *s_btn_cast = NULL;
 static lv_obj_t *s_lbl_cast = NULL;
 
-static void on_nav_browse_click(lv_event_t *e)
+static void on_nav_catalog_click(lv_event_t *e)
 {
     (void)e;
-    gui_switch_view(VIEW_BROWSE);
+    gui_switch_view(VIEW_CATALOG);
     gui_enqueue_event(ROCK_UI_EVT_CATALOG_BROWSE, "", 0);
-}
-
-static void on_nav_search_click(lv_event_t *e)
-{
-    (void)e;
-    gui_switch_view(VIEW_SEARCH);
 }
 
 static void on_play_pause_click(lv_event_t *e)
@@ -298,19 +291,13 @@ void gui_now_playing_build(lv_obj_t *parent)
     lv_obj_set_flex_flow(s_cont_transport, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_cont_transport, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    // Nav: Browse (pill)
-    s_btn_browse = gui_make_button(s_cont_transport, 110, 48, "Каталог",
-                                   &font_inter_14, on_nav_browse_click, NULL);
-    lv_obj_set_style_radius(s_btn_browse, 24, 0);
-    lv_obj_set_style_border_color(s_btn_browse, ROCK_COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(s_btn_browse, 1, 0);
-
-    // Nav: Search (pill)
-    s_btn_search = gui_make_button(s_cont_transport, 104, 48, "Поиск",
-                                   &font_inter_14, on_nav_search_click, NULL);
-    lv_obj_set_style_radius(s_btn_search, 24, 0);
-    lv_obj_set_style_border_color(s_btn_search, ROCK_COLOR_BORDER, 0);
-    lv_obj_set_style_border_width(s_btn_search, 1, 0);
+    // Nav: Catalog (pill) — the single entry to the merged Catalog screen
+    // (UC-3: former Browse + Search buttons collapsed into one).
+    s_btn_catalog = gui_make_button(s_cont_transport, 110, 48, "Каталог",
+                                    &font_inter_14, on_nav_catalog_click, NULL);
+    lv_obj_set_style_radius(s_btn_catalog, 24, 0);
+    lv_obj_set_style_border_color(s_btn_catalog, ROCK_COLOR_BORDER, 0);
+    lv_obj_set_style_border_width(s_btn_catalog, 1, 0);
 
     // Play/Pause dominant circle (64x64; restyled per state in update_transport)
     s_btn_play_pause = gui_make_button(s_cont_transport, 64, 64, ROCK_ICON_PLAY,
@@ -543,7 +530,7 @@ const char *gui_now_playing_station_text(void)
 bool gui_now_playing_trigger(const char *action)
 {
     if (!strcmp(action, "CATALOG")) {
-        if (s_btn_browse) lv_obj_send_event(s_btn_browse, LV_EVENT_CLICKED, NULL);
+        if (s_btn_catalog) lv_obj_send_event(s_btn_catalog, LV_EVENT_CLICKED, NULL);
         return true;
     }
     if (!strcmp(action, "PLAYPAUSE")) {

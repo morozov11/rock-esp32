@@ -19,8 +19,7 @@
 
 typedef enum {
     VIEW_NOW_PLAYING = 0,
-    VIEW_BROWSE,
-    VIEW_SEARCH
+    VIEW_CATALOG
 } rock_gui_view_mode_t;
 
 // ---- shell & state (rock_gui.c) ----
@@ -44,7 +43,7 @@ lv_obj_t *gui_ticker_label(void);
 lv_obj_t *gui_make_button(lv_obj_t *parent, int32_t w, int32_t h, const char *label,
                           const lv_font_t *font, lv_event_cb_t cb, void *user_data);
 
-// Shared "back to Now Playing" header button callback (browse + search).
+// Shared "back to Now Playing" header button callback (catalog view).
 void gui_on_back_to_np_click(lv_event_t *e);
 
 // Station monogram: deterministic fill from rock_ui_station_color() plus the
@@ -107,27 +106,23 @@ void gui_now_playing_present(const char *station_id, const char *title, const ch
 const char *gui_now_playing_station_text(void);
 bool gui_now_playing_trigger(const char *action);   // CATALOG, PLAYPAUSE, STOP, VOL+, VOL-
 
-// ---- browse view (rock_gui_views_browse.c) ----
+// ---- catalog view (rock_gui_views_catalog.c) ----
+// The single station-list screen (UC-3 merge of the former Browse and Search
+// views): search bar + genre chips + one row list; the keyboard overlays the
+// list while editing.
 
-void gui_browse_build(lv_obj_t *parent);
-void gui_browse_show(void);
-void gui_browse_hide(void);
-void gui_browse_set_stations(const rock_gui_station_item_t *items, size_t count);
-void gui_browse_hide_rows(void);
-station_row_ui_t *gui_browse_rows(void);
-size_t gui_browse_rows_count(void);
-
-// ---- search view (rock_gui_views_search.c) ----
-
-void gui_search_build(lv_obj_t *parent);
-void gui_search_show(void);
-void gui_search_hide(void);
-void gui_search_set_results(const rock_gui_station_item_t *items, size_t count);
-void gui_search_hide_rows(void);
-void gui_search_begin_edit(void);                  // show keyboard, hide results
-station_row_ui_t *gui_search_rows(void);
-size_t gui_search_rows_count(void);
-bool gui_search_trigger(const char *action);       // SEARCH, SEARCH:<query>
+void gui_catalog_build(lv_obj_t *parent);
+void gui_catalog_show(void);
+void gui_catalog_hide(void);
+// Fill the rows: catalog pages and search results share the list.
+// search_results=false — catalog page (counter update, "Каталог пуст" on 0);
+// search_results=true — search results (keyboard down, list up, row logging).
+void gui_catalog_set_rows(const rock_gui_station_item_t *items, size_t count, bool search_results);
+void gui_catalog_hide_rows(void);
+void gui_catalog_begin_edit(void);                  // show keyboard, hide list
+station_row_ui_t *gui_catalog_rows(void);
+size_t gui_catalog_rows_count(void);
+bool gui_catalog_trigger(const char *action);       // SEARCH, SEARCH:<query>
 
 // ---- virtual keyboard (rock_gui_keyboard.c) ----
 

@@ -282,7 +282,7 @@ static void on_overlay_back_click(lv_event_t *e)
 {
     (void)e;
     rock_gui_dismiss_state();
-    if (gui_active_view() == VIEW_SEARCH) gui_search_begin_edit();
+    if (gui_active_view() == VIEW_CATALOG) gui_catalog_begin_edit();
     else gui_switch_view(VIEW_NOW_PLAYING);
 }
 
