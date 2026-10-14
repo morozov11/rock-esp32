@@ -164,7 +164,7 @@ impl DeviceStationDto {
 /// "black" search returned stations with 11 and 22 tags and the device showed
 /// "Некорректный формат поиска"). Extra or over-long tags are dropped like
 /// unknown JSON fields; everything else stays strictly validated.
-fn tolerate_overflow_tags(stations: &mut [DeviceStationDto]) {
+pub(crate) fn tolerate_overflow_tags(stations: &mut [DeviceStationDto]) {
     for station in stations.iter_mut() {
         station.tags.truncate(MAX_STATION_TAGS);
         station.tags.retain(|tag| valid_text(tag, MAX_TAG_LEN));

@@ -174,7 +174,7 @@ static void on_catalog_list_scrolled(lv_event_t *e)
     int32_t scroll_y = lv_obj_get_scroll_y(s_list_catalog);
 
     // Near bottom edge of current window:
-    if (bottom <= 20) {
+    if (bottom <= ROCK_GUI_CATALOG_SCROLL_THRESHOLD) {
         if (s_window_start + ROCK_GUI_MAX_STATIONS < s_catalog_count) {
             size_t step = 10;
             if (s_window_start + ROCK_GUI_MAX_STATIONS + step > s_catalog_count) {
@@ -184,7 +184,7 @@ static void on_catalog_list_scrolled(lv_event_t *e)
                 s_in_scroll_adjust = true;
                 s_window_start += step;
                 update_window_rows();
-                int32_t new_y = scroll_y - (int32_t)(step * 60);
+                int32_t new_y = scroll_y - (int32_t)(step * ROCK_GUI_CATALOG_ROW_STRIDE_Y);
                 if (new_y < 0) new_y = 0;
                 lv_obj_scroll_to_y(s_list_catalog, new_y, LV_ANIM_OFF);
                 s_in_scroll_adjust = false;
@@ -197,7 +197,7 @@ static void on_catalog_list_scrolled(lv_event_t *e)
             ESP_LOGI(TAG, "Scrolled to end, requesting browse with cursor='%s'", s_catalog_cursor);
             gui_enqueue_event(ROCK_UI_EVT_CATALOG_BROWSE, s_catalog_cursor, 0);
         }
-    } else if (top <= 20) {
+    } else if (top <= ROCK_GUI_CATALOG_SCROLL_THRESHOLD) {
         // Near top edge of current window:
         if (s_window_start > 0) {
             size_t step = 10;
@@ -208,7 +208,7 @@ static void on_catalog_list_scrolled(lv_event_t *e)
                 s_in_scroll_adjust = true;
                 s_window_start -= step;
                 update_window_rows();
-                int32_t new_y = scroll_y + (int32_t)(step * 60);
+                int32_t new_y = scroll_y + (int32_t)(step * ROCK_GUI_CATALOG_ROW_STRIDE_Y);
                 lv_obj_scroll_to_y(s_list_catalog, new_y, LV_ANIM_OFF);
                 s_in_scroll_adjust = false;
             }
@@ -595,8 +595,11 @@ bool gui_catalog_trigger(const char *action)
                      (unsigned)s_window_start, (unsigned)s_catalog_count);
             return true;
         }
-        // Otherwise, if we have a cursor and not already fetching:
-        if (s_catalog_cursor[0] != '\0' && !s_fetching_more) {
+        if (s_fetching_more) {
+            ESP_LOGI(TAG, "LOADMORE ignored: fetch already in progress");
+            return true;
+        }
+        if (s_catalog_cursor[0] != '\0') {
             s_fetching_more = true;
             update_pill();
             if (s_fetch_timer) lv_timer_delete(s_fetch_timer);

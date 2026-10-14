@@ -41,7 +41,8 @@ pub(crate) fn cache_station_name(station_id: &str, station_name: &str) {
 /// violated the RS-2 field contract before the error overlay covers it.
 fn log_search_page_reject(bytes: &[u8]) {
     match serde_json::from_slice::<device_control::catalog::DeviceSearchPageDto>(bytes) {
-        Ok(page) => {
+        Ok(mut page) => {
+            device_control::catalog::tolerate_overflow_tags(&mut page.stations);
             let mut bad = 0;
             for (i, s) in page.stations.iter().enumerate() {
                 if !s.is_valid() {
@@ -66,7 +67,8 @@ fn log_search_page_reject(bytes: &[u8]) {
 
 fn log_catalog_page_reject(bytes: &[u8]) {
     match serde_json::from_slice::<device_control::catalog::DeviceCatalogPageDto>(bytes) {
-        Ok(page) => {
+        Ok(mut page) => {
+            device_control::catalog::tolerate_overflow_tags(&mut page.stations);
             let mut bad = 0;
             for (i, s) in page.stations.iter().enumerate() {
                 if !s.is_valid() {

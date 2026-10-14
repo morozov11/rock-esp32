@@ -107,9 +107,8 @@ const char *gui_now_playing_station_text(void);
 bool gui_now_playing_trigger(const char *action);   // CATALOG, PLAYPAUSE, STOP, VOL+, VOL-
 
 // ---- catalog view (rock_gui_views_catalog.c) ----
-// The single station-list screen (UC-3 merge of the former Browse and Search
-// views): search bar + genre chips + one row list; the keyboard overlays the
-// list while editing.
+#define ROCK_GUI_CATALOG_ROW_STRIDE_Y     (ROCK_LIST_ROW_HEIGHT + 4) // 56px row + 4px flex gap
+#define ROCK_GUI_CATALOG_SCROLL_THRESHOLD 20                         // px from edge to trigger window slide / fetch
 
 void gui_catalog_build(lv_obj_t *parent);
 void gui_catalog_show(void);
