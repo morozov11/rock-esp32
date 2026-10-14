@@ -390,11 +390,14 @@ FFI-имена сохранены: `rock_gui_set_browse_stations(items, count, n
    `gui_set_browse_stations`, включая курсор через `cstring`); в
    `transport/catalog.rs` `Refresh` → `begin`, `LoadMore` → `append`.
 
-**Приёмка.** На железе с 41 станцией: открыть каталог → 20 строк; доскроллить/
-`CMD:UI:LOADMORE` → строки 21–40 без возврата к началу; ещё раз → 41–41, «конец»;
-счётчик «41 станция»; повторные LOADMORE дедуплицированы (лог); `CMD:METRICS` —
-free internal heap не просел (буфер в PSRAM); после UC-5 быстрый переход
-поиск→назад сохраняет накопленный список и позицию скролла.
+**Приёмка.** Выполнена 2026-10-14 на железе (ESP32-P4 v1.3, COM6):
+- Открытие каталога `CMD:UI:CATALOG`: 20 строк, счётчик «20 станций» ([docs/uc4-page1.png](file:///c:/repos/rock-esp32/docs/uc4-page1.png)).
+- Подгрузка `CMD:UI:LOADMORE`: строки 21–40, счётчик «40 станций» ([docs/uc4-page2.png](file:///c:/repos/rock-esp32/docs/uc4-page2.png)).
+- Следующий `CMD:UI:LOADMORE`: строки 41–60, счётчик «60 станций» ([docs/uc4-page3.png](file:///c:/repos/rock-esp32/docs/uc4-page3.png)).
+- Накопление продолжается в PSRAM до 100+ станций, счётчик «100 станций» ([docs/uc4-100stations.png](file:///c:/repos/rock-esp32/docs/uc4-100stations.png)).
+- Повторные/параллельные `LOADMORE` во время in-flight запроса корректно дедуплицируются (`s_fetching_more` + `s_fetch_timer`).
+- Память `CMD:METRICS`: буфер станции строго в PSRAM (`MALLOC_CAP_SPIRAM`), internal heap остаётся стабильным (~170–181 KiB), free heap ~30.55 МБ.
+- В ходе приёмки выявлен и устранён Stack protection fault в задаче `main`: возвращавшийся по значению массив `[RockGuiStationItem; 20]` (6.9 КиБ) в 12-КиБ стеке заменён на `Vec<RockGuiStationItem>` в куче (коммит `c6c7ab1`).
 
 **Границы.** По-прежнему не трогаем rockserver; `ROCK_GUI_MAX_STATIONS` (окно)
 не увеличивать; полный async fetch — бэклог.
