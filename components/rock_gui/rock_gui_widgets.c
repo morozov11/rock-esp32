@@ -282,8 +282,15 @@ static void on_overlay_back_click(lv_event_t *e)
 {
     (void)e;
     rock_gui_dismiss_state();
-    if (gui_active_view() == VIEW_CATALOG) gui_catalog_begin_edit();
-    else gui_switch_view(VIEW_NOW_PLAYING);
+    if (gui_active_view() == VIEW_CATALOG) {
+        if (gui_catalog_is_search_active()) {
+            gui_catalog_exit_search();
+        } else {
+            gui_switch_view(VIEW_NOW_PLAYING);
+        }
+    } else {
+        gui_switch_view(VIEW_NOW_PLAYING);
+    }
 }
 
 void gui_overlay_build(lv_obj_t *parent)
@@ -431,6 +438,7 @@ void gui_overlay_hide(void)
 
 bool gui_overlay_trigger(const char *action)
 {
+    if (!s_overlay || lv_obj_has_flag(s_overlay, LV_OBJ_FLAG_HIDDEN)) return false;
     if (!strcmp(action, "RETRY")) {
         if (s_overlay_btn1) lv_obj_send_event(s_overlay_btn1, LV_EVENT_CLICKED, NULL);
         return true;

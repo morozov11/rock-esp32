@@ -470,7 +470,7 @@ void rock_gui_set_search_results(const rock_gui_station_item_t *items, size_t co
 {
     if (!lvgl_port_lock(1000)) return;
     s_catalog_stale = false;
-    gui_catalog_set_rows(items, count, true);
+    gui_catalog_set_search_results(items, count);
     lvgl_port_unlock();
 }
 

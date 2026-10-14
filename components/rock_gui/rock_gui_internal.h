@@ -121,11 +121,14 @@ void gui_catalog_reset_fetching(void);
 // search_results=false — catalog page (counter update, "Каталог пуст" on 0);
 // search_results=true — search results (keyboard down, list up, row logging).
 void gui_catalog_set_rows(const rock_gui_station_item_t *items, size_t count, bool search_results);
+void gui_catalog_set_search_results(const rock_gui_station_item_t *items, size_t count);
+void gui_catalog_exit_search(void);
+bool gui_catalog_is_search_active(void);
 void gui_catalog_hide_rows(void);
 void gui_catalog_begin_edit(void);                  // show keyboard, hide list
 station_row_ui_t *gui_catalog_rows(void);
 size_t gui_catalog_rows_count(void);
-bool gui_catalog_trigger(const char *action);       // SEARCH, SEARCH:<query>, LOADMORE
+bool gui_catalog_trigger(const char *action);       // SEARCH, SEARCH:<query>, LOADMORE, CANCEL, SEARCH_CLEAR, BACK
 
 // ---- virtual keyboard (rock_gui_keyboard.c) ----
 

@@ -160,9 +160,6 @@ impl Session {
                     Ok(page) => {
                         cache_catalog_stations(&page.stations);
                         platform::gui_set_search_results(&page.stations);
-                        if page.stations.is_empty() {
-                            platform::gui_show_empty(tr::SEARCH_EMPTY);
-                        }
                     }
                     Err(_) => {
                         log_search_page_reject(&bytes);
@@ -218,5 +215,20 @@ mod tests {
         cache_station_name("test-st-1", "My Test Radio");
         assert_eq!(resolve_station_name("test-st-1"), "My Test Radio");
         assert_eq!(resolve_station_name("unknown-station"), "unknown-station");
+    }
+
+    #[test]
+    fn search_request_parameters_and_no_cursor() {
+        let req = CatalogRequest::Search {
+            query: "rock".to_string(),
+        };
+        let (query, cursor, mode) = match &req {
+            CatalogRequest::Refresh => (None, None, "refresh"),
+            CatalogRequest::LoadMore { cursor } => (None, Some(cursor.as_str()), "load-more"),
+            CatalogRequest::Search { query } => (Some(query.as_str()), None, "search"),
+        };
+        assert_eq!(query, Some("rock"));
+        assert_eq!(cursor, None);
+        assert_eq!(mode, "search");
     }
 }
