@@ -759,16 +759,37 @@ fn catalog_limits_and_utf8_query_are_enforced() {
         .is_err()
     );
     assert!(parse_catalog_page(b"{").is_err());
-    assert!(catalog_path(None).unwrap().ends_with("limit=20"));
+    assert!(catalog_path(None, None).unwrap().ends_with("limit=20"));
     assert!(
-        catalog_path(Some(" рок & jazz? "))
+        catalog_path(Some(" рок & jazz? "), None)
             .unwrap()
             .ends_with("q=%D1%80%D0%BE%D0%BA%20%26%20jazz%3F")
     );
-    assert!(catalog_path(Some(&"я".repeat(128))).is_ok());
-    assert!(catalog_path(Some(&"я".repeat(129))).is_err());
-    assert!(catalog_path(Some(" \t")).is_err());
-    assert!(catalog_path(Some("a\nb")).is_err());
+    assert!(catalog_path(Some(&"я".repeat(128)), None).is_ok());
+    assert!(catalog_path(Some(&"я".repeat(129)), None).is_err());
+    assert!(catalog_path(Some(" \t"), None).is_err());
+    assert!(catalog_path(Some("a\nb"), None).is_err());
+    // Cursor pagination (UC-1): browse-only, opaque, percent-encoded.
+    assert_eq!(
+        catalog_path(None, Some("station-news-001")).unwrap(),
+        "/api/v1/device-control/catalog/stations?limit=20&cursor=station-news-001"
+    );
+    assert_eq!(
+        catalog_path(None, Some("курсор/1")).unwrap(),
+        "/api/v1/device-control/catalog/stations?limit=20&cursor=%D0%BA%D1%83%D1%80%D1%81%D0%BE%D1%80%2F1"
+    );
+    assert_eq!(
+        catalog_path(None, Some("")).unwrap(),
+        catalog_path(None, None).unwrap()
+    );
+    assert!(!catalog_path(None, None).unwrap().contains("cursor="));
+    assert!(catalog_path(None, Some(&"x".repeat(512))).is_ok());
+    assert!(catalog_path(None, Some(&"x".repeat(513))).is_err());
+    assert!(catalog_path(None, Some("a\nb")).is_err());
+    assert_eq!(
+        catalog_path(Some("рок"), Some("x")),
+        Err(CatalogError::Malformed)
+    );
     assert_eq!(
         station_stream_path("джаз/24").unwrap(),
         "/api/v1/stations/%D0%B4%D0%B6%D0%B0%D0%B7%2F24/stream"

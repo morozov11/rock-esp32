@@ -8,10 +8,29 @@ pub const MAX_TAG_LEN: usize = 64;
 pub const MAX_SEARCH_QUERY_LEN: usize = 128;
 pub const MAX_CATALOG_BYTES: usize = 65_536;
 
+pub const MAX_CATALOG_CURSOR_LEN: usize = 512;
+
+fn percent_encode_into(path: &mut String, value: &str) {
+    use std::fmt::Write;
+    for b in value.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+            path.push(b as char);
+        } else {
+            write!(path, "%{b:02X}").unwrap();
+        }
+    }
+}
+
 /// Percent-encode UTF-8 query values, never treating user text as URL syntax.
-pub fn catalog_path(query: Option<&str>) -> Result<String, CatalogError> {
+///
+/// The cursor is an opaque keyset token from the server's `next_cursor`
+/// (browse only; search is never paginated by cursor).
+pub fn catalog_path(
+    query: Option<&str>,
+    cursor: Option<&str>,
+) -> Result<String, CatalogError> {
     match query {
-        None => Ok("/api/v1/device-control/catalog/stations?limit=20".into()),
+        Some(_) if cursor.is_some() => return Err(CatalogError::Malformed),
         Some(q) => {
             let q = q.trim();
             if q.is_empty()
@@ -21,13 +40,17 @@ pub fn catalog_path(query: Option<&str>) -> Result<String, CatalogError> {
                 return Err(CatalogError::Malformed);
             }
             let mut path = String::from("/api/v1/device-control/catalog/search?limit=20&q=");
-            use std::fmt::Write;
-            for b in q.bytes() {
-                if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
-                    path.push(b as char);
-                } else {
-                    write!(path, "%{b:02X}").unwrap();
+            percent_encode_into(&mut path, q);
+            Ok(path)
+        }
+        None => {
+            let mut path = String::from("/api/v1/device-control/catalog/stations?limit=20");
+            if let Some(c) = cursor.filter(|c| !c.is_empty()) {
+                if c.len() > MAX_CATALOG_CURSOR_LEN || c.chars().any(char::is_control) {
+                    return Err(CatalogError::Malformed);
                 }
+                path.push_str("&cursor=");
+                percent_encode_into(&mut path, c);
             }
             Ok(path)
         }

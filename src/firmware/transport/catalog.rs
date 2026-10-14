@@ -88,7 +88,7 @@ fn log_catalog_page_reject(bytes: &[u8]) {
 }
 
 pub(super) fn load_catalog(token: &mut String, query: Option<&str>) {
-    let Ok(path) = device_control::catalog::catalog_path(query) else {
+    let Ok(path) = device_control::catalog::catalog_path(query, None) else {
         platform::gui_show_error(tr::CATALOG_QUERY_INVALID);
         return;
     };
