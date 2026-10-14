@@ -103,53 +103,63 @@ pub(crate) fn gui_update_connectivity(rssi: i32, wifi: bool, server: bool) {
 
 fn convert_stations(
     stations: &[crate::device_control::catalog::DeviceStationDto],
-) -> ([RockGuiStationItem; 20], usize) {
-    let mut items = [RockGuiStationItem {
-        id: [0; 129],
-        name: [0; 129],
-        tags: [0; 64],
-        codec: [0; 16],
-        bitrate_kbps: 0,
-        is_playing: false,
-    }; 20];
+) -> Vec<RockGuiStationItem> {
     let count = stations.len().min(20);
-    for i in 0..count {
-        copy_str_to_buf(&stations[i].id, &mut items[i].id);
-        copy_str_to_buf(&stations[i].name, &mut items[i].name);
-        copy_str_to_buf(&stations[i].tags.join(", "), &mut items[i].tags);
-        if let Some(ref c) = stations[i].codec {
-            copy_str_to_buf(c, &mut items[i].codec);
+    let mut items = Vec::with_capacity(count);
+    for s in stations.iter().take(count) {
+        let mut item = RockGuiStationItem {
+            id: [0; 129],
+            name: [0; 129],
+            tags: [0; 64],
+            codec: [0; 16],
+            bitrate_kbps: s.bitrate_kbps.unwrap_or(0),
+            is_playing: false,
+        };
+        copy_str_to_buf(&s.id, &mut item.id);
+        copy_str_to_buf(&s.name, &mut item.name);
+        copy_str_to_buf(&s.tags.join(", "), &mut item.tags);
+        if let Some(ref c) = s.codec {
+            copy_str_to_buf(c, &mut item.codec);
         }
-        items[i].bitrate_kbps = stations[i].bitrate_kbps.unwrap_or(0);
-        items[i].is_playing = false;
+        items.push(item);
     }
-    (items, count)
+    items
 }
 
 pub(crate) fn gui_catalog_begin(
     stations: &[crate::device_control::catalog::DeviceStationDto],
     next_cursor: Option<&str>,
 ) {
-    let (items, count) = convert_stations(stations);
+    let items = convert_stations(stations);
     let cursor_c = next_cursor.and_then(|c| cstring(c).ok());
     let cursor_ptr = cursor_c
         .as_ref()
         .map(|c| c.as_ptr())
         .unwrap_or(core::ptr::null());
-    unsafe { rock_gui_catalog_begin(items.as_ptr(), count, cursor_ptr) };
+    let items_ptr = if items.is_empty() {
+        core::ptr::null()
+    } else {
+        items.as_ptr()
+    };
+    unsafe { rock_gui_catalog_begin(items_ptr, items.len(), cursor_ptr) };
 }
 
 pub(crate) fn gui_catalog_append(
     stations: &[crate::device_control::catalog::DeviceStationDto],
     next_cursor: Option<&str>,
 ) {
-    let (items, count) = convert_stations(stations);
+    let items = convert_stations(stations);
     let cursor_c = next_cursor.and_then(|c| cstring(c).ok());
     let cursor_ptr = cursor_c
         .as_ref()
         .map(|c| c.as_ptr())
         .unwrap_or(core::ptr::null());
-    unsafe { rock_gui_catalog_append(items.as_ptr(), count, cursor_ptr) };
+    let items_ptr = if items.is_empty() {
+        core::ptr::null()
+    } else {
+        items.as_ptr()
+    };
+    unsafe { rock_gui_catalog_append(items_ptr, items.len(), cursor_ptr) };
 }
 
 #[allow(dead_code)]
@@ -163,8 +173,13 @@ pub(crate) fn gui_set_browse_stations(
 pub(crate) fn gui_set_search_results(
     stations: &[crate::device_control::catalog::DeviceStationDto],
 ) {
-    let (items, count) = convert_stations(stations);
-    unsafe { rock_gui_set_search_results(items.as_ptr(), count) };
+    let items = convert_stations(stations);
+    let items_ptr = if items.is_empty() {
+        core::ptr::null()
+    } else {
+        items.as_ptr()
+    };
+    unsafe { rock_gui_set_search_results(items_ptr, items.len()) };
 }
 
 pub(crate) fn gui_show_loading(msg: &str) {
