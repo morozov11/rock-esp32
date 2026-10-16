@@ -121,9 +121,10 @@ microphone data GPIO48, and amplifier enable GPIO11.
 Acceptance:
 
 - microphone and speaker work on the real board without corrupting touch or
-  network operation (the speaker path is proven electrically; the audible
-  acoustic confirmation is tracked as task RE-12 in
-  [`plan-control.md`](plan-control.md) until a speaker is attached);
+  network operation. The electrical path and initial acoustic checks are
+  recorded in [`audio-bringup.md`](audio-bringup.md); the owner confirmed the
+  physical speaker works and closed RE-12 on 2026-10-17 (see
+  [`plan-control.md`](plan-control.md));
 - concurrent capture/playback is stable and bounded;
 - pinned component versions are recorded in `main/idf_component.yml`, the new
   partition table is committed, and spike results are recorded in docs;
@@ -289,18 +290,18 @@ Acceptance:
 
 ## Step 7: Cast to Chromecast like RockCast (rockserver, rock-esp32, rockmobile)
 
-Status 2026-10-10 (device side, RE-17): implemented and verified on the
-board with a **unified stream source** — one authorized RockServer proxy
-connection feeds a shared ring consumed by both the local speaker and the
-Cast relay, so output switching never reopens the upstream (owner
-architecture decision, details and verification in `cast-progress.md` §11).
+Status 2026-10-17 (device side, RE-17): implemented, verified on the board,
+and accepted by the owner as complete on 2026-10-17. Verification details are
+in `cast-progress.md` §11. The firmware uses a **unified stream source** — one
+authorized RockServer proxy connection feeds a shared ring consumed by both
+the local speaker and the Cast relay, so output switching never reopens the
+upstream (owner architecture decision, details in `cast-progress.md` §11).
 Full `test_cast_hw.py` run green (SomaFM MP3 passthrough, >300 KB
 continuous, receiver badge, no GUI artifacts), switch back to the speaker
 resumes in ~300 ms, the `vTaskDeleteWithCaps` stop-path panic is fixed.
-`media.chromecast` is still NOT in the manifest (truthfulness rule: pending
-owner acceptance). RS-7 (server command promotion) and RM-3 (RockMobile)
-remain open on their sides; local casting does not route through the
-server, so those are not blockers for local use.
+`media.chromecast` remains unpublished until its server contract is promoted
+under RS-7. RS-7 (server command promotion) and RM-3 (RockMobile) remain open
+as separate tasks; local casting works without routing through the server.
 
 Owner decision 2026-09-16: the radio gains Chromecast casting with the
 same device-control architecture as RockCast desktop, before the voice

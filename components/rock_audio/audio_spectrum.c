@@ -62,11 +62,12 @@ static bool self_check(void)
     analyze(FFT_N * 2, 2, bands);
     int peak = 0;
     for (int b = 1; b < SPECTRUM_BANDS_COUNT; b++) if (bands[b] > bands[peak]) peak = b;
-    bool ok = s_edges[peak] <= 16 && s_edges[peak+1] > 16 && bands[peak] > 0.8f && bands[peak] < 0.99f;
+    bool ok = (peak == 9) && s_edges[peak] <= 16 && s_edges[peak+1] > 16 && bands[peak] > 0.8f && bands[peak] < 0.99f;
     memset(s_pcm, 0, sizeof(s_pcm));
     analyze(FFT_N, 1, bands);
     for (int b = 0; b < SPECTRUM_BANDS_COUNT; b++) ok = ok && bands[b] == 0;
-    ESP_LOGI(TAG, "FFT self-check: %s (stereo bin 16 and mono silence)", ok ? "PASS" : "FAIL");
+    ESP_LOGI(TAG, "FFT self-check: %s (stereo bin 16 in band %d [%u..%u], peak=%.2f, mono silence)",
+             ok ? "PASS" : "FAIL", peak, s_edges[peak], s_edges[peak+1], bands[peak]);
     return ok;
 }
 
@@ -86,7 +87,7 @@ static void analysis_task(void *arg)
         if (active) analyze(n, channels, next);
         xSemaphoreTake(s_mutex, portMAX_DELAY);
         for (int b = 0; b < SPECTRUM_BANDS_COUNT; b++) {
-            s_bands[b] = fmaxf(next[b], s_bands[b] * 0.82f);
+            s_bands[b] = fmaxf(next[b], s_bands[b] * 0.74f);
             if (s_bands[b] < 0.01f) s_bands[b] = 0;
         }
         uint32_t us = (uint32_t)(esp_timer_get_time() - start);
@@ -105,7 +106,7 @@ int rock_spectrum_init(void)
     dsps_wind_hann_f32(s_window, FFT_N);
     s_edges[0] = 1;
     for (int b = 1; b <= SPECTRUM_BANDS_COUNT; b++) {
-        int edge = (int)roundf(powf(FFT_N / 2.0f, b / (float)SPECTRUM_BANDS_COUNT));
+        int edge = (int)roundf(powf((float)SPECTRUM_MAX_BIN, b / (float)SPECTRUM_BANDS_COUNT));
         s_edges[b] = edge > s_edges[b-1] ? edge : s_edges[b-1] + 1;
     }
     if (!self_check()) return -1;

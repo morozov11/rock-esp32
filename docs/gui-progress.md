@@ -22,8 +22,9 @@
 - The product ticker remains visible. Debug status telemetry is compiled behind
   `CONFIG_ROCK_UI_DEBUG_OVERLAY`, which defaults to `n`. The clock uses the MSK
   timezone after SNTP supplies UTC.
-- `CONFIG_ROCK_PLAYER_SELFTEST` defaults to `n`; the same verification sequence
-  can also be started explicitly over the serial acceptance interface.
+- Bring-up audio/player self-tests are compiled behind
+  `CONFIG_ROCK_BRINGUP_TESTS` (default `n`); the verification sequence can be
+  enabled explicitly for board acceptance. See `refactoring-audit.md`.
 
 ## Final audio spectrum
 

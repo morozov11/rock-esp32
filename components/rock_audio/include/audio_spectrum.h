@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 #define SPECTRUM_BANDS_COUNT 16
+#define SPECTRUM_MAX_BIN     92  /* ~15.8 kHz @ 44.1 kHz / ~17.2 kHz @ 48 kHz (codec LPF cutoff) */
 
 /**
  * Initializes the esp-dsp FFT tables and starts the background spectrum analysis task

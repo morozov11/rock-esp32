@@ -25,5 +25,8 @@
   erasing flash. The boot log confirmed ESP32-P4 v1.3, ST7701/LVGL startup,
   and GT911 identity `0x39,0x31,0x31`; the C6 remained on matching
   ESP-Hosted 3.0.7 and Wi-Fi scan found access points.
-- Golden presentations, power-cycle coordinate checks, and reconnect/offline
-  presentation transitions remain the next physical acceptance checks.
+- Physical acceptance was completed with RE-6 on 2026-09-16: golden views were
+  captured on the product screens, touch was checked after power cycle, and
+  reconnect/offline transitions were accepted by the owner. The combined
+  firmware and hardware evidence is recorded in `plan-control.md` and
+  `gui-progress.md`.
