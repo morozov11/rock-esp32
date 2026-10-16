@@ -187,10 +187,21 @@ impl Session {
                     platform::log_msg("PlayStream skipped: pending launch was cancelled");
                     return Ok(());
                 }
-                self.meta_title.clear();
-                self.meta_generation = 0;
-                platform::source_clear_meta_title();
+                if self.source.station.as_deref() != Some(station_id.as_str())
+                    || !platform::source_is_active()
+                {
+                    self.meta_title.clear();
+                    self.meta_generation = 0;
+                    platform::source_clear_meta_title();
+                }
                 self.last_stream = Some((station_id.clone(), stream_uri));
+                let already_playing = platform::source_is_active()
+                    && self.player.station_id() == Some(station_id.as_str())
+                    && matches!(self.player.status(), PlaybackStatus::Playing | PlaybackStatus::Buffering);
+                if !already_playing || self.cast_client.is_connected() {
+                    self.player.apply_play_stream(&station_id);
+                    self.update_gui();
+                }
                 let res = if self.cast_client.is_connected() {
                     // Best-effort detach: cast_play_stream detaches again and
                     // logs a failure there.
@@ -217,12 +228,7 @@ impl Session {
                         self.update_gui();
                         Err(())
                     }
-                } else if self.player.station_id() == Some(station_id.as_str())
-                    && matches!(
-                        self.player.status(),
-                        PlaybackStatus::Playing | PlaybackStatus::Buffering
-                    )
-                {
+                } else if already_playing {
                     Ok(())
                 } else {
                     self.last_heartbeat_ack = platform::uptime_ms();
@@ -230,7 +236,6 @@ impl Session {
                     self.last_heartbeat_ack = platform::uptime_ms();
                     res
                 };
-                platform::gui_flush_events();
                 res
             }
             PlayerCommand::Playback { action, .. } => {

@@ -28,13 +28,15 @@ static void audio_tx_task(void *arg)
                     esp_codec_dev_write(codec, pcm_chunk, (int)n);
                     rock_player_pa_set(true);
                 }
+                rock_player_note_playback_stable();
             } else {
                 // Pause output until the relay has refilled enough PCM to play smoothly.
-                rock_player_stat_inc_underruns();
+                uint32_t next_preroll = rock_player_note_underrun();
                 rock_player_set_status(ROCK_PLAYER_STATUS_BUFFERING);
                 rock_player_pa_set(false);
                 rock_player_notify_ui(NULL, ROCK_PLAYER_UI_STALLED);
-                ESP_LOGW(TAG, "PCM ring underrun (total: %u)", (unsigned)rock_player_get_underruns());
+                ESP_LOGW(TAG, "PCM ring underrun (total: %u, next preroll %u bytes)",
+                    (unsigned)rock_player_get_underruns(), (unsigned)next_preroll);
             }
         } else if (st == ROCK_PLAYER_STATUS_PAUSED) {
             rock_player_pa_set(false);

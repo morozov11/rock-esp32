@@ -256,7 +256,10 @@ impl CastClient {
             }
             let remaining = (CAST_LOAD_LADDER_TIMEOUT_MS as u64 - elapsed) as u32;
             let attempt_timeout = remaining.min(CAST_LOAD_ATTEMPT_TIMEOUT_MS);
-            match self.load_stream_attempt(stream_url, title, content_type, attempt_timeout) {
+            match self.load_stream_attempt(
+                stream_url, title, content_type, attempt_timeout,
+                content == SourceContentType::Mpeg,
+            ) {
                 Ok(()) => return Ok(()),
                 Err(()) if content_type != last => {
                     platform::cast_log(&format!(
@@ -279,6 +282,7 @@ impl CastClient {
         title: &str,
         content_type: &str,
         timeout_ms: u32,
+        allow_idle_grace: bool,
     ) -> Result<(), ()> {
         let transport_id = self.transport_id.clone().ok_or(())?;
         let session_id = self.session_id.clone().ok_or(())?;
@@ -311,7 +315,7 @@ impl CastClient {
             // starts live playback while remaining in IDLE without sending further status
             // messages. Once nudged, if no error has occurred for CAST_NUDGE_GRACE_MS,
             // consider playback ready.
-            if !load_ok && nudged {
+            if !load_ok && nudged && allow_idle_grace {
                 if let Some(sent_at) = nudge_at {
                     if platform::uptime_ms().saturating_sub(sent_at) >= CAST_NUDGE_GRACE_MS as u64 {
                         platform::cast_log(&format!(

@@ -14,9 +14,13 @@ impl GuiEventSink for Session {
         if station.is_empty() || station.len() > 128 {
             return;
         }
-        self.meta_title.clear();
-        self.meta_generation = 0;
-        platform::source_clear_meta_title();
+        if self.source.station.as_deref() != Some(station.as_str())
+            || !platform::source_is_active()
+        {
+            self.meta_title.clear();
+            self.meta_generation = 0;
+            platform::source_clear_meta_title();
+        }
         let command = message_id();
         let Ok(now) = platform::now() else {
             self.fatal = true;

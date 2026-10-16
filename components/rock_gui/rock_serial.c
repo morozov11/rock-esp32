@@ -12,9 +12,12 @@
 #include "audio_spectrum.h"
 
 #include "driver/usb_serial_jtag.h"
+#include "eh_host_raw_tp_stats.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
+#include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -23,6 +26,85 @@
 #include <string.h>
 
 static const char *TAG = "rock-serial";
+
+// Raw transport throughput modes (bit values mirror ESP_TEST_RAW_TP__* in
+// esp_hosted's eh_caps.h). The engine measures the SDIO transport alone,
+// with WiFi idle, to separate link quality from transport capacity.
+#define RAWTP_ESP_TO_HOST  (1 << 1)
+#define RAWTP_HOST_TO_ESP  (1 << 2)
+#define RAWTP_BIDIRECTIONAL (1 << 3)
+
+// Raw HTTP throughput probe (network path diagnosis): download up to
+// 16 MB / 20 s from the given URL and log connect time and sustained speed.
+// Runs on the serial task; shares the WiFi link with anything playing.
+static void nettest_run(const char *url)
+{
+    const size_t buf_len = 4096;
+    uint8_t *buf = heap_caps_malloc(buf_len, MALLOC_CAP_DEFAULT);
+    if (!buf) {
+        ESP_LOGE(TAG, "nettest: no memory");
+        return;
+    }
+    esp_http_client_config_t cfg = {
+        .url = url,
+        .timeout_ms = 5000,
+    };
+    esp_http_client_handle_t h = esp_http_client_init(&cfg);
+    if (!h) {
+        ESP_LOGE(TAG, "nettest: init failed");
+        free(buf);
+        return;
+    }
+    int64_t open_t0 = esp_timer_get_time();
+    int open_err = esp_http_client_open(h, 0);
+    int64_t open_us = esp_timer_get_time() - open_t0;
+    int64_t content_length = open_err >= 0 ? esp_http_client_fetch_headers(h) : -1;
+    int status = esp_http_client_get_status_code(h);
+    if (open_err < 0 || status != 200) {
+        ESP_LOGE(TAG, "nettest: open err=%d status=%d connect=%lld ms",
+            open_err, status, (long long)(open_us / 1000));
+        esp_http_client_close(h);
+        esp_http_client_cleanup(h);
+        free(buf);
+        return;
+    }
+    int64_t t0 = esp_timer_get_time();
+    int64_t bytes = 0;
+    int64_t last_log = t0;
+    int r;
+    while ((r = esp_http_client_read(h, (char *)buf, (int)buf_len)) >= 0) {
+        int64_t now = esp_timer_get_time();
+        if (r == 0) {
+            if (esp_http_client_is_complete_data_received(h)) {
+                break;
+            }
+            if (now - t0 > 20000000) {
+                break;
+            }
+            continue;
+        }
+        bytes += r;
+        now = esp_timer_get_time();
+        if (now - last_log >= 2000000) {
+            int64_t ms = (now - t0) / 1000;
+            ESP_LOGI(TAG, "nettest: %lld KB in %lld ms (%lld KB/s)",
+                (long long)(bytes / 1024), (long long)ms,
+                (long long)(ms > 0 ? bytes / 1024 * 1000 / ms : 0));
+            last_log = now;
+        }
+        if (bytes >= 16 * 1024 * 1024 || now - t0 > 20000000) {
+            break;
+        }
+    }
+    int64_t total_ms = (esp_timer_get_time() - t0) / 1000;
+    ESP_LOGI(TAG, "nettest: done url=%s status=%ld len=%lld got=%lld KB in %lld ms avg=%lld KB/s connect=%lld ms",
+        url, (long)status, (long long)content_length, (long long)(bytes / 1024),
+        (long long)total_ms, (long long)(total_ms > 0 ? bytes / 1024 * 1000 / total_ms : 0),
+        (long long)(open_us / 1000));
+    esp_http_client_close(h);
+    esp_http_client_cleanup(h);
+    free(buf);
+}
 
 static void serial_cmd_task(void *arg)
 {
@@ -58,6 +140,33 @@ static void serial_cmd_task(void *arg)
 #endif
                     } else if (!strncmp(cmd, "CMD:UI:", 7)) {
                         rock_gui_trigger(cmd + 7);
+                    } else if (!strncmp(cmd, "CMD:NETTEST:", 12)) {
+                        nettest_run(cmd + 12);
+                    } else if (!strcmp(cmd, "CMD:RAWTP:RX")) {
+                        ESP_LOGI(TAG, "rawtp: starting ESP->host (SDIO RX) test");
+                        int rc = eh_host_raw_tp_start(RAWTP_ESP_TO_HOST);
+                        ESP_LOGI(TAG, "rawtp: start rc=%d (logs as 'eh_raw_tp: N-M sec')", rc);
+                    } else if (!strcmp(cmd, "CMD:RAWTP:TX")) {
+                        ESP_LOGI(TAG, "rawtp: starting host->ESP (SDIO TX) test");
+                        int rc = eh_host_raw_tp_start(RAWTP_HOST_TO_ESP);
+                        ESP_LOGI(TAG, "rawtp: start rc=%d", rc);
+                    } else if (!strcmp(cmd, "CMD:RAWTP:STOP")) {
+                        ESP_LOGI(TAG, "rawtp: stop rc=%d", eh_host_raw_tp_stop());
+                    } else if (!strcmp(cmd, "CMD:WIFIOPT")) {
+                        uint8_t proto = 0;
+                        esp_wifi_get_protocol(WIFI_IF_STA, &proto);
+                        int8_t txp = 0;
+                        esp_wifi_get_max_tx_power(&txp);
+                        ESP_LOGI(TAG, "wifiopt: before proto=0x%x txp=%d (0.25dBm)",
+                            (unsigned)proto, (int)txp);
+                        esp_err_t e1 = esp_wifi_set_protocol(WIFI_IF_STA,
+                            WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+                        esp_err_t e2 = esp_wifi_set_max_tx_power(80); // 20 dBm
+                        esp_err_t e3 = esp_wifi_set_ps(WIFI_PS_NONE);
+                        esp_wifi_get_protocol(WIFI_IF_STA, &proto);
+                        esp_wifi_get_max_tx_power(&txp);
+                        ESP_LOGI(TAG, "wifiopt: after proto=0x%x txp=%d rc(proto=%d txp=%d ps=%d)",
+                            (unsigned)proto, (int)txp, e1, e2, e3);
                     } else if (strcmp(cmd, "CMD:METRICS") == 0) {
                         uint32_t underruns, errors, reconnects;
                         rock_player_get_stats(&underruns, &errors, &reconnects);

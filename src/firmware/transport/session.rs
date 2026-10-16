@@ -182,12 +182,12 @@ impl Session {
     }
 
     pub(super) fn tick_player_refresh(&mut self) -> Result<(), ()> {
+        let meta_changed = self.poll_meta();
         let player_changed = refresh_player_with_cast(
             &mut self.player,
             self.cast_client.is_connected(),
             &self.meta_title,
         );
-        let meta_changed = self.poll_meta();
         if meta_changed && !player_changed {
             self.update_gui();
         }

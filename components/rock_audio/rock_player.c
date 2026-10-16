@@ -80,6 +80,11 @@ static atomic_uint_fast32_t s_stat_net_bytes = 0;
 static atomic_uint_fast32_t s_stat_pcm_bytes = 0;
 static atomic_uint_fast32_t s_stat_zero_reads = 0;
 
+// Preroll hysteresis state (TX and RX tasks; benign 32-bit races only move
+// the target between power-of-two steps).
+static uint32_t s_preroll_target = PREROLL_MIN_BYTES;
+static int64_t s_preroll_play_start_us = 0;
+
 static rock_player_ui_cbs_t s_ui_cbs;
 
 void rock_player_set_ui_cbs(const rock_player_ui_cbs_t *cbs)
@@ -133,14 +138,44 @@ void rock_player_set_station(const char *station_id)
 bool rock_player_check_preroll(const char *station_id)
 {
     if (rock_player_get_status() == ROCK_PLAYER_STATUS_BUFFERING &&
-        rock_pcm_ring_fill(&s_pcm_ring) >= PREROLL_MIN_BYTES) {
+        rock_pcm_ring_fill(&s_pcm_ring) >= s_preroll_target) {
         rock_player_set_status(ROCK_PLAYER_STATUS_PLAYING);
         rock_player_notify_ui(station_id, ROCK_PLAYER_UI_PLAYING);
         rock_player_pa_set(true);
-        ESP_LOGI(TAG, "Pre-roll reached (%u bytes); playback started", (unsigned)PREROLL_MIN_BYTES);
+        s_preroll_play_start_us = esp_timer_get_time();
+        ESP_LOGI(TAG, "Pre-roll reached (%u bytes); playback started", (unsigned)s_preroll_target);
         return true;
     }
     return false;
+}
+
+// Underrun hysteresis: each consecutive underrun doubles the preroll target
+// (up to PREROLL_MAX_BYTES) so a stream delivered below realtime yields
+// longer stable stretches instead of flap-stall cycles every few seconds.
+// Ten seconds of uninterrupted playback resets the target to the base value.
+uint32_t rock_player_note_underrun(void)
+{
+    if (s_preroll_target < PREROLL_MAX_BYTES) {
+        s_preroll_target *= 2;
+        if (s_preroll_target > PREROLL_MAX_BYTES) {
+            s_preroll_target = PREROLL_MAX_BYTES;
+        }
+    }
+    s_preroll_play_start_us = esp_timer_get_time();
+    rock_player_stat_inc_underruns();
+    return s_preroll_target;
+}
+
+void rock_player_note_playback_stable(void)
+{
+    if (s_preroll_target == PREROLL_MIN_BYTES) {
+        return;
+    }
+    if (esp_timer_get_time() - s_preroll_play_start_us >= PREROLL_STABLE_RESET_US) {
+        s_preroll_target = PREROLL_MIN_BYTES;
+        ESP_LOGI(TAG, "Playback stable; preroll target reset to %u bytes",
+            (unsigned)s_preroll_target);
+    }
 }
 
 bool rock_player_is_muted(void)
@@ -217,6 +252,10 @@ void rock_player_stat_reset_stream(void)
     atomic_store(&s_stat_net_bytes, 0);
     atomic_store(&s_stat_pcm_bytes, 0);
     atomic_store(&s_stat_zero_reads, 0);
+    // New stream: fresh hysteresis. The base preroll starts the stream fast;
+    // it only grows if this stream actually underruns.
+    s_preroll_target = PREROLL_MIN_BYTES;
+    s_preroll_play_start_us = 0;
 }
 
 // ---------------------------------------------------------------------------

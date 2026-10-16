@@ -43,15 +43,28 @@ static const char *TAG = "rock_relay";
 #define RELAY_JOIN_CUSHION_BYTES_PASSTHROUGH (16 * 1024)
 #define RELAY_PROGRESS_BYTES (64 * 1024)
 #define RELAY_READ_CHUNK_BYTES 4096
-#define RELAY_PCM_CHUNK_BYTES 8192
-#define RELAY_WAV_CHUNK_BYTES 16384
+#define RELAY_PCM_CHUNK_BYTES 32768
+#define RELAY_WAV_CHUNK_BYTES 32768
 #define RELAY_PCM_BYTES_PER_SEC (48u * 1000u * 2u * 2u)
 // Pacing slice, mirrors the desktop relay's pace_pcm_chunk() granularity.
 #define RELAY_PACE_SLICE_MS 20
+// Extra lead the transcode feeder may bank ahead of the media clock
+// (1.5 MiB ~= 8 s of 48 kHz stereo). Without it the feeder is pinned to
+// realtime delivery, the speaker tap sits on the live edge and any upstream
+// delivery dip longer than ~1.5 s of buffered PCM underruns the DAC. The
+// ring (2 MiB, drop-oldest) absorbs the bank; consumers keep their own
+// positions, so this only adds jitter headroom, not latency, for readers
+// that pace themselves (speaker PCM ring, Cast clients).
+#define RELAY_PACE_BANK_BYTES (1536 * 1024)
 #define RELAY_STOP_JOIN_MS 12000
 // Passthrough prefill before the listener starts (rockcast min_bytes for
 // non-WAV transports).
 #define RELAY_PASSTHROUGH_PREFILL_BYTES (4 * 1024)
+// Sentinel for "no ring sample yet" in the feeder stats window.
+#define ROCK_RING_UNUSED SIZE_MAX
+// PCM speaker tap pacing burst: the media-clock token bucket may grant up to
+// 1 s of PCM at once (fast preroll start, smooth bank drain afterwards).
+#define RELAY_TAP_BURST_BYTES (RELAY_PCM_BYTES_PER_SEC)
 #define RELAY_CONTENT_TYPE_MAX 96
 
 static char s_upstream_uri[512] = {0};
@@ -117,6 +130,37 @@ typedef struct {
     bool mp3_synced;
 } relay_upstream_t;
 
+// Transcode feeder performance window (AAC underrun diagnosis): accumulated
+// wall time in the blocking stages plus ring occupancy, logged every 5 s.
+typedef struct {
+    int64_t window_start_us;
+    uint32_t read_us;
+    uint32_t decode_us;
+    uint32_t decode_max_us;
+    uint32_t pace_us;
+    size_t in_bytes;
+    size_t out_bytes;
+    uint32_t frames;
+    size_t ring_min;
+    size_t ring_max;
+    // AAC frame shape: ADTS header params of the window plus the decoded
+    // frame size split around the 1024/2048-sample boundary (4096 B stereo).
+    uint32_t frames_small;
+    uint32_t frames_large;
+    uint32_t dec_size_max;
+    uint8_t adts_freq_idx;
+    uint8_t adts_profile;
+    // Decoder-reported format snapshot (may differ from the ADTS header
+    // when the library applies SBR/PS internally).
+    uint32_t dec_rate;
+    uint32_t dec_bitrate;
+    uint32_t dec_frame_size;
+    // Monotonic session counters (never reset with the window).
+    uint64_t session_frames;
+    int64_t session_start_us;
+} feeder_stats_t;
+static feeder_stats_t s_fstats = {0};
+
 static relay_upstream_t s_upstream = {0};
 // Only relay_task touches this handle; it survives feeder task exits so its
 // TLS ticket remains available to the next station on the same origin.
@@ -130,6 +174,9 @@ static rock_ring_t s_ring = {0};
 // consumer can never touch a freed buffer.
 static bool s_tap_joined = false;
 static uint64_t s_tap_pos = 0;
+// Media-clock token bucket for the PCM speaker tap (jitter buffer pacing).
+static int64_t s_tap_budget = 0;
+static int64_t s_tap_last_refill_us = 0;
 
 bool relay_stopped(void)
 {
@@ -235,7 +282,7 @@ bool relay_send_audio(
 static bool pace_before_push(uint64_t pushed, size_t chunk_len, int64_t start_us)
 {
     while (true) {
-        int64_t allowed = (int64_t)RELAY_PREFILL_BYTES
+        int64_t allowed = (int64_t)(RELAY_PREFILL_BYTES + RELAY_PACE_BANK_BYTES)
             + (esp_timer_get_time() - start_us) * (int64_t)RELAY_PCM_BYTES_PER_SEC / 1000000;
         int64_t overshoot = (int64_t)(pushed + chunk_len) - allowed;
         if (overshoot <= 0) {
@@ -777,9 +824,7 @@ static bool upstream_open_decoder(relay_upstream_t *up)
         .cfg_sz = 0,
     };
     if (strcasestr(up->headers.content_type, "aac")) {
-        // Radio "audio/aac" streams are typically HE-AAC (aacPlus): without
-        // SBR/PS enabled the decoder rejects every frame (error 30) and the
-        // feeder starves with an error storm.
+        // Radio "audio/aac" may contain HE-AAC (aacPlus).
         aac_cfg.aac_plus_enable = true;
         dec_cfg.type = ESP_AUDIO_TYPE_AAC;
         dec_cfg.cfg = &aac_cfg;
@@ -809,11 +854,14 @@ static int upstream_pump(relay_upstream_t *up, uint8_t *scratch, uint8_t *filter
         }
     }
     size_t cap = room < RELAY_READ_CHUNK_BYTES ? room : RELAY_READ_CHUNK_BYTES;
+    int64_t read_t0 = esp_timer_get_time();
     int rlen = esp_http_client_read(up->http, (char *)scratch, (int)cap);
+    s_fstats.read_us += (uint32_t)(esp_timer_get_time() - read_t0);
     if (rlen > 0) {
         size_t audio_len = filter_icy_audio(&up->icy, scratch, (size_t)rlen, filtered, cap);
         memcpy(up->raw + up->raw_len, filtered, audio_len);
         up->raw_len += audio_len;
+        s_fstats.in_bytes += audio_len;
         return (int)audio_len;
     }
     if ((rlen == 0 && esp_http_client_is_complete_data_received(up->http)) ||
@@ -862,9 +910,39 @@ static int upstream_decode_chunk(
     size_t consumed = 0;
     size_t produced = 0;
     while (consumed < up->raw_len) {
+        size_t input_len = up->raw_len - consumed;
+        if (up->dec_type == ESP_AUDIO_TYPE_AAC) {
+            const uint8_t *adts = up->raw + consumed;
+            if (input_len < 7) {
+                break;
+            }
+            // Never pass a partial or malformed ADTS frame to the AAC library.
+            // In particular, channel_config=0 selects a program configuration
+            // element parser that has crashed on this board with a bad pointer.
+            size_t frame_len = ((size_t)(adts[3] & 3) << 11)
+                | ((size_t)adts[4] << 3) | (adts[5] >> 5);
+            size_t header_len = (adts[1] & 1) ? 7 : 9;
+            unsigned channel_config = ((adts[2] & 1) << 2) | (adts[3] >> 6);
+            if (adts[0] != 0xff || (adts[1] & 0xf6) != 0xf0
+                || (adts[2] & 0x3c) == 0x3c
+                || channel_config == 0 || channel_config > 2
+                || frame_len < header_len || frame_len > RELAY_RAW_BUFFER_BYTES
+                || (adts[6] & 3) != 0) {
+                consumed++;
+                continue;
+            }
+            if (input_len < frame_len) {
+                break;
+            }
+            input_len = frame_len;
+            // ADTS fixed header: profile and sampling index live in byte 2
+            // (b2[7:6]=profile, b2[5:2]=freq index), NOT byte 1.
+            s_fstats.adts_profile = (adts[2] >> 6) & 0x3;
+            s_fstats.adts_freq_idx = (adts[2] >> 2) & 0xF;
+        }
         esp_audio_dec_in_raw_t in = {
             .buffer = up->raw + consumed,
-            .len = (uint32_t)(up->raw_len - consumed),
+            .len = (uint32_t)input_len,
             .consumed = 0,
         };
         esp_audio_dec_out_frame_t frame = {
@@ -873,18 +951,46 @@ static int upstream_decode_chunk(
             .needed_size = 0,
             .decoded_size = 0,
         };
+        int64_t dec_t0 = esp_timer_get_time();
         esp_audio_err_t decoded = esp_audio_dec_process(up->dec, &in, &frame);
+        int64_t dec_us = esp_timer_get_time() - dec_t0;
+        s_fstats.decode_us += (uint32_t)dec_us;
+        if ((uint32_t)dec_us > s_fstats.decode_max_us) {
+            s_fstats.decode_max_us = (uint32_t)dec_us;
+        }
         if (decoded == ESP_AUDIO_ERR_DATA_LACK) {
+            if (up->dec_type == ESP_AUDIO_TYPE_AAC) {
+                consumed += input_len;
+                continue;
+            }
             break;
         }
-        if (decoded == ESP_AUDIO_ERR_OK || decoded == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
+        if (decoded == ESP_AUDIO_ERR_BUFF_NOT_ENOUGH) {
+            ESP_LOGE(TAG, "Upstream PCM frame needs %lu bytes (capacity %u)",
+                (unsigned long)frame.needed_size, (unsigned)RELAY_PCM_CHUNK_BYTES);
+            return -1;
+        }
+        if (decoded == ESP_AUDIO_ERR_OK) {
             if (frame.decoded_size > 0) {
+                s_fstats.frames++;
+                s_fstats.session_frames++;
+                if (frame.decoded_size > 4096) {
+                    s_fstats.frames_large++;
+                } else {
+                    s_fstats.frames_small++;
+                }
+                if (frame.decoded_size > s_fstats.dec_size_max) {
+                    s_fstats.dec_size_max = frame.decoded_size;
+                }
                 esp_audio_dec_info_t info = {0};
                 if (esp_audio_dec_get_info(up->dec, &info) != ESP_AUDIO_ERR_OK
                     || info.sample_rate == 0 || info.channel == 0 || info.channel > 2) {
                     ESP_LOGE(TAG, "Decoder did not provide a supported PCM format");
                     return -1;
                 }
+                s_fstats.dec_rate = info.sample_rate;
+                s_fstats.dec_bitrate = info.bitrate;
+                s_fstats.dec_frame_size = info.frame_size;
                 if (up->resampler.source_rate == 0) {
                     up->resampler.source_rate = info.sample_rate;
                     ESP_LOGI(TAG, "Upstream PCM format: %u Hz, %u ch",
@@ -894,11 +1000,16 @@ static int upstream_decode_chunk(
                     (const int16_t *)pcm, frame.decoded_size / (2 * info.channel), info.channel,
                     (int16_t *)wav, RELAY_WAV_CHUNK_BYTES / 4);
             }
-            consumed += in.consumed ? in.consumed : 1;
+            consumed += up->dec_type == ESP_AUDIO_TYPE_AAC
+                ? input_len : (in.consumed ? in.consumed : 1);
             if (produced > 0) {
                 break;
             }
         } else {
+            if (up->dec_type == ESP_AUDIO_TYPE_AAC) {
+                consumed += input_len;
+                continue;
+            }
             // Decode error: jump to the next frame sync (ADTS/MPEG 0xFFFx)
             // instead of crawling one byte per decoder call, which floods
             // the log and stalls the feeder on garbage input.
@@ -947,7 +1058,47 @@ static void relay_task(void *pvParameters)
 
     int64_t feed_start_us = esp_timer_get_time();
     uint64_t pushed = s_ring.end;
+    // Start the perf window clean: prefill-stage counters are not part of it.
+    memset(&s_fstats, 0, sizeof(s_fstats));
+    s_fstats.window_start_us = feed_start_us;
+    s_fstats.ring_min = ROCK_RING_UNUSED;
+    s_fstats.session_start_us = feed_start_us;
     while (!relay_stopped()) {
+        int64_t now_us = esp_timer_get_time();
+        if (now_us - s_fstats.window_start_us >= 5000000) {
+            if (!s_passthrough) {
+                size_t tap_behind = s_tap_joined ? (size_t)(s_ring.end - s_tap_pos) : 0;
+                int64_t session_ms = (now_us - s_fstats.session_start_us) / 1000;
+                uint32_t fps_tenths = session_ms > 0
+                    ? (uint32_t)(s_fstats.session_frames * 10000 / (uint64_t)session_ms)
+                    : 0;
+                ESP_LOGI(TAG,
+                    "feeder %lld ms: read=%lu dec=%lu(max %lu us) pace=%lu in=%u out=%u frames=%u(s%u/l%u max %u B) adts p%u f%u dec=%luHz %lukbps fs=%u ring=%u..%u tap_behind=%u fps=%u.%u",
+                    (long long)(now_us - s_fstats.window_start_us) / 1000,
+                    (unsigned long)s_fstats.read_us / 1000,
+                    (unsigned long)s_fstats.decode_us / 1000,
+                    (unsigned long)s_fstats.decode_max_us,
+                    (unsigned long)s_fstats.pace_us / 1000,
+                    (unsigned)s_fstats.in_bytes, (unsigned)s_fstats.out_bytes,
+                    (unsigned)s_fstats.frames,
+                    (unsigned)s_fstats.frames_small, (unsigned)s_fstats.frames_large,
+                    (unsigned)s_fstats.dec_size_max,
+                    (unsigned)s_fstats.adts_profile, (unsigned)s_fstats.adts_freq_idx,
+                    (unsigned long)s_fstats.dec_rate,
+                    (unsigned long)(s_fstats.dec_bitrate / 1000),
+                    (unsigned)s_fstats.dec_frame_size,
+                    (unsigned)(s_fstats.ring_min == ROCK_RING_UNUSED ? 0 : s_fstats.ring_min) / 1024,
+                    (unsigned)s_fstats.ring_max / 1024, (unsigned)tap_behind / 1024,
+                    (unsigned)(fps_tenths / 10), (unsigned)(fps_tenths % 10));
+            }
+            uint64_t session_frames = s_fstats.session_frames;
+            int64_t session_start_us = s_fstats.session_start_us;
+            memset(&s_fstats, 0, sizeof(s_fstats));
+            s_fstats.window_start_us = now_us;
+            s_fstats.ring_min = ROCK_RING_UNUSED;
+            s_fstats.session_frames = session_frames;
+            s_fstats.session_start_us = session_start_us;
+        }
         // Poll for new Cast clients without ever blocking the media pace.
         // Speaker-only sessions never attach a listener.
         relay_listener_poll();
@@ -976,11 +1127,22 @@ static void relay_task(void *pvParameters)
             break;
         }
         if (produced > 0) {
-            if (!pace_before_push(pushed, (size_t)produced, feed_start_us)) {
+            int64_t pace_t0 = esp_timer_get_time();
+            bool paced_ok = pace_before_push(pushed, (size_t)produced, feed_start_us);
+            s_fstats.pace_us += (uint32_t)(esp_timer_get_time() - pace_t0);
+            if (!paced_ok) {
                 break;
             }
             rock_ring_push(&s_ring, wav, (size_t)produced);
             pushed += (size_t)produced;
+            s_fstats.out_bytes += (size_t)produced;
+            size_t buffered = rock_ring_buffered(&s_ring);
+            if (buffered < s_fstats.ring_min) {
+                s_fstats.ring_min = buffered;
+            }
+            if (buffered > s_fstats.ring_max) {
+                s_fstats.ring_max = buffered;
+            }
             continue;
         }
 
@@ -1085,6 +1247,11 @@ static bool relay_prepare(uint8_t *scratch, uint8_t *filtered, uint8_t *pcm, uin
     const char *url = s_upstream_uri;
     bool mp3 = strcasestr(ct, "mpeg") || strcasestr(ct, "mp3")
         || strcasestr(url, ".mp3") || strcasestr(url, "/mp3");
+    bool aac = strcasestr(ct, "aac") != NULL;
+    if (!mp3 && !aac) {
+        ESP_LOGE(TAG, "Unsupported upstream Content-Type: %s", ct[0] ? ct : "(missing)");
+        return false;
+    }
     s_passthrough = mp3;
     if (mp3) {
         snprintf(s_content_type, sizeof(s_content_type), "%s", ct[0] ? ct : "audio/mpeg");
@@ -1094,13 +1261,7 @@ static bool relay_prepare(uint8_t *scratch, uint8_t *filtered, uint8_t *pcm, uin
         s_content_enum = ROCK_SOURCE_CT_MPEG;
     } else {
         snprintf(s_content_type, sizeof(s_content_type), "audio/wav");
-        if (strcasestr(ct, "wav")) {
-            s_content_enum = ROCK_SOURCE_CT_WAV;
-        } else if (strcasestr(ct, "aac")) {
-            s_content_enum = ROCK_SOURCE_CT_AAC;
-        } else {
-            s_content_enum = ROCK_SOURCE_CT_UNKNOWN;
-        }
+        s_content_enum = ROCK_SOURCE_CT_AAC;
     }
     ESP_LOGI(TAG, "Source transport: %s (%s)", s_passthrough ? "passthrough" : "wav-pcm",
         s_content_type);
@@ -1280,12 +1441,56 @@ int rock_source_read(uint8_t *out, size_t cap)
     }
     if (!s_tap_joined) {
         s_tap_pos = rock_ring_join_position(&s_ring, relay_cushion_bytes());
+        // Full burst credit at join: the initial cushion is readable
+        // immediately so the PCM preroll fills without a pacing delay.
+        s_tap_budget = RELAY_TAP_BURST_BYTES;
+        s_tap_last_refill_us = esp_timer_get_time();
         s_tap_joined = true;
         ESP_LOGI(TAG, "Speaker tap joined the %s ring behind the live edge",
             s_passthrough ? "compressed" : "PCM");
     }
     size_t n = 0;
-    rock_ring_read_result_t r = rock_ring_read(&s_ring, s_tap_pos, out, cap, &n);
+    size_t read_cap = cap;
+    if (!s_passthrough) {
+        // Speaker jitter buffer: rate-limit the tap to the media clock
+        // (token bucket at RELAY_PCM_BYTES_PER_SEC with a 1 s burst).  A
+        // greedy tap pins to the live edge, the cushion never regrows after
+        // a delivery dip and the DAC underruns within ~1.5 s of buffered
+        // PCM.  With pacing, upstream bursts bank playable audio in the
+        // ring (the feeder may lead the media clock by
+        // RELAY_PACE_BANK_BYTES) and dips drain that bank smoothly.
+        int64_t now_us = esp_timer_get_time();
+        s_tap_budget += (now_us - s_tap_last_refill_us)
+            * (int64_t)RELAY_PCM_BYTES_PER_SEC / 1000000;
+        s_tap_last_refill_us = now_us;
+        if (s_tap_budget > RELAY_TAP_BURST_BYTES) {
+            s_tap_budget = RELAY_TAP_BURST_BYTES;
+        }
+        if (s_tap_budget < 0) {
+            s_tap_budget = 0;
+        }
+        uint64_t ahead = s_ring.end - s_tap_pos;
+        uint64_t paced = ahead < (uint64_t)s_tap_budget ? ahead : (uint64_t)s_tap_budget;
+        // 48 kHz stereo 16-bit PCM: the grant must stay a whole-sample-frame
+        // (4-byte) multiple or the player's PCM ring byte-shifts and the DAC
+        // emits white noise until the stream restarts. Ring positions and
+        // pushes are 4-byte aligned; only the token grant is arbitrary.
+        paced &= ~3ULL;
+        if (paced < read_cap) {
+            read_cap = (size_t)paced;
+        }
+        if (read_cap == 0) {
+            // Distinguish "nothing yet" from "source died between checks".
+            if (!atomic_load(&s_relay_running)) {
+                return -1;
+            }
+            return 0;
+        }
+    }
+    rock_ring_read_result_t r = rock_ring_read(&s_ring, s_tap_pos, out, read_cap, &n);
+    if (s_tap_budget > 0 && !s_passthrough) {
+        s_tap_budget -= (int64_t)n;
+    }
     if (r == ROCK_RING_READ_OVERRUN) {
         s_tap_pos = rock_ring_clamp_position(&s_ring, s_tap_pos, relay_cushion_bytes());
         return 0;

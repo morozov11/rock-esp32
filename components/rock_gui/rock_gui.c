@@ -362,7 +362,7 @@ void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id
                               const char *title, const char *subtitle,
                               uint8_t volume, bool muted)
 {
-    if (!lvgl_port_lock(500)) return;
+    if (!lvgl_port_lock(0)) return;
 
     s_playback_status = status;
     s_volume_level = volume;

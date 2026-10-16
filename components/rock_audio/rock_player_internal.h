@@ -4,6 +4,7 @@
 #include "pcm_snapshot.h"
 #include "rock_ring.h"
 #include "esp_audio_dec.h"
+#include "esp_timer.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -11,6 +12,11 @@
 
 #define PCM_RING_CAPACITY (2 * 1024 * 1024) // PSRAM, ~12 s at 44.1 kHz stereo
 #define PREROLL_MIN_BYTES (128 * 1024)      // ~0.73 s jitter buffer at 44.1 kHz stereo 16-bit
+// Underrun hysteresis ceiling: with delivery below realtime, doubling the
+// preroll after each consecutive underrun trades flap-stall cycles for
+// longer stable playback stretches.
+#define PREROLL_MAX_BYTES (1024 * 1024)
+#define PREROLL_STABLE_RESET_US (10 * 1000 * 1000)
 #define HTTP_CHUNK_SIZE   4096
 #define DECODE_OUT_CAP    8192
 
@@ -42,6 +48,8 @@ void rock_player_notify_ui(const char *station_id, rock_player_ui_state_t state)
 void rock_player_get_station(char *buf, size_t cap);
 void rock_player_set_station(const char *station_id);
 bool rock_player_check_preroll(const char *station_id);
+uint32_t rock_player_note_underrun(void);
+void rock_player_note_playback_stable(void);
 
 // Volume, Mute & Power Amplifier
 bool rock_player_is_muted(void);
