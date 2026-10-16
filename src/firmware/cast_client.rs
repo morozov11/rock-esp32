@@ -367,8 +367,15 @@ impl CastClient {
                             ));
 
                             if matches!(typ, "LOAD_FAILED" | "LOAD_CANCELLED" | "INVALID_REQUEST" | "ERROR") {
-                                platform::cast_log(&format!("Cast LOAD rejected with type={}", typ));
-                                return Err(());
+                                if load_frame_is_reject_for(typ, rid, load_req) {
+                                    platform::cast_log(&format!("Cast LOAD rejected with type={}", typ));
+                                    return Err(());
+                                }
+                                platform::cast_log(&format!(
+                                    "Ignoring Cast LOAD rejection for another request: type={} reqId={} expected={}",
+                                    typ, rid, load_req
+                                ));
+                                continue;
                             }
                             // Only remember mediaSessionId from messages confirmed for this stream
                             let confirmed_req = rid == load_req as u64;

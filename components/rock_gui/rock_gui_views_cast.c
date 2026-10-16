@@ -12,7 +12,7 @@
 typedef struct {
     lv_obj_t *btn;
     lv_obj_t *lbl_name;
-    lv_obj_t *badge;       // "Играет" box (dot + text), hidden unless active
+    lv_obj_t *badge;       // "Активен" box (dot + text), hidden unless selected as output
     lv_obj_t *badge_dot;
     lv_obj_t *lbl_badge;
     char receiver_id[65];
@@ -237,7 +237,7 @@ void gui_cast_build(lv_obj_t *parent)
 
         s_cast_rows[i].btn = btn;
         s_cast_rows[i].lbl_name = lbl_name;
-        s_cast_rows[i].badge = cast_make_badge(btn, "Играет", &s_cast_rows[i].badge_dot);
+        s_cast_rows[i].badge = cast_make_badge(btn, "Активен", &s_cast_rows[i].badge_dot);
         s_cast_rows[i].lbl_badge = NULL; // text label lives inside the badge box
         lv_obj_add_flag(s_cast_rows[i].badge, LV_OBJ_FLAG_HIDDEN);
         memset(s_cast_rows[i].receiver_id, 0, sizeof(s_cast_rows[i].receiver_id));

@@ -440,6 +440,14 @@ pub enum MediaLoadStatus {
     Error(String),
 }
 
+pub fn load_frame_is_reject_for(typ: &str, rid: u64, load_req: u32) -> bool {
+    rid == load_req as u64
+        && matches!(
+            typ,
+            "LOAD_FAILED" | "LOAD_CANCELLED" | "INVALID_REQUEST" | "ERROR"
+        )
+}
+
 pub fn classify_media_status(v: &Value, expected_req: u32, stream_url: &str) -> MediaLoadStatus {
     let rid = v.get("requestId").and_then(Value::as_u64).unwrap_or(0) as u32;
     let status = v
@@ -483,7 +491,7 @@ pub fn classify_media_status(v: &Value, expected_req: u32, stream_url: &str) -> 
             && content_id == Some(stream_url) => {
             MediaLoadStatus::Nudge(mid.unwrap())
         }
-        "IDLE" if matches!(idle_reason, "ERROR" | "CANCELLED" | "INTERRUPTED") => {
+        "IDLE" if confirmed_req && matches!(idle_reason, "ERROR" | "CANCELLED" | "INTERRUPTED") => {
             MediaLoadStatus::Error(format!("Cast LOAD failed with idle reason: {idle_reason}"))
         }
         _ => MediaLoadStatus::Pending,
@@ -640,5 +648,45 @@ mod tests {
             classify_media_status(&val_idle_err, 42, "http://stream.url/audio.mp3"),
             MediaLoadStatus::Error("Cast LOAD failed with idle reason: ERROR".into())
         );
+    }
+
+    #[test]
+    fn stale_interrupted_broadcast_does_not_reject_load() {
+        let val = json!({
+            "requestId": 0,
+            "status": [{
+                "mediaSessionId": 10,
+                "playerState": "IDLE",
+                "idleReason": "INTERRUPTED"
+            }]
+        });
+        assert_eq!(
+            classify_media_status(&val, 50, "http://stream.url/audio.mp3"),
+            MediaLoadStatus::Pending
+        );
+    }
+
+    #[test]
+    fn direct_interrupted_reply_rejects_load() {
+        let val = json!({
+            "requestId": 50,
+            "status": [{
+                "mediaSessionId": 10,
+                "playerState": "IDLE",
+                "idleReason": "INTERRUPTED"
+            }]
+        });
+        assert_eq!(
+            classify_media_status(&val, 50, "http://stream.url/audio.mp3"),
+            MediaLoadStatus::Error("Cast LOAD failed with idle reason: INTERRUPTED".into())
+        );
+    }
+
+    #[test]
+    fn load_reject_frame_must_match_attempt_request() {
+        assert!(load_frame_is_reject_for("LOAD_CANCELLED", 50, 50));
+        assert!(!load_frame_is_reject_for("LOAD_CANCELLED", 50, 52));
+        assert!(!load_frame_is_reject_for("LOAD_CANCELLED", 0, 52));
+        assert!(load_frame_is_reject_for("LOAD_FAILED", 52, 52));
     }
 }
