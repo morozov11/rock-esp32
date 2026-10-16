@@ -2,6 +2,10 @@ idf_component_register(
     SRCS
         "audio_bsp.c"
         "rock_player.c"
+        "rock_player_tx.c"
+        "rock_player_decode.c"
+        "rock_player_rx.c"
+        "rock_player_bringup.c"
         "audio_spectrum.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "${PROJECT_DIR}/main"

@@ -542,6 +542,10 @@ int rock_audio_reconfig(uint32_t sample_rate, uint8_t channels)
         .sample_rate = sample_rate,
         .mclk_multiple = 0,
     };
+    // Note: esp_codec_dev_close disables the I2S channels. Subsequent esp_codec_dev_open
+    // invokes _i2s_data_set_fmt which unconditionally calls i2s_channel_disable without
+    // checking channel state, logging cosmetic "the channel has not been enabled yet"
+    // errors from esp_codec_dev. Functionality and clock reconfiguration are unaffected.
     esp_codec_dev_close(s_codec);
     if (esp_codec_dev_open(s_codec, &fs) != ESP_CODEC_DEV_OK) {
         ESP_LOGE(TAG, "esp_codec_dev_open failed during reconfig (%lu Hz, %u ch)", (unsigned long)sample_rate, channels);
