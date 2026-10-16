@@ -12,6 +12,7 @@
 | --- | --- |
 | План (переработан 2026-09-09 по аудиту) | `C:\repos\rock-esp32\docs\rockcast-device-plan.md` |
 | План единого каталога UC (2026-10-13, завершён 2026-10-14) | `C:\repos\rock-esp32\docs\plan-unified-catalog.md` |
+| План рефакторинга UI и плеера (2026-10-15) | `C:\repos\rock-esp32\docs\plan-gui-playback-refactoring.md` |
 | Прошивка | `C:\repos\rock-esp32` |
 | Сервер (контракты + реализация) | `C:\repos\rockserver` |
 | Мобильный контроллер | `C:\repos\rockmobile` |
