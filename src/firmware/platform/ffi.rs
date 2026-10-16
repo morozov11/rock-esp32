@@ -16,6 +16,9 @@ unsafe extern "C" {
     ) -> c_int;
     pub(crate) fn rock_identity_save(id: *const c_char, secret: *const c_char) -> c_int;
     pub(crate) fn rock_identity_clear() -> c_int;
+    // rock_settings_volume_load is deliberately NOT bound: only app_main
+    // (C composition root) reads the boot volume, before rust_main starts.
+    pub(crate) fn rock_settings_volume_save(volume: u8) -> c_int;
     pub(crate) fn rock_http_post(
         path: *const c_char,
         bearer: *const c_char,

@@ -580,9 +580,12 @@ void rock_gui_mark_catalog_stale(void)
 {
     if (!lvgl_port_lock(500)) return;
 
+    // A session drop must not wipe the view state the user will return to
+    // (query, results, scroll, accumulated pages): the rows are a display
+    // cache, and a dead keyset cursor only degrades the next load-more into
+    // the retry pill. Mark staleness for diagnostics and surface the drop
+    // only when the catalog is on screen.
     s_catalog_stale = true;
-    gui_catalog_clear();
-    gui_catalog_hide_rows();
     if (gui_active_view() == VIEW_CATALOG) {
         gui_overlay_set(GUI_OVERLAY_OFFLINE, "Связь с сервером потеряна", NULL, true);
     }

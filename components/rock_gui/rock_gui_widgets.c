@@ -283,13 +283,10 @@ static void on_overlay_back_click(lv_event_t *e)
 {
     (void)e;
     rock_gui_dismiss_state();
-    if (gui_active_view() == VIEW_CATALOG) {
-        if (gui_catalog_is_search_active()) {
-            gui_catalog_exit_search();
-        } else {
-            gui_switch_view(VIEW_NOW_PLAYING);
-        }
-    } else {
+    // A session drop no longer wipes the catalog: when cached rows (and an
+    // active search) are still behind this overlay, Back just reveals them
+    // instead of resetting the view or leaving the screen.
+    if (gui_active_view() == VIEW_CATALOG && !gui_catalog_has_content()) {
         gui_switch_view(VIEW_NOW_PLAYING);
     }
 }

@@ -34,6 +34,25 @@ static rock_platform_ui_cbs_t s_ui_cbs;
 
 static const char *TAG = "rock-control";
 
+// NVS readiness: the boot volume restore in app_main needs NVS before the
+// rest of the platform comes up, so this is idempotent and separate from
+// rock_platform_init. The phase-3 policy stays: never erase through an NVS
+// maintenance fault.
+static bool s_nvs_ready = false;
+
+int rock_nvs_init(void)
+{
+    if (s_nvs_ready) return 0;
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGE(TAG, "NVS requires maintenance; refusing to erase stored identity");
+        return -1;
+    }
+    if (err != ESP_OK) return -1;
+    s_nvs_ready = true;
+    return 0;
+}
+
 // mDNS is already linked by the Cast component; keep its one-time startup here,
 // after the STA has an IP and before the session can start audio playback.
 extern esp_err_t mdns_init(void);
@@ -65,14 +84,9 @@ bool rock_platform_notify_onboarding_show(const char *ssid, const char *pin, con
 
 int rock_platform_init(void)
 {
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_LOGE(TAG, "NVS requires maintenance; refusing to erase stored identity");
-        return -1;
-    }
-    if (err != ESP_OK) return -1;
+    if (rock_nvs_init() != 0) return -1;
     ESP_ERROR_CHECK(esp_netif_init());
-    err = esp_event_loop_create_default();
+    esp_err_t err = esp_event_loop_create_default();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return -1;
     if (!rock_wifi_events_create() || !esp_netif_create_default_wifi_sta()) return -1;
     wifi_init_config_t wifi_cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -213,6 +227,41 @@ int rock_identity_clear(void)
     if (err == ESP_OK) err = nvs_commit(nvs);
     nvs_close(nvs);
     ESP_LOGI(TAG, "Cleared rock_auth NVS partition (err=%d)", (int)err);
+    return err == ESP_OK ? 0 : -1;
+}
+
+// NVS-backed user preferences ("rock_settings" namespace), separate from the
+// identity ("rock_auth") and Wi-Fi ("rock_wifi") namespaces: the composition
+// root owns when to read/write them, this module only stores bytes.
+int rock_settings_volume_load(uint8_t *out_volume)
+{
+    nvs_handle_t nvs;
+    if (!out_volume || nvs_open("rock_settings", NVS_READONLY, &nvs) != ESP_OK) return 0;
+    uint8_t volume = 0;
+    esp_err_t err = nvs_get_u8(nvs, "volume", &volume);
+    nvs_close(nvs);
+    if (err != ESP_OK || volume > 100) return 0;
+    *out_volume = volume;
+    return 1;
+}
+
+int rock_settings_volume_save(uint8_t volume)
+{
+    if (volume > 100) return -1;
+    nvs_handle_t nvs;
+    if (nvs_open("rock_settings", NVS_READWRITE, &nvs) != ESP_OK) return -1;
+    // Skip the write when the stored value already matches: volume steps
+    // arrive in quick +/-5 bursts and NVS writes are not free.
+    uint8_t stored = 0;
+    esp_err_t err = nvs_get_u8(nvs, "volume", &stored);
+    if (err != ESP_OK || stored != volume) {
+        err = nvs_set_u8(nvs, "volume", volume);
+        if (err == ESP_OK) err = nvs_commit(nvs);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Volume save failed: %s", esp_err_to_name(err));
+        }
+    }
+    nvs_close(nvs);
     return err == ESP_OK ? 0 : -1;
 }
 

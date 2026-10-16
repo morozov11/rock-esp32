@@ -304,9 +304,7 @@ impl Session {
                     if self.cast_client.is_connected() {
                         let _ = self.cast_client.set_volume(level);
                     }
-                    if platform::player_set_volume(level).is_err() {
-                        platform::log_msg("Player volume set failed");
-                    }
+                    crate::firmware::apply_user_volume(level);
                     Ok(())
                 }
                 VolumeAction::Change(delta) => {
@@ -315,9 +313,7 @@ impl Session {
                     if self.cast_client.is_connected() {
                         let _ = self.cast_client.set_volume(new_vol);
                     }
-                    if platform::player_set_volume(new_vol).is_err() {
-                        platform::log_msg("Player volume set failed");
-                    }
+                    crate::firmware::apply_user_volume(new_vol);
                     Ok(())
                 }
                 VolumeAction::SetMute(muted) => platform::player_set_mute(muted),

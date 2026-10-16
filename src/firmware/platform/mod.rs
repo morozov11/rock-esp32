@@ -109,6 +109,16 @@ pub(crate) fn identity_save(id: &str, secret: &str) -> Result<(), ()> {
 pub(crate) fn identity_clear() {
     unsafe { rock_identity_clear() };
 }
+/// Persist the last user volume; the C side logs failures itself, so callers
+/// may treat the result as best-effort. Loading is C-only: app_main restores
+/// the volume before rust_main starts.
+pub(crate) fn settings_volume_save(volume: u8) -> Result<(), ()> {
+    if unsafe { rock_settings_volume_save(volume) } == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
+}
 pub(crate) fn server_base_url() -> String {
     unsafe { CStr::from_ptr(rock_server_base_url()) }
         .to_string_lossy()

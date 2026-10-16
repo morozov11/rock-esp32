@@ -16,6 +16,19 @@ pub(crate) fn update_link_indicator(server_up: bool) {
     platform::gui_update_connectivity(rssi, wifi_up, server_up && wifi_up);
 }
 
+/// Every user-visible volume change funnels through here: hardware first,
+/// then the best-effort NVS persist so the last level survives a reboot.
+/// Volume ownership stays put: the player is the hardware authority, the
+/// platform stores the bytes, and this composition root decides when to
+/// persist. Cast mirrors are the callers' concern (best-effort, local is
+/// the authority).
+pub(crate) fn apply_user_volume(volume: u8) {
+    if platform::player_set_volume(volume).is_err() {
+        platform::log_msg("Player volume set failed");
+    }
+    let _ = platform::settings_volume_save(volume);
+}
+
 /// The one exhaustive GuiEvent match (phase 4): the offline loop below and
 /// the session loop in transport.rs both route their events through
 /// `dispatch_gui_event`; each side implements its own policy per variant.
@@ -90,7 +103,7 @@ impl GuiEventSink for OfflineHandler {
     fn on_volume_change(&mut self, delta: i16) {
         let vol = platform::player_get_full_state().map(|s| s.2).unwrap_or(70);
         let new_vol = (vol as i32 + delta as i32).clamp(0, 100) as u8;
-        let _ = platform::player_set_volume(new_vol);
+        apply_user_volume(new_vol);
     }
     fn on_catalog_browse(&mut self, _cursor: String) {
         platform::gui_show_offline(crate::presentation::ui_strings::SERVER_LINK_LOST);
@@ -133,6 +146,9 @@ pub extern "C" fn rust_main() -> ! {
     // Wi-Fi/server connection in the same loop.
     let _ = platform::gui_start();
     update_link_indicator(false);
+    // The boot volume seed reads hardware state, which app_main has already
+    // restored from NVS — so the GUI shows the persisted level from the
+    // first frame, long before the network session exists.
     let initial_volume = platform::player_get_full_state()
         .map(|state| state.2)
         .unwrap_or(35);

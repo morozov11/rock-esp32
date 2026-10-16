@@ -112,6 +112,7 @@ pub(super) fn cursor_for_log(cursor: &str) -> &str {
 
 impl Session {
     pub(super) fn load_catalog(&mut self, request: CatalogRequest) {
+        let started_ms = platform::uptime_ms();
         let (query, cursor, mode) = match &request {
             CatalogRequest::Refresh => (None, None, "refresh"),
             CatalogRequest::LoadMore { cursor } => (None, Some(cursor.as_str()), "load-more"),
@@ -167,12 +168,14 @@ impl Session {
         if matches!(request, CatalogRequest::Search { .. }) {
             platform::gui_catalog_search_busy(false);
         }
+        let mut presented = false;
         match response {
             Ok((200, bytes)) if query.is_some() => {
                 match device_control::parse_search_page(&bytes) {
                     Ok(page) => {
                         cache_catalog_stations(&page.stations);
                         platform::gui_set_search_results(&page.stations);
+                        presented = true;
                         if page.stations.is_empty() {
                             platform::gui_show_empty(tr::SEARCH_EMPTY);
                         }
@@ -193,12 +196,14 @@ impl Session {
                                     &page.stations,
                                     page.next_cursor.as_deref(),
                                 );
+                                presented = true;
                             }
                             _ => {
                                 platform::gui_catalog_begin(
                                     &page.stations,
                                     page.next_cursor.as_deref(),
                                 );
+                                presented = true;
                                 if page.stations.is_empty() {
                                     platform::gui_show_empty(tr::CATALOG_EMPTY);
                                 }
@@ -235,6 +240,12 @@ impl Session {
                     platform::gui_show_error(tr::CATALOG_UNAVAILABLE);
                 }
             },
+        }
+        if presented {
+            platform::log_msg(&format!(
+                "catalog presented: mode={mode} elapsed_ms={}",
+                platform::uptime_ms() - started_ms
+            ));
         }
     }
 }

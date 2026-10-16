@@ -90,6 +90,15 @@ void app_main(void)
     // RE-5 streaming player takes over the audio path (I2S, ES8311, decoders, TX worker).
     if (rock_player_init() != 0) {
         ESP_LOGE(TAG, "Player subsystem init failed");
+    } else {
+        // Restore the persisted volume before any consumer reads player
+        // state: the Rust boot GUI seed and the session refresh ticks copy
+        // hardware state, and with a default-loaded codec the first seconds
+        // after reboot would show (and play at) the wrong level.
+        uint8_t saved_volume = 0;
+        if (rock_nvs_init() == 0 && rock_settings_volume_load(&saved_volume) == 1) {
+            rock_player_set_volume(saved_volume);
+        }
     }
     rock_player_ui_cbs_t player_ui_cbs = {
         .on_playback_state = player_ui_on_playback_state,

@@ -7,7 +7,17 @@
 static lv_obj_t *s_container, *s_catalog, *s_play_pause, *s_play_pause_label, *s_spinner;
 static lv_obj_t *s_stop, *s_stop_label, *s_volume_down, *s_volume_label, *s_volume_up, *s_cast, *s_cast_label;
 
-static void on_catalog(lv_event_t *e) { (void)e; gui_switch_view(VIEW_CATALOG); gui_enqueue_event(ROCK_UI_EVT_CATALOG_BROWSE, "", 0); }
+static void on_catalog(lv_event_t *e)
+{
+    (void)e;
+    gui_switch_view(VIEW_CATALOG);
+    // A first-page browse would reset the view state (query, results,
+    // scroll). Skip it when the catalog still holds content; an empty or
+    // stale-cleared view falls through and fetches page one as before.
+    if (!gui_catalog_has_content()) {
+        gui_enqueue_event(ROCK_UI_EVT_CATALOG_BROWSE, "", 0);
+    }
+}
 static void on_play_pause(lv_event_t *e) { (void)e; if (!lv_obj_has_flag(s_play_pause, LV_OBJ_FLAG_CLICKABLE)) return; gui_enqueue_event(gui_playback_status() == ROCK_GUI_PLAYBACK_PLAYING ? ROCK_UI_EVT_PLAYBACK_PAUSE : ROCK_UI_EVT_PLAYBACK_PLAY, NULL, 0); }
 static void on_stop(lv_event_t *e) { (void)e; if (!lv_obj_has_flag(s_stop, LV_OBJ_FLAG_CLICKABLE)) return; gui_enqueue_event(ROCK_UI_EVT_PLAYBACK_STOP, NULL, 0); }
 static void on_volume_down(lv_event_t *e) { (void)e; gui_enqueue_event(ROCK_UI_EVT_VOLUME_CHANGE, NULL, -5); }

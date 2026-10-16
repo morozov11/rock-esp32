@@ -24,10 +24,17 @@ typedef struct {
 
 void rock_platform_set_ui_cbs(const rock_platform_ui_cbs_t *cbs);
 
+/** Bring NVS up (idempotent); needed before any rock_settings_* read. */
+int rock_nvs_init(void);
+
 int rock_platform_init(void);
 int rock_identity_load(char *id, size_t id_cap, char *secret, size_t secret_cap);
 int rock_identity_save(const char *id, const char *secret);
 int rock_identity_clear(void);
+/** Last user volume in the "rock_settings" NVS namespace: load returns 1 and
+ *  fills *out_volume when a valid 0..100 value is stored, 0 otherwise. */
+int rock_settings_volume_load(uint8_t *out_volume);
+int rock_settings_volume_save(uint8_t volume);
 int rock_http_post(const char *path, const char *bearer, const char *body,
                    char *response, size_t response_cap, int *status);
 int rock_http_get(const char *path, const char *bearer,

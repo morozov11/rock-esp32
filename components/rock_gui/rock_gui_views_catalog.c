@@ -78,6 +78,15 @@ void gui_catalog_begin_edit(void)
     if (s_list_catalog) lv_obj_add_flag(s_list_catalog, LV_OBJ_FLAG_HIDDEN);
 }
 
+// Fold the on-screen keyboard without touching the search state: the query
+// and its results stay as they are; only the ✕ button and the serial
+// SEARCH_CLEAR/CANCEL triggers reset the search deliberately.
+static void gui_catalog_fold_keyboard(void)
+{
+    if (s_kb_catalog) lv_obj_add_flag(s_kb_catalog, LV_OBJ_FLAG_HIDDEN);
+    if (s_list_catalog) lv_obj_remove_flag(s_list_catalog, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void on_query_edit(lv_event_t *e)
 {
     (void)e;
@@ -87,13 +96,14 @@ static void on_query_edit(lv_event_t *e)
 static void on_catalog_back_click(lv_event_t *e)
 {
     (void)e;
-    if (s_search_active) {
-        gui_catalog_exit_search();
-    } else if (s_kb_catalog && !lv_obj_has_flag(s_kb_catalog, LV_OBJ_FLAG_HIDDEN)) {
-        gui_catalog_exit_search();
-    } else {
-        gui_switch_view(VIEW_NOW_PLAYING);
+    // Back always leaves for the player in one press and never resets the
+    // search — returning to the catalog restores it. An open keyboard folds
+    // first (query kept); the plain catalog is reached via ✕, not Back.
+    if (s_kb_catalog && !lv_obj_has_flag(s_kb_catalog, LV_OBJ_FLAG_HIDDEN)) {
+        gui_catalog_fold_keyboard();
+        return;
     }
+    gui_switch_view(VIEW_NOW_PLAYING);
 }
 
 static void on_query_clear_click(lv_event_t *e)
@@ -118,7 +128,9 @@ static void on_kb_event(lv_event_t *e)
             gui_catalog_exit_search();
         }
     } else if (code == LV_EVENT_CANCEL) {
-        gui_catalog_exit_search();
+        // Cancel aborts text editing only: fold the keyboard, keep the
+        // query and any executed search (same semantics as Back).
+        gui_catalog_fold_keyboard();
     }
 }
 
@@ -683,8 +695,10 @@ void gui_catalog_set_search_results(const rock_gui_station_item_t *items, size_t
 
     update_count_label(s_search_count);
 
+    // Back means "to the player" in every catalog state now, so the pill
+    // keeps the same label in search mode (✕ is the search reset).
     if (s_btn_back) {
-        lv_label_set_text(lv_obj_get_child(s_btn_back, 0), ROCK_ICON_ARROW_LEFT " Каталог");
+        lv_label_set_text(lv_obj_get_child(s_btn_back, 0), ROCK_ICON_ARROW_LEFT " Плеер");
     }
 
     if (s_kb_catalog) lv_obj_add_flag(s_kb_catalog, LV_OBJ_FLAG_HIDDEN);
@@ -754,6 +768,14 @@ bool gui_catalog_is_search_active(void)
     return s_search_active;
 }
 
+// Whether the view still holds anything worth returning to: accumulated
+// browse pages or an active search. Stale clears wipe both, so an empty
+// answer also means "a browse refresh is needed on next entry".
+bool gui_catalog_has_content(void)
+{
+    return s_catalog_count > 0 || s_search_active;
+}
+
 void gui_catalog_set_rows(const rock_gui_station_item_t *items, size_t count, bool search_results)
 {
     if (search_results) {
@@ -788,14 +810,15 @@ bool gui_catalog_trigger(const char *action)
         return true;
     }
     if (!strcmp(action, "BACK")) {
-        if (s_search_active) {
-            gui_switch_view(VIEW_CATALOG);
-            gui_catalog_exit_search();
-            return true;
-        } else {
-            gui_switch_view(VIEW_NOW_PLAYING);
+        // Mirror of the back pill: fold an open keyboard, otherwise leave
+        // for the player — the search state survives both.
+        gui_switch_view(VIEW_CATALOG);
+        if (s_kb_catalog && !lv_obj_has_flag(s_kb_catalog, LV_OBJ_FLAG_HIDDEN)) {
+            gui_catalog_fold_keyboard();
             return true;
         }
+        gui_switch_view(VIEW_NOW_PLAYING);
+        return true;
     }
     if (!strcmp(action, "SEARCH")) {
         gui_catalog_begin_edit();

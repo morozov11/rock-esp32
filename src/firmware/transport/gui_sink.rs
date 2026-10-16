@@ -135,9 +135,7 @@ impl GuiEventSink for Session {
         if self.cast_client.is_connected() {
             let _ = self.cast_client.set_volume(volume);
         }
-        if platform::player_set_volume(volume).is_err() {
-            platform::log_msg("Player volume set failed");
-        }
+        crate::firmware::apply_user_volume(volume);
     }
 
     fn on_catalog_browse(&mut self, cursor: String) {

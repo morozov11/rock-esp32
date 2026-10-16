@@ -126,6 +126,9 @@ void gui_catalog_set_rows(const rock_gui_station_item_t *items, size_t count, bo
 void gui_catalog_set_search_results(const rock_gui_station_item_t *items, size_t count);
 void gui_catalog_exit_search(void);
 bool gui_catalog_is_search_active(void);
+// True while the view holds accumulated pages or an active search, i.e. the
+// state a re-entry should restore instead of refetching the first page.
+bool gui_catalog_has_content(void);
 void gui_catalog_hide_rows(void);
 void gui_catalog_begin_edit(void);                  // show keyboard, hide list
 station_row_ui_t *gui_catalog_rows(void);
