@@ -119,6 +119,7 @@ static void on_station_row_click(lv_event_t *e)
     gui_now_playing_set_station(lv_label_get_text(row_data->name_lbl),
                                 lv_label_get_text(row_data->desc_lbl),
                                 lv_label_get_text(row_data->codec_lbl));
+    rock_gui_flush_events();
     gui_enqueue_event(ROCK_UI_EVT_PLAY_STATION, row_data->station_id, 0);
     gui_switch_view(VIEW_NOW_PLAYING);
 }

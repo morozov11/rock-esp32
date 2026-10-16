@@ -76,6 +76,11 @@ void rock_gui_present(const char *station_id, const char *title, const char *sub
 bool rock_gui_poll_event(rock_ui_event_t *out_event, uint32_t timeout_ms);
 
 /**
+ * Flush and discard all pending events from the UI event queue.
+ */
+void rock_gui_flush_events(void);
+
+/**
  * Update playback state on the GUI (Now-Playing view, status ticker, transport buttons).
  */
 void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id,

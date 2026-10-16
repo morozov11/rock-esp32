@@ -351,6 +351,12 @@ bool rock_gui_poll_event(rock_ui_event_t *out_event, uint32_t timeout_ms)
     return xQueueReceive(s_ui_event_queue, out_event, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }
 
+void rock_gui_flush_events(void)
+{
+    if (!s_ui_event_queue) return;
+    xQueueReset(s_ui_event_queue);
+}
+
 void rock_gui_update_playback(rock_gui_playback_t status, const char *station_id,
                               const char *station_name,
                               const char *title, const char *subtitle,
@@ -594,7 +600,11 @@ void rock_gui_set_starting_station(const char *station_id)
     if (s_lbl_ticker) {
         lv_label_set_text(s_lbl_ticker, "Starting...");
     }
-
+    if (s_ticker_dot) {
+        lv_obj_set_style_bg_color(s_ticker_dot, ROCK_COLOR_WARN, 0);
+    }
+    s_playback_status = ROCK_GUI_PLAYBACK_BUFFERING;
+    gui_now_playing_update_transport(s_playback_status, s_volume_level, s_volume_muted);
 
     lvgl_port_unlock();
 }

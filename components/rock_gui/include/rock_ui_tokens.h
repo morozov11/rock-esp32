@@ -46,4 +46,5 @@ uint32_t rock_ui_station_color(const char *name);
 #define ROCK_LIST_ROW_HEIGHT       56  // Высота строки списка станций
 #define ROCK_HEADER_HEIGHT         40  // Высота верхнего бара
 #define ROCK_TRANSPORT_HEIGHT      64  // Высота панели управления плеером
+#define ROCK_TRANSPORT_Y           345 // Позиция Y транспортной панели (компенсация мёртвой зоны y[312,364] над панелью, промах y=351)
 #define ROCK_STATUS_BAR_HEIGHT     36  // Высота нижнего статус-бара
