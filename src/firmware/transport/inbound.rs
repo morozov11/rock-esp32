@@ -37,11 +37,14 @@ impl Session {
                 if matches {
                     let failed = !matches!(outcome, Some((_, true)));
                     self.pending = None;
+                    self.pending_cancel = false;
                     self.update_gui();
                     if failed {
                         platform::gui_show_error(tr::STATION_REJECTED);
                     }
                 }
+            } else if self.pending_cancel {
+                self.pending_cancel = false;
             }
             return Ok(());
         }
@@ -80,6 +83,7 @@ impl Session {
         refresh_player_with_cast(&mut self.player, self.cast_client.is_connected(), &self.meta_title);
         if self.pending.as_ref().is_some_and(|(pending_id, _)| pending_id == &id) {
             self.pending = None;
+            self.pending_cancel = false;
             self.update_gui();
         }
         match result {
@@ -153,7 +157,10 @@ impl Session {
             PlaybackStatus::Stopped | PlaybackStatus::Idle | PlaybackStatus::Error => {
                 match self.last_stream.clone() {
                     Some((st_id, _)) => {
-                        play_local_station(&st_id, &mut self.token, &mut self.source)
+                        self.last_heartbeat_ack = platform::uptime_ms();
+                        let res = play_local_station(&st_id, &mut self.token, &mut self.source);
+                        self.last_heartbeat_ack = platform::uptime_ms();
+                        res
                     }
                     None => Ok(()),
                 }
@@ -175,14 +182,20 @@ impl Session {
                 if let Some(ref name) = station_name {
                     cache_station_name(&station_id, name);
                 }
+                if self.pending_cancel {
+                    self.pending_cancel = false;
+                    platform::log_msg("PlayStream skipped: pending launch was cancelled");
+                    return Ok(());
+                }
                 self.meta_title.clear();
                 self.meta_generation = 0;
                 platform::source_clear_meta_title();
                 self.last_stream = Some((station_id.clone(), stream_uri));
-                if self.cast_client.is_connected() {
+                let res = if self.cast_client.is_connected() {
                     // Best-effort detach: cast_play_stream detaches again and
                     // logs a failure there.
                     let _ = platform::player_stop();
+                    self.last_heartbeat_ack = platform::uptime_ms();
                     let res = cast_play_stream(
                         &mut self.cast_client,
                         &station_id,
@@ -190,6 +203,7 @@ impl Session {
                         &mut self.token,
                         &mut self.source,
                     );
+                    self.last_heartbeat_ack = platform::uptime_ms();
                     if res.is_ok() {
                         self.player.apply_play_stream(&station_id);
                         self.player.set_playing();
@@ -211,14 +225,20 @@ impl Session {
                 {
                     Ok(())
                 } else {
-                    play_local_station(&station_id, &mut self.token, &mut self.source)
-                }
+                    self.last_heartbeat_ack = platform::uptime_ms();
+                    let res = play_local_station(&station_id, &mut self.token, &mut self.source);
+                    self.last_heartbeat_ack = platform::uptime_ms();
+                    res
+                };
+                platform::gui_flush_events();
+                res
             }
             PlayerCommand::Playback { action, .. } => {
                 if self.cast_client.is_connected() {
                     match action {
                         PlaybackAction::Play => {
                             if let Some((st_id, _)) = &self.last_stream {
+                                self.last_heartbeat_ack = platform::uptime_ms();
                                 if cast_play_stream(
                                     &mut self.cast_client,
                                     st_id,
@@ -230,6 +250,7 @@ impl Session {
                                 {
                                     platform::log_msg("Cast resume failed; playback stays paused");
                                 }
+                                self.last_heartbeat_ack = platform::uptime_ms();
                             }
                             self.player.set_playing();
                             self.update_gui();

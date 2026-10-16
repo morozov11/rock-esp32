@@ -55,6 +55,10 @@ pub(crate) fn gui_poll_event(timeout_ms: u32) -> Option<GuiEvent> {
     }
 }
 
+pub(crate) fn gui_flush_events() {
+    unsafe { rock_gui_flush_events() };
+}
+
 pub(crate) fn gui_start() -> Result<(), ()> {
     if unsafe { rock_gui_start() } == 0 {
         Ok(())

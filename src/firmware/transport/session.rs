@@ -24,6 +24,11 @@ pub(super) struct Session {
     pub(super) last_stream: Option<(String, String)>,
     pub(super) source: SourceState,
     pub(super) pending: Option<(String, u64)>,
+    /// Flag indicating that a pending station connection was cancelled by user
+    /// stop. Invariant: only meaningful while connecting a station; reset
+    /// whenever `pending` is set (new play) or cleared (command resolution,
+    /// timeout, or consumed by `PlayStream`).
+    pub(super) pending_cancel: bool,
     pub(super) retry: Option<platform::GuiEvent>,
     /// Cursor of the last successfully delivered browse page. A queued
     /// LoadMore re-sending that same cursor is a stale duplicate (no data
@@ -55,6 +60,7 @@ impl Session {
             last_stream: None,
             source: SourceState { station: None },
             pending: None,
+            pending_cancel: false,
             retry: None,
             catalog_last_cursor: None,
             network_check: 0,
@@ -100,7 +106,7 @@ impl Session {
 
     pub(super) fn tick_token_refresh(&mut self) {
         if platform::uptime_ms() >= self.next_token_refresh {
-            if let Ok(fresh) = pairing::fresh_access_token() {
+            if let Ok(fresh) = pairing::cached_access_token(60_000) {
                 // The long-lived stream source reconnects with the stored
                 // bearer; refresh it whenever the session token rotates.
                 // A silent failure here desyncs the source token from the
@@ -224,6 +230,7 @@ impl Session {
             .is_some_and(|(_, deadline)| platform::uptime_ms() >= *deadline)
         {
             self.pending = None;
+            self.pending_cancel = false;
             self.update_gui();
             platform::gui_show_error(tr::STATION_NO_RESPONSE);
         }

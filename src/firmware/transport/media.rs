@@ -34,12 +34,21 @@ pub(super) fn ensure_source(
         return Ok(());
     }
     platform::source_stop();
-    *token = pairing::fresh_access_token()?;
+    *token = pairing::cached_access_token(60_000)?;
     let url = station_proxy_url(station_id)?;
     // Confidentiality: the proxy URL and bearer never appear in logs.
     if !platform::source_start(&url, token) {
-        source.station = None;
-        return Err(());
+        pairing::invalidate_session_cache();
+        if let Ok(refreshed) = pairing::cached_access_token(60_000) {
+            *token = refreshed;
+            if !platform::source_start(&url, token) {
+                source.station = None;
+                return Err(());
+            }
+        } else {
+            source.station = None;
+            return Err(());
+        }
     }
     source.station = Some(station_id.to_string());
     Ok(())

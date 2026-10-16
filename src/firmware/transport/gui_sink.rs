@@ -37,14 +37,20 @@ impl GuiEventSink for Session {
             return;
         }
         self.pending = Some((command, platform::uptime_ms() + 30_000));
+        self.pending_cancel = false;
         self.retry = Some(platform::GuiEvent::PlayStation(station.clone()));
         platform::gui_set_starting_station(&station);
         self.update_gui();
     }
 
     fn on_playback_play(&mut self) {
+        if self.pending.is_some() || self.pending_cancel {
+            platform::log_msg("Playback play ignored: station connecting");
+            return;
+        }
         if self.cast_client.is_connected() {
             if let Some((st_id, _)) = &self.last_stream {
+                self.last_heartbeat_ack = platform::uptime_ms();
                 if cast_play_stream(
                     &mut self.cast_client,
                     st_id,
@@ -59,13 +65,23 @@ impl GuiEventSink for Session {
                 } else {
                     platform::log_msg("Cast resume failed; playback stays paused");
                 }
+                self.last_heartbeat_ack = platform::uptime_ms();
             }
-        } else if self.local_play().is_err() {
-            platform::log_msg("Player resume failed");
+        } else {
+            self.last_heartbeat_ack = platform::uptime_ms();
+            let res = self.local_play();
+            self.last_heartbeat_ack = platform::uptime_ms();
+            if res.is_err() {
+                platform::log_msg("Player resume failed");
+            }
         }
     }
 
     fn on_playback_pause(&mut self) {
+        if self.pending.is_some() || self.pending_cancel {
+            platform::log_msg("Playback pause ignored: station connecting");
+            return;
+        }
         if self.cast_client.is_connected() {
             // Media-level STOP keeps the Cast control session alive so a
             // later resume can LOAD again; the full receiver teardown lives
@@ -84,7 +100,15 @@ impl GuiEventSink for Session {
         self.meta_title.clear();
         self.meta_generation = 0;
         platform::source_clear_meta_title();
-        self.pending = None;
+        if self.pending.is_some() {
+            self.pending_cancel = true;
+            self.pending = None;
+            self.retry = None;
+            platform::log_msg("Station connecting cancelled by user stop");
+        } else {
+            self.pending = None;
+            self.pending_cancel = false;
+        }
         if self.cast_client.is_connected() {
             // Same session-preserving teardown as the server path: stop the
             // media, keep the Cast connection for stop→play.
@@ -176,6 +200,7 @@ impl GuiEventSink for Session {
                     receiver_name: entry.display_name.clone(),
                 };
                 platform::gui_update_cast_status(true, Some(&entry.display_name));
+                platform::gui_flush_events();
                 platform::gui_dismiss_cast_menu();
 
                 if let Some((st_id, _)) = &self.last_stream {
@@ -232,9 +257,11 @@ impl GuiEventSink for Session {
                 platform::gui_dismiss_cast_menu();
                 platform::gui_show_error(tr::CAST_CONNECT_FAILED);
                 if let Some((st_id, _)) = &self.last_stream {
+                    self.last_heartbeat_ack = platform::uptime_ms();
                     if play_local_station(st_id, &mut self.token, &mut self.source).is_err() {
                         platform::log_msg("Local playback fallback failed after cast connect failed");
                     }
+                    self.last_heartbeat_ack = platform::uptime_ms();
                 }
             }
         } else {
@@ -255,14 +282,17 @@ impl GuiEventSink for Session {
         }
         self.output_mode = OutputMode::Local;
         platform::gui_update_cast_status(false, None);
+        platform::gui_flush_events();
         platform::gui_dismiss_cast_menu();
 
         // The shared source keeps running: the speaker re-joins the same
         // ring, no upstream reconnect, no gap.
         if let Some((st_id, _)) = &self.last_stream {
+            self.last_heartbeat_ack = platform::uptime_ms();
             if play_local_station(st_id, &mut self.token, &mut self.source).is_err() {
                 platform::log_msg("Local playback fallback failed after cast disconnect");
             }
+            self.last_heartbeat_ack = platform::uptime_ms();
         }
         self.update_gui();
         if self.publish_state().is_err() {

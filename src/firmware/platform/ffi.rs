@@ -33,6 +33,7 @@ unsafe extern "C" {
     ) -> c_int;
     pub(crate) fn rock_gui_start() -> c_int;
     pub(crate) fn rock_gui_poll_event(out_event: *mut RockUiEvent, timeout_ms: u32) -> bool;
+    pub(crate) fn rock_gui_flush_events();
     pub(crate) fn rock_gui_update_playback(
         status: c_int,
         station_id: *const c_char,
