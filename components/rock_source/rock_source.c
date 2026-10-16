@@ -15,6 +15,7 @@
 #include "esp_aac_dec.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "http_parser.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
@@ -117,6 +118,12 @@ typedef struct {
 } relay_upstream_t;
 
 static relay_upstream_t s_upstream = {0};
+// Only relay_task touches this handle; it survives feeder task exits so its
+// TLS ticket remains available to the next station on the same origin.
+static esp_http_client_handle_t s_http_client = NULL;
+static char s_http_url[sizeof(s_upstream_uri)] = {0};
+static SemaphoreHandle_t s_source_started = NULL;
+static bool s_source_start_ok = false;
 static rock_ring_t s_ring = {0};
 // Speaker consumer tap: ring position once it has joined the live edge.
 // Ring itself is persistent (allocated once, reset on source restart) so a
@@ -586,13 +593,60 @@ static size_t filter_icy_audio(
     return out_pos;
 }
 
+static bool upstream_origin(const char *url, struct http_parser_url *parsed, unsigned *port)
+{
+    http_parser_url_init(parsed);
+    if (http_parser_parse_url(url, strlen(url), 0, parsed) != 0
+        || !(parsed->field_set & (1 << UF_SCHEMA))
+        || !(parsed->field_set & (1 << UF_HOST))
+        || (parsed->field_set & (1 << UF_USERINFO))) {
+        return false;
+    }
+    const size_t len = parsed->field_data[UF_SCHEMA].len;
+    if (len == 5 && strncasecmp(url + parsed->field_data[UF_SCHEMA].off, "https", 5) == 0) {
+        *port = 443;
+    } else if (len == 4 && strncasecmp(url + parsed->field_data[UF_SCHEMA].off, "http", 4) == 0) {
+        *port = 80;
+    } else {
+        return false;
+    }
+    if (parsed->field_set & (1 << UF_PORT)) {
+        if (parsed->port == 0) {
+            return false;
+        }
+        *port = parsed->port;
+    }
+    return true;
+}
+
+static bool upstream_same_origin(const char *a, const char *b)
+{
+    struct http_parser_url x, y;
+    unsigned x_port, y_port;
+    return upstream_origin(a, &x, &x_port) && upstream_origin(b, &y, &y_port)
+        && x.field_data[UF_SCHEMA].len == y.field_data[UF_SCHEMA].len
+        && strncasecmp(a + x.field_data[UF_SCHEMA].off, b + y.field_data[UF_SCHEMA].off,
+            x.field_data[UF_SCHEMA].len) == 0
+        && x.field_data[UF_HOST].len == y.field_data[UF_HOST].len
+        && strncasecmp(a + x.field_data[UF_HOST].off, b + y.field_data[UF_HOST].off,
+            x.field_data[UF_HOST].len) == 0
+        && x_port == y_port;
+}
+
+static void upstream_discard_http(relay_upstream_t *up)
+{
+    if (s_http_client) {
+        esp_http_client_cleanup(s_http_client);
+        s_http_client = NULL;
+    }
+    s_http_url[0] = '\0';
+    up->http = NULL;
+}
+
 static void upstream_teardown(relay_upstream_t *up)
 {
-    esp_http_client_handle_t http = up->http;
-    up->http = NULL;
-    if (http) {
-        esp_http_client_close(http);
-        esp_http_client_cleanup(http);
+    if (up->http && esp_http_client_close(up->http) != ESP_OK) {
+        upstream_discard_http(up);
     }
     if (up->dec) {
         esp_audio_dec_close(up->dec);
@@ -619,44 +673,77 @@ static bool upstream_connect(relay_upstream_t *up)
 
         // Snapshot the upstream URL/bearer under the config lock: the session
         // task may refresh the bearer while the feeder reconnects.  The URL
-        // copy only lives across esp_http_client_init, which parses it
-        // synchronously into its own storage.
+        // copy only lives across set_url/init, which parse it synchronously.
         char uri[sizeof(s_upstream_uri)];
         char bearer[sizeof(s_upstream_bearer)] = {0};
         xSemaphoreTake(s_config_lock, portMAX_DELAY);
         memcpy(uri, s_upstream_uri, sizeof(uri));
         memcpy(bearer, s_upstream_bearer, sizeof(bearer));
         xSemaphoreGive(s_config_lock);
-        esp_http_client_config_t http_cfg = up->http_cfg;
-        http_cfg.url = uri;
-
-        esp_http_client_handle_t http = esp_http_client_init(&http_cfg);
+        // A transport ticket is scoped to scheme, host and port.  IDF keeps
+        // it in the handle even when set_url changes the host, so discard first.
+        bool reused = s_http_client && upstream_same_origin(s_http_url, uri);
+        if (s_http_client && !reused) {
+            upstream_discard_http(up);
+        }
+        if (!s_http_client) {
+            esp_http_client_config_t http_cfg = up->http_cfg;
+            http_cfg.url = uri;
+            s_http_client = esp_http_client_init(&http_cfg);
+            if (s_http_client) {
+                memcpy(s_http_url, uri, sizeof(s_http_url));
+            }
+        } else if (esp_http_client_clear_response_buffer(s_http_client) != ESP_OK
+            || esp_http_client_set_url(s_http_client, uri) != ESP_OK) {
+            upstream_discard_http(up);
+            ESP_LOGW(TAG, "Failed to set upstream URL (attempt %d/2)", retry + 1);
+            continue;
+        } else {
+            memcpy(s_http_url, uri, sizeof(s_http_url));
+        }
+        esp_http_client_handle_t http = s_http_client;
         if (!http) {
             ESP_LOGE(TAG, "Failed to initialize upstream HTTP client");
             return false;
         }
-        esp_http_client_set_header(http, "User-Agent", "RockCast/0.1");
-        esp_http_client_set_header(http, "Accept", "*/*");
-        esp_http_client_set_header(http, "Icy-MetaData", "1");
+        esp_err_t auth_clear = esp_http_client_delete_header(http, "Authorization");
+        bool headers_ok = (auth_clear == ESP_OK || auth_clear == ESP_ERR_NOT_FOUND)
+            && esp_http_client_set_header(http, "User-Agent", "RockCast/0.1") == ESP_OK
+            && esp_http_client_set_header(http, "Accept", "*/*") == ESP_OK
+            && esp_http_client_set_header(http, "Icy-MetaData", "1") == ESP_OK;
         if (bearer[0]) {
             char authorization[sizeof(bearer) + 16];
             snprintf(authorization, sizeof(authorization), "Bearer %s", bearer);
-            esp_http_client_set_header(http, "Authorization", authorization);
+            headers_ok = headers_ok
+                && esp_http_client_set_header(http, "Authorization", authorization) == ESP_OK;
         }
-        if (esp_http_client_open(http, 0) != ESP_OK) {
+        if (!headers_ok) {
+            ESP_LOGW(TAG, "Failed to set upstream headers (attempt %d/2)", retry + 1);
+            upstream_discard_http(up);
+            continue;
+        }
+        if (esp_http_client_set_timeout_ms(http, up->http_cfg.timeout_ms) != ESP_OK) {
+            upstream_discard_http(up);
+            continue;
+        }
+        int64_t connect_start_us = esp_timer_get_time();
+        esp_err_t open_err = esp_http_client_open(http, 0);
+        int64_t connect_ms = (esp_timer_get_time() - connect_start_us) / 1000;
+        ESP_LOGI(TAG, "Upstream connect: %lld ms, reused_handle=%d, result=%s",
+            (long long)connect_ms, reused, esp_err_to_name(open_err));
+        if (open_err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to open upstream connection (attempt %d/2)", retry + 1);
-            esp_http_client_cleanup(http);
+            upstream_discard_http(up);
             if (retry + 1 < 2 && !relay_stopped()) {
                 vTaskDelay(pdMS_TO_TICKS(1000));
             }
             continue;
         }
-        esp_http_client_fetch_headers(http);
+        int64_t header_result = esp_http_client_fetch_headers(http);
         int status = esp_http_client_get_status_code(http);
-        if (status < 200 || status >= 300) {
+        if (header_result < 0 || status < 200 || status >= 300) {
             ESP_LOGW(TAG, "Upstream returned HTTP status %d (attempt %d/2)", status, retry + 1);
-            esp_http_client_close(http);
-            esp_http_client_cleanup(http);
+            upstream_discard_http(up);
             if (retry + 1 < 2 && !relay_stopped()) {
                 vTaskDelay(pdMS_TO_TICKS(1000));
             }
@@ -732,9 +819,9 @@ static int upstream_pump(relay_upstream_t *up, uint8_t *scratch, uint8_t *filter
     if ((rlen == 0 && esp_http_client_is_complete_data_received(up->http)) ||
         (rlen < 0 && rlen != -ESP_ERR_HTTP_EAGAIN && rlen != -ESP_ERR_HTTP_READ_TIMEOUT)) {
         ESP_LOGW(TAG, "Upstream stream ended or read error %d; reconnecting", rlen);
-        esp_http_client_close(up->http);
-        esp_http_client_cleanup(up->http);
-        up->http = NULL;
+        if (rlen < 0 || esp_http_client_close(up->http) != ESP_OK) {
+            upstream_discard_http(up);
+        }
         for (int retry = 0; retry < 3 && !relay_stopped(); retry++) {
             vTaskDelay(pdMS_TO_TICKS(1000));
             if (upstream_connect(up)) {
@@ -835,6 +922,8 @@ static int upstream_decode_chunk(
 // Feeder: keep the ring filled from the single upstream connection at media
 // pace and poll for new Cast clients when the relay listener is attached
 // (one task per client, like rockcast).
+static bool relay_prepare(uint8_t *scratch, uint8_t *filtered, uint8_t *pcm, uint8_t *wav);
+
 static void relay_task(void *pvParameters)
 {
     (void)pvParameters;
@@ -846,12 +935,15 @@ static void relay_task(void *pvParameters)
     uint8_t *wav = heap_caps_malloc(RELAY_WAV_CHUNK_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!scratch || !filtered || !pcm || !wav) {
         ESP_LOGE(TAG, "Failed to allocate relay feeder buffers");
-        free(scratch);
-        free(filtered);
-        free(pcm);
-        free(wav);
-        goto exit;
+        goto finish;
     }
+    if (!relay_prepare(scratch, filtered, pcm, wav)) {
+        upstream_discard_http(&s_upstream);
+        goto finish;
+    }
+    atomic_store(&s_relay_running, true);
+    s_source_start_ok = true;
+    xSemaphoreGive(s_source_started);
 
     int64_t feed_start_us = esp_timer_get_time();
     uint64_t pushed = s_ring.end;
@@ -902,15 +994,18 @@ static void relay_task(void *pvParameters)
         }
     }
 
+finish:
     free(scratch);
     free(filtered);
     free(pcm);
     free(wav);
 
-exit:
     relay_listener_close();
     upstream_teardown(&s_upstream);
     atomic_store(&s_relay_running, false);
+    if (!s_source_start_ok) {
+        xSemaphoreGive(s_source_started);
+    }
     ESP_LOGI(TAG, "Relay task exited");
     // This task was created with plain xTaskCreatePinnedToCore (dynamically
     // allocated stack/TCB): it must self-delete with plain vTaskDelete.
@@ -979,6 +1074,40 @@ static bool relay_prefill_ring(
     return true;
 }
 
+static bool relay_prepare(uint8_t *scratch, uint8_t *filtered, uint8_t *pcm, uint8_t *wav)
+{
+    // Confidentiality: NEVER log s_upstream_uri or s_upstream_bearer.
+    if (!upstream_connect(&s_upstream)) {
+        return false;
+    }
+
+    const char *ct = s_upstream.headers.content_type;
+    const char *url = s_upstream_uri;
+    bool mp3 = strcasestr(ct, "mpeg") || strcasestr(ct, "mp3")
+        || strcasestr(url, ".mp3") || strcasestr(url, "/mp3");
+    s_passthrough = mp3;
+    if (mp3) {
+        snprintf(s_content_type, sizeof(s_content_type), "%s", ct[0] ? ct : "audio/mpeg");
+        if (!ct[0] || strcasecmp(ct, "application/octet-stream") == 0) {
+            snprintf(s_content_type, sizeof(s_content_type), "audio/mpeg");
+        }
+        s_content_enum = ROCK_SOURCE_CT_MPEG;
+    } else {
+        snprintf(s_content_type, sizeof(s_content_type), "audio/wav");
+        if (strcasestr(ct, "wav")) {
+            s_content_enum = ROCK_SOURCE_CT_WAV;
+        } else if (strcasestr(ct, "aac")) {
+            s_content_enum = ROCK_SOURCE_CT_AAC;
+        } else {
+            s_content_enum = ROCK_SOURCE_CT_UNKNOWN;
+        }
+    }
+    ESP_LOGI(TAG, "Source transport: %s (%s)", s_passthrough ? "passthrough" : "wav-pcm",
+        s_content_type);
+    return (s_passthrough || upstream_open_decoder(&s_upstream))
+        && relay_prefill_ring(&s_upstream, scratch, filtered, pcm, wav);
+}
+
 esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
 {
     if (!upstream_uri || !upstream_uri[0]) {
@@ -1027,15 +1156,6 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
         return ESP_ERR_NO_MEM;
     }
 
-    uint8_t *scratch = heap_caps_malloc(RELAY_READ_CHUNK_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    uint8_t *filtered = heap_caps_malloc(RELAY_READ_CHUNK_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    uint8_t *pcm = heap_caps_malloc(RELAY_PCM_CHUNK_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    uint8_t *wav = heap_caps_malloc(RELAY_WAV_CHUNK_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!scratch || !filtered || !pcm || !wav) {
-        ESP_LOGE(TAG, "Failed to allocate source prefill buffers");
-        goto fail;
-    }
-
     memset(&s_upstream, 0, sizeof(s_upstream));
     s_upstream.http_cfg = (esp_http_client_config_t){
         .url = s_upstream_uri,
@@ -1046,6 +1166,7 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
         .buffer_size_tx = 1024,
         .event_handler = on_upstream_http_event,
         .user_data = &s_upstream.headers,
+        .save_client_session = true,
     };
     s_upstream.raw = heap_caps_malloc(RELAY_RAW_BUFFER_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_upstream.raw) {
@@ -1053,87 +1174,34 @@ esp_err_t rock_source_start(const char *upstream_uri, const char *bearer)
         goto fail;
     }
 
-    // Confidentiality: NEVER log s_upstream_uri or s_upstream_bearer.
-    if (!upstream_connect(&s_upstream)) {
-        goto fail;
-    }
-
-    // Transport choice mirrors rockcast choose_transport: MP3 goes through
-    // as audio/mpeg (the weak radio link cannot carry a 6x heavier WAV
-    // transcode), anything else (AAC/unknown) still transcodes to WAV PCM.
-    // Speaker consumers read PCM directly in transcode mode and decode the
-    // compressed ring themselves in passthrough mode.
-    {
-        const char *ct = s_upstream.headers.content_type;
-        const char *url = s_upstream_uri;
-        bool mp3 = strcasestr(ct, "mpeg") || strcasestr(ct, "mp3")
-            || strcasestr(url, ".mp3") || strcasestr(url, "/mp3");
-        s_passthrough = mp3;
-        if (mp3) {
-            snprintf(s_content_type, sizeof(s_content_type), "%s",
-                ct[0] ? ct : "audio/mpeg");
-            // normalize_content_type: unknown/octet-stream defaults to mpeg
-            if (!ct[0] || strcasecmp(ct, "application/octet-stream") == 0) {
-                snprintf(s_content_type, sizeof(s_content_type), "audio/mpeg");
-            }
-            s_content_enum = ROCK_SOURCE_CT_MPEG;
-        } else {
-            snprintf(s_content_type, sizeof(s_content_type), "audio/wav");
-            // Transcode mode always serves WAV; keep the upstream family in
-            // the enum for logs/diagnostics.
-            if (strcasestr(ct, "wav")) {
-                s_content_enum = ROCK_SOURCE_CT_WAV;
-            } else if (strcasestr(ct, "aac")) {
-                s_content_enum = ROCK_SOURCE_CT_AAC;
-            } else {
-                s_content_enum = ROCK_SOURCE_CT_UNKNOWN;
-            }
+    relay_clients_reset();
+    if (!s_source_started) {
+        s_source_started = xSemaphoreCreateBinary();
+        if (!s_source_started) {
+            ESP_LOGE(TAG, "Failed to create source start signal");
+            goto fail;
         }
     }
-    ESP_LOGI(TAG, "Source transport: %s (%s)", s_passthrough ? "passthrough" : "wav-pcm",
-        s_content_type);
-
-    if ((!s_passthrough && !upstream_open_decoder(&s_upstream))
-        || !relay_prefill_ring(&s_upstream, scratch, filtered, pcm, wav)) {
-        goto fail;
-    }
-
-    free(scratch);
-    free(filtered);
-    free(pcm);
-    free(wav);
-
-    relay_clients_reset();
-    atomic_store(&s_relay_running, true);
-
-    BaseType_t ret = xTaskCreatePinnedToCore(relay_task, "rock_relay", 6144, NULL, 5,
+    s_source_start_ok = false;
+    BaseType_t ret = xTaskCreatePinnedToCore(relay_task, "rock_relay", 12288, NULL, 5,
         NULL, 1);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to spawn source feeder task");
-        atomic_store(&s_relay_running, false);
-        goto fail_no_buffers;
+        goto fail;
+    }
+    xSemaphoreTake(s_source_started, portMAX_DELAY);
+    if (!s_source_start_ok) {
+        goto fail_started;
     }
 
     ESP_LOGI(TAG, "Stream source started (%s)",
         s_passthrough ? "compressed passthrough" : "48 kHz stereo PCM");
     return ESP_OK;
 
-fail_no_buffers:
-    atomic_store(&s_relay_running, false);
-    upstream_teardown(&s_upstream);
-    rock_ring_reset(&s_ring);
-    xSemaphoreTake(s_config_lock, portMAX_DELAY);
-    s_upstream_uri[0] = '\0';
-    s_upstream_bearer[0] = '\0';
-    xSemaphoreGive(s_config_lock);
-    return ESP_FAIL;
-
 fail:
-    free(scratch);
-    free(filtered);
-    free(pcm);
-    free(wav);
-    upstream_teardown(&s_upstream);
+    free(s_upstream.raw);
+    s_upstream.raw = NULL;
+fail_started:
     rock_ring_reset(&s_ring);
     xSemaphoreTake(s_config_lock, portMAX_DELAY);
     s_upstream_uri[0] = '\0';

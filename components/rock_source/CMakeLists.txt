@@ -7,6 +7,7 @@ idf_component_register(
     PRIV_REQUIRES
         "rock_platform"
         "esp_http_client"
+        "http_parser"
         "esp_audio_codec"
         "esp_timer"
         "esp-tls"
