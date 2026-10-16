@@ -247,8 +247,16 @@ impl CastClient {
         // relay actually serves first, then the fallback ladder.
         let candidates = content.cast_load_candidates();
         let last = candidates[candidates.len() - 1];
+        let ladder_start = platform::uptime_ms();
         for content_type in candidates {
-            match self.load_stream_attempt(stream_url, title, content_type) {
+            let elapsed = platform::uptime_ms().saturating_sub(ladder_start);
+            if elapsed >= CAST_LOAD_LADDER_TIMEOUT_MS as u64 {
+                platform::cast_log("Cast LOAD ladder budget exhausted");
+                return Err(());
+            }
+            let remaining = (CAST_LOAD_LADDER_TIMEOUT_MS as u64 - elapsed) as u32;
+            let attempt_timeout = remaining.min(CAST_LOAD_ATTEMPT_TIMEOUT_MS);
+            match self.load_stream_attempt(stream_url, title, content_type, attempt_timeout) {
                 Ok(()) => return Ok(()),
                 Err(()) if content_type != last => {
                     platform::cast_log(&format!(
@@ -270,6 +278,7 @@ impl CastClient {
         stream_url: &str,
         title: &str,
         content_type: &str,
+        timeout_ms: u32,
     ) -> Result<(), ()> {
         let transport_id = self.transport_id.clone().ok_or(())?;
         let session_id = self.session_id.clone().ok_or(())?;
@@ -295,9 +304,45 @@ impl CastClient {
         let mut loaded_mid: Option<i64> = None;
         let mut pending_mid: Option<i64> = None;
         let mut nudged = false;
+        let mut nudge_at: Option<u64> = None;
 
-        while platform::uptime_ms() - start_wait < CAST_LOAD_ATTEMPT_TIMEOUT_MS as u64 {
-            if let Some(msg) = Self::read_msg(stream, &mut self.inbox, 1000)? {
+        while platform::uptime_ms().saturating_sub(start_wait) < timeout_ms as u64 {
+            // Grace period for RE-17 receiver compatibility: some hardware (commit 1cf0f4b)
+            // starts live playback while remaining in IDLE without sending further status
+            // messages. Once nudged, if no error has occurred for CAST_NUDGE_GRACE_MS,
+            // consider playback ready.
+            if !load_ok && nudged {
+                if let Some(sent_at) = nudge_at {
+                    if platform::uptime_ms().saturating_sub(sent_at) >= CAST_NUDGE_GRACE_MS as u64 {
+                        platform::cast_log(&format!(
+                            "Cast load grace period elapsed after PLAY nudge (mid={:?}); assuming ready (RE-17)",
+                            pending_mid
+                        ));
+                        loaded_mid = pending_mid;
+                        load_ok = true;
+                        break;
+                    }
+                }
+            }
+
+            let now = platform::uptime_ms();
+            let elapsed = now.saturating_sub(start_wait);
+            let remaining_total = (timeout_ms as u64).saturating_sub(elapsed);
+            if remaining_total == 0 {
+                break;
+            }
+            let mut read_timeout = (remaining_total as u32).min(1000);
+            if nudged {
+                if let Some(sent_at) = nudge_at {
+                    let elapsed_nudge = now.saturating_sub(sent_at);
+                    if elapsed_nudge < CAST_NUDGE_GRACE_MS as u64 {
+                        let remaining_grace = (CAST_NUDGE_GRACE_MS as u64 - elapsed_nudge) as u32;
+                        read_timeout = read_timeout.min(remaining_grace).max(50);
+                    }
+                }
+            }
+
+            if let Some(msg) = Self::read_msg(stream, &mut self.inbox, read_timeout)? {
                 // PONG addressed to the receiver (original behaviour of this
                 // loop, unlike the source-addressed pong elsewhere).
                 // Best-effort, see send_pong.
@@ -325,15 +370,31 @@ impl CastClient {
                                 platform::cast_log(&format!("Cast LOAD rejected with type={}", typ));
                                 return Err(());
                             }
-                            if mid.is_some() {
+                            // Only remember mediaSessionId from messages confirmed for this stream
+                            let confirmed_req = rid == load_req as u64;
+                            let matches_stream = content_id == Some(stream_url);
+                            if mid.is_some() && (confirmed_req || matches_stream) {
                                 pending_mid = mid;
                             }
                             match classify_media_status(&v, load_req, stream_url) {
                                 MediaLoadStatus::Ready(mid) => {
                                     platform::cast_log(&format!("Cast LOAD ready! mid={:?}", mid));
-                                    loaded_mid = mid;
+                                    loaded_mid = mid.or(pending_mid);
                                     load_ok = true;
                                     break;
+                                }
+                                MediaLoadStatus::Nudge(mid) => {
+                                    pending_mid = Some(mid);
+                                    if !nudged {
+                                        nudged = true;
+                                        nudge_at = Some(platform::uptime_ms());
+                                        platform::cast_log(&format!(
+                                            "Cast IDLE after LOAD; sending PLAY nudge req={} mid={}",
+                                            nudge_req, mid
+                                        ));
+                                        let nudge = msg_play(nudge_req, &transport_id, mid);
+                                        let _ = Self::send_msg(stream, &nudge);
+                                    }
                                 }
                                 MediaLoadStatus::Error(e) => {
                                     platform::cast_log(&format!("Cast LOAD error: {}", e));
@@ -352,8 +413,9 @@ impl CastClient {
             // command, so mirror the desktop client's best-effort PLAY.
             if !load_ok && !nudged {
                 if let Some(mid) = pending_mid {
-                    if platform::uptime_ms() - start_wait >= 2_000 {
+                    if platform::uptime_ms().saturating_sub(start_wait) >= 2_000 {
                         nudged = true;
+                        nudge_at = Some(platform::uptime_ms());
                         platform::cast_log(&format!(
                             "Cast silent after LOAD; sending PLAY nudge req={} mid={}",
                             nudge_req, mid
@@ -373,7 +435,7 @@ impl CastClient {
         } else {
             platform::cast_log(&format!(
                 "Cast LOAD timed out after {} ms (contentType={})",
-                CAST_LOAD_ATTEMPT_TIMEOUT_MS, content_type
+                timeout_ms, content_type
             ));
             Err(())
         }

@@ -20,9 +20,15 @@ pub const MAX_RECEIVERS: usize = 32;
 pub const CAST_CONNECT_TIMEOUT_MS: u32 = 5_000;
 pub const CAST_GET_STATUS_TIMEOUT_MS: u32 = 3_000;
 pub const CAST_LAUNCH_TIMEOUT_MS: u32 = 8_000;
-/// Per-content-type LOAD attempt (rockcast load_media budget).  The total
-/// across candidates stays under the session ACK-watchdog.
-pub const CAST_LOAD_ATTEMPT_TIMEOUT_MS: u32 = 15_000;
+/// Ladder timeout budget: worst-case total across all candidate content types
+/// stays under ~20 s to protect the session heartbeat watchdog.
+pub const CAST_LOAD_LADDER_TIMEOUT_MS: u32 = 20_000;
+/// Per-content-type LOAD attempt (rockcast load_media budget, <= 15 s).
+pub const CAST_LOAD_ATTEMPT_TIMEOUT_MS: u32 = 10_000;
+/// Grace period for RE-17 receiver compatibility: some receivers start playing
+/// in IDLE without sending further status messages; if no error is observed
+/// for this duration after a PLAY nudge, assume playback started.
+pub const CAST_NUDGE_GRACE_MS: u32 = 3_000;
 pub const CAST_HEARTBEAT_INTERVAL_MS: u64 = 5_000;
 
 /// Content type of the unified stream source (phase 5): mirrors
@@ -426,10 +432,11 @@ pub fn parse_dmr(v: &Value) -> Option<AppSession> {
     None
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MediaLoadStatus {
     Pending,
     Ready(Option<i64>),
+    Nudge(i64),
     Error(String),
 }
 
@@ -458,14 +465,23 @@ pub fn classify_media_status(v: &Value, expected_req: u32, stream_url: &str) -> 
     let state = st.get("playerState").and_then(Value::as_str).unwrap_or("");
     let idle_reason = st.get("idleReason").and_then(Value::as_str).unwrap_or("");
     let mid = st.get("mediaSessionId").and_then(Value::as_i64);
+    let content_id = st.pointer("/media/contentId").and_then(Value::as_str);
+
+    // Unconfirmed broadcast updates (rid == 0) must explicitly match contentId
+    // to avoid false "ready" with stale mediaSessionId from previous streams.
+    let confirmed_req = rid == expected_req;
+    let confirmed_broadcast = rid == 0 && content_id == Some(stream_url);
 
     match state {
-        "BUFFERING" | "PLAYING" | "PAUSED" => MediaLoadStatus::Ready(mid),
-        // This receiver fetches and plays live audio while reporting IDLE with
-        // no idleReason. Its matching LOAD response is the only status it sends.
-        "IDLE" if rid == expected_req && idle_reason.is_empty() && mid.is_some()
-            && st.pointer("/media/contentId").and_then(Value::as_str) == Some(stream_url) => {
+        "BUFFERING" | "PLAYING" | "PAUSED" if confirmed_req || confirmed_broadcast => {
             MediaLoadStatus::Ready(mid)
+        }
+        // Receiver answered LOAD in IDLE without error. Do NOT treat as Ready immediately:
+        // send a PLAY nudge first. Some receivers (RE-17) keep playing while staying in IDLE,
+        // which the caller handles via a post-nudge grace period.
+        "IDLE" if confirmed_req && idle_reason.is_empty() && mid.is_some()
+            && content_id == Some(stream_url) => {
+            MediaLoadStatus::Nudge(mid.unwrap())
         }
         "IDLE" if matches!(idle_reason, "ERROR" | "CANCELLED" | "INTERRUPTED") => {
             MediaLoadStatus::Error(format!("Cast LOAD failed with idle reason: {idle_reason}"))
@@ -542,7 +558,7 @@ mod tests {
             MediaLoadStatus::Ready(Some(999))
         );
 
-        // Broadcast status update (requestId 0) without media object
+        // Unconfirmed broadcast (requestId 0) without media object must NOT give Ready
         let val_delta = json!({
             "requestId": 0,
             "status": [{
@@ -552,6 +568,20 @@ mod tests {
         });
         assert_eq!(
             classify_media_status(&val_delta, 42, "http://stream.url/audio.mp3"),
+            MediaLoadStatus::Pending
+        );
+
+        // Broadcast with matching contentId is confirmed
+        let val_broadcast_matched = json!({
+            "requestId": 0,
+            "status": [{
+                "mediaSessionId": 999,
+                "playerState": "BUFFERING",
+                "media": { "contentId": "http://stream.url/audio.mp3" }
+            }]
+        });
+        assert_eq!(
+            classify_media_status(&val_broadcast_matched, 42, "http://stream.url/audio.mp3"),
             MediaLoadStatus::Ready(Some(999))
         );
 
@@ -569,7 +599,7 @@ mod tests {
             MediaLoadStatus::Pending
         );
 
-        // Transitional IDLE
+        // Transitional IDLE without media
         let val_idle = json!({
             "requestId": 42,
             "status": [{
@@ -582,6 +612,7 @@ mod tests {
             MediaLoadStatus::Pending
         );
 
+        // IDLE without reason with matching contentId and reqId -> Nudge path (not immediate Ready)
         let val_idle_fetching = json!({
             "requestId": 42,
             "status": [{
@@ -592,7 +623,22 @@ mod tests {
         });
         assert_eq!(
             classify_media_status(&val_idle_fetching, 42, "http://stream.url/audio.mp3"),
-            MediaLoadStatus::Ready(Some(999))
+            MediaLoadStatus::Nudge(999)
+        );
+
+        // IDLE with ERROR idleReason -> Error
+        let val_idle_err = json!({
+            "requestId": 42,
+            "status": [{
+                "mediaSessionId": 999,
+                "playerState": "IDLE",
+                "idleReason": "ERROR",
+                "media": { "contentId": "http://stream.url/audio.mp3" }
+            }]
+        });
+        assert_eq!(
+            classify_media_status(&val_idle_err, 42, "http://stream.url/audio.mp3"),
+            MediaLoadStatus::Error("Cast LOAD failed with idle reason: ERROR".into())
         );
     }
 }
