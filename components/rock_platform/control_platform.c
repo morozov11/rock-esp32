@@ -34,6 +34,10 @@ static rock_platform_ui_cbs_t s_ui_cbs;
 
 static const char *TAG = "rock-control";
 
+// mDNS is already linked by the Cast component; keep its one-time startup here,
+// after the STA has an IP and before the session can start audio playback.
+extern esp_err_t mdns_init(void);
+
 void rock_platform_set_ui_cbs(const rock_platform_ui_cbs_t *cbs)
 {
     s_ui_cbs = cbs ? *cbs : (rock_platform_ui_cbs_t){0};
@@ -133,6 +137,12 @@ int rock_platform_init(void)
     }
 
     ESP_LOGI(TAG, "Wi-Fi connection established");
+    err = mdns_init();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "mDNS warmed up before playback");
+    } else {
+        ESP_LOGW(TAG, "mDNS warmup failed: %s", esp_err_to_name(err));
+    }
     if (creds_from_sdkconfig) {
         rock_wifi_storage_save(active_ssid, active_password);
     }

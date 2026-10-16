@@ -231,6 +231,9 @@ int rock_cast_discover(uint32_t timeout_ms, rock_cast_device_t *out_devices, siz
     size_t count = 0;
 
     // 1. Try mDNS discovery first
+    ESP_LOGI(TAG, "mDNS discovery heap before: internal free=%u, largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
     esp_err_t err = mdns_init();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "mdns_init failed: %d", err);
@@ -288,6 +291,9 @@ int rock_cast_discover(uint32_t timeout_ms, rock_cast_device_t *out_devices, siz
         }
         mdns_query_results_free(results);
     }
+    ESP_LOGI(TAG, "mDNS discovery heap after: internal free=%u, largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
     // 2. Unicast LAN subnet fallback if mDNS found 0 devices
     if (count == 0) {
