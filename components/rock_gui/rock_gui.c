@@ -9,6 +9,7 @@
 #include "rock_ui_tokens.h"
 #include "rock_fonts.h"
 #include "audio_spectrum.h"
+#include "rock_player.h"
 #include "rock_ui_screens.h"
 #include "rock_serial.h"
 
@@ -118,6 +119,7 @@ void gui_switch_view(rock_gui_view_mode_t view)
         reg->show();
         if (s_lbl_section) lv_label_set_text(s_lbl_section, reg->section_label);
     }
+    gui_icons_refresh();
 }
 
 rock_gui_view_mode_t gui_active_view(void)
@@ -192,7 +194,8 @@ static void spectrum_timer_cb(lv_timer_t *timer)
     // Read real FFT spectrum bands
     static float bands[SPECTRUM_BANDS_COUNT];
     rock_spectrum_get_bands(bands);
-    gui_now_playing_spectrum_update(bands, s_playback_status == ROCK_GUI_PLAYBACK_PLAYING);
+    gui_now_playing_spectrum_update(bands,
+        s_playback_status == ROCK_GUI_PLAYBACK_PLAYING || rock_player_is_cast_active());
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +338,7 @@ int rock_gui_start(void)
     s_gui_active = true;
 
     gui_switch_view(VIEW_NOW_PLAYING);
+    // A/B control: icon worker disabled for Jazz FM playback measurement.
 
     // Serial diagnostics console (rock_serial.c); started here because its
     // CMD:UI:* actions target widgets that exist only from this point on.
@@ -480,6 +484,37 @@ void rock_gui_set_search_results(const rock_gui_station_item_t *items, size_t co
     lvgl_port_unlock();
 }
 
+void rock_gui_set_favourite_page(const rock_gui_station_item_t *items, size_t count,
+                                 size_t total, size_t page)
+{
+    if (!lvgl_port_lock(1000)) return;
+    gui_catalog_set_favourite_page(items, count, total, page);
+    lvgl_port_unlock();
+}
+
+void rock_gui_set_favourite_ids(const char *const *ids, size_t count, bool writable)
+{
+    if (!lvgl_port_lock(1000)) return;
+    gui_favourite_ids_set(ids, count, writable);
+    gui_catalog_set_favourite_total(count);
+    station_row_ui_t *rows = gui_catalog_rows();
+    for (size_t i = 0; i < gui_catalog_rows_count(); i++) {
+        lv_label_set_text(rows[i].star_lbl,
+            gui_favourite_contains(rows[i].station_id) ? "*" : "+");
+        lv_obj_set_style_text_color(rows[i].star_lbl,
+            gui_favourite_contains(rows[i].station_id) ? ROCK_COLOR_GOLD_STAR : ROCK_COLOR_MUTED, 0);
+    }
+    lvgl_port_unlock();
+}
+
+bool rock_gui_favourites_visible(void)
+{
+    if (!lvgl_port_lock(500)) return false;
+    bool visible = gui_active_view() == VIEW_CATALOG && gui_catalog_favourites_active();
+    lvgl_port_unlock();
+    return visible;
+}
+
 void rock_gui_catalog_load_more_error(void)
 {
     if (!lvgl_port_lock(1000)) return;
@@ -562,6 +597,8 @@ void rock_gui_dismiss_cast_menu(void)
 
 void rock_gui_update_cast_status(bool is_casting, const char *receiver_name)
 {
+    rock_player_set_cast_active(is_casting);
+
     if (!lvgl_port_lock(500)) return;
 
     if (receiver_name && receiver_name[0]) {
@@ -579,6 +616,7 @@ void rock_gui_update_cast_status(bool is_casting, const char *receiver_name)
 void rock_gui_mark_catalog_stale(void)
 {
     if (!lvgl_port_lock(500)) return;
+    gui_favourite_set_writable(false);
 
     // A session drop must not wipe the view state the user will return to
     // (query, results, scroll, accumulated pages): the rows are a display

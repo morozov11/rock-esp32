@@ -2,7 +2,7 @@
 #include "rock_fonts.h"
 #include "rock_ui_tokens.h"
 
-static lv_obj_t *s_view, *s_mono_box, *s_mono_label, *s_badge, *s_station, *s_subtitle;
+static lv_obj_t *s_view, *s_mono_box, *s_mono_label, *s_mono_img, *s_badge, *s_station, *s_subtitle;
 static lv_obj_t *s_live_dot, *s_track, *s_codec, *s_footer_dot, *s_footer;
 
 static lv_obj_t *container(lv_obj_t *parent)
@@ -15,6 +15,12 @@ static lv_obj_t *container(lv_obj_t *parent)
 static void set_monogram(const char *name)
 {
     if (s_mono_box && s_mono_label) gui_monogram_apply(s_mono_box, s_mono_label, name);
+    gui_now_playing_icon_refresh();
+}
+
+void gui_now_playing_icon_refresh(void)
+{
+    if (s_mono_img && s_mono_label) gui_icons_apply(s_mono_img, s_mono_label, gui_station_id());
 }
 
 void np_view_build(lv_obj_t *parent)
@@ -54,6 +60,10 @@ void np_view_build(lv_obj_t *parent)
     lv_obj_set_style_text_font(s_mono_label, &font_inter_24, 0);
     lv_obj_set_style_text_color(s_mono_label, ROCK_COLOR_MONO_TEXT, 0);
     lv_obj_center(s_mono_label);
+    s_mono_img = lv_image_create(s_mono_box);
+    lv_image_set_scale(s_mono_img, 256);
+    lv_obj_center(s_mono_img);
+    lv_obj_add_flag(s_mono_img, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *info = container(top);
     lv_obj_set_size(info, 288, LV_SIZE_CONTENT);
@@ -147,7 +157,10 @@ void np_view_set_station(const char *name, const char *desc, const char *codec)
 }
 void np_view_update_meta(const char *station_id, const char *station_name, const char *title, const char *subtitle)
 {
-    if (station_id && station_id[0]) gui_set_station_id(station_id);
+    if (station_id && station_id[0]) {
+        gui_set_station_id(station_id);
+        gui_now_playing_icon_refresh();
+    }
     if (station_name && station_name[0]) { lv_label_set_text(s_station, station_name); set_monogram(station_name); }
     if (title) lv_label_set_text(s_track, title);
     if (subtitle && subtitle[0]) lv_label_set_text(s_subtitle, subtitle);

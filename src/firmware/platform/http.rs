@@ -8,6 +8,7 @@ use serde_json::Value;
 use std::ffi::CStr;
 
 const RESPONSE_CAPACITY: usize = 65_537;
+const SYNC_RESPONSE_CAPACITY: usize = 512 * 1024;
 
 pub(crate) fn post<T: Serialize>(path: &str, body: &T) -> Result<(u16, Value), ()> {
     let (path, body) = (
@@ -38,6 +39,19 @@ pub(crate) fn post<T: Serialize>(path: &str, body: &T) -> Result<(u16, Value), (
             serde_json::from_slice(bytes).unwrap_or(Value::Null)
         },
     ))
+}
+
+pub(crate) fn post_sync<T: Serialize>(body: &T, bearer: &str) -> Result<(u16, Vec<u8>), ()> {
+    let path = cstring("/api/v1/sync")?;
+    let bearer = cstring(bearer)?;
+    let body = cstring(&serde_json::to_string(body).map_err(|_| ())?)?;
+    let mut response = vec![0u8; SYNC_RESPONSE_CAPACITY];
+    let mut status = 0;
+    let res = unsafe { rock_http_post(path.as_ptr(), bearer.as_ptr(), body.as_ptr(),
+                                       response.as_mut_ptr().cast(), response.len(), &mut status) };
+    if res < 0 || status == 0 { return Err(()); }
+    response.truncate(res as usize);
+    Ok((status as u16, response))
 }
 
 pub(crate) fn get(path: &str, bearer: Option<&str>) -> Result<(u16, Vec<u8>), ()> {

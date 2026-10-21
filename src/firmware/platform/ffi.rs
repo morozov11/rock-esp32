@@ -64,6 +64,9 @@ unsafe extern "C" {
         next_cursor: *const c_char,
     );
     pub(crate) fn rock_gui_set_search_results(items: *const RockGuiStationItem, count: usize);
+    pub(crate) fn rock_gui_set_favourite_page(items: *const RockGuiStationItem, count: usize, total: usize, page: usize);
+    pub(crate) fn rock_gui_set_favourite_ids(ids: *const *const c_char, count: usize, writable: bool);
+    pub(crate) fn rock_gui_favourites_visible() -> bool;
     pub(crate) fn rock_gui_catalog_load_more_error();
     pub(crate) fn rock_gui_catalog_search_busy(busy: bool);
     pub(crate) fn rock_gui_show_loading(message: *const c_char);
@@ -177,6 +180,7 @@ pub(crate) struct RockGuiStationItem {
     pub codec: [c_char; 16],
     pub bitrate_kbps: u32,
     pub is_playing: bool,
+    pub is_available: bool,
 }
 
 #[repr(C)]

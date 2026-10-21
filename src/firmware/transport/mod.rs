@@ -9,6 +9,7 @@
 //! - `gui_sink`: LVGL GUI event handlers (`GuiEventSink` implementation).
 
 mod catalog;
+mod favourites;
 mod gui_sink;
 mod inbound;
 mod media;
@@ -84,6 +85,8 @@ fn session(token: &str) -> Result<(), ()> {
     let mut s = Session::new(token, frame)?;
     loop {
         s.tick_token_refresh();
+        s.tick_favourites();
+        s.tick_favourite_metadata();
         s.check_heartbeat_watchdog()?;
         s.tick_heartbeat()?;
         s.drain_gui_events();

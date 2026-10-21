@@ -91,6 +91,9 @@ static char s_content_type[RELAY_CONTENT_TYPE_MAX] = "audio/mpeg";
 // Enum twin of s_content_type (phase 5): set by the same normalization below,
 // read cross-language without string parsing.
 static rock_source_content_type_t s_content_enum = ROCK_SOURCE_CT_MPEG;
+static rock_source_pcm_tap_fn s_pcm_tap_fn = NULL;
+static void *s_pcm_tap_ctx = NULL;
+static esp_audio_dec_handle_t s_shadow_mp3_dec = NULL;
 
 typedef struct {
     uint32_t source_rate;
@@ -1052,12 +1055,26 @@ static void relay_task(void *pvParameters)
         upstream_discard_http(&s_upstream);
         goto finish;
     }
+    if (s_passthrough) {
+        esp_audio_dec_cfg_t dec_cfg = {
+            .type = ESP_AUDIO_TYPE_MP3,
+            .cfg = NULL,
+            .cfg_sz = 0,
+        };
+        if (esp_audio_dec_open(&dec_cfg, &s_shadow_mp3_dec) != ESP_AUDIO_ERR_OK) {
+            ESP_LOGW(TAG, "Failed to open shadow MP3 decoder for spectrum tap");
+            s_shadow_mp3_dec = NULL;
+        } else {
+            ESP_LOGI(TAG, "Shadow MP3 decoder opened for spectrum tap");
+        }
+    }
     atomic_store(&s_relay_running, true);
     s_source_start_ok = true;
     xSemaphoreGive(s_source_started);
 
     int64_t feed_start_us = esp_timer_get_time();
     uint64_t pushed = s_ring.end;
+    size_t shadow_len = 0;
     // Start the perf window clean: prefill-stage counters are not part of it.
     memset(&s_fstats, 0, sizeof(s_fstats));
     s_fstats.window_start_us = feed_start_us;
@@ -1114,6 +1131,46 @@ static void relay_task(void *pvParameters)
             }
             if (pumped > 0) {
                 rock_ring_push(&s_ring, s_upstream.raw, s_upstream.raw_len);
+                if (s_shadow_mp3_dec != NULL && s_pcm_tap_fn != NULL) {
+                    if (shadow_len + s_upstream.raw_len > RELAY_WAV_CHUNK_BYTES) shadow_len = 0;
+                    memcpy(wav + shadow_len, s_upstream.raw, s_upstream.raw_len);
+                    shadow_len += s_upstream.raw_len;
+                    size_t consumed = 0;
+                    // MP3 decoder treats a truncated tail as a bad frame; keep lookahead for the next read.
+                    while (shadow_len - consumed >= RELAY_READ_CHUNK_BYTES) {
+                        esp_audio_dec_in_raw_t in = {
+                            .buffer = wav + consumed,
+                            .len = (uint32_t)(shadow_len - consumed),
+                        };
+                        esp_audio_dec_out_frame_t frame = {
+                            .buffer = pcm,
+                            .len = RELAY_PCM_CHUNK_BYTES,
+                        };
+                        esp_audio_err_t res = esp_audio_dec_process(s_shadow_mp3_dec, &in, &frame);
+                        if (in.consumed > in.len || frame.decoded_size > frame.len) {
+                            ESP_LOGW(TAG, "Shadow MP3 decoder returned an invalid frame");
+                            consumed = shadow_len;
+                            break;
+                        }
+                        if (res == ESP_AUDIO_ERR_DATA_LACK) {
+                            consumed += in.consumed;
+                            break;
+                        }
+                        if (res == ESP_AUDIO_ERR_OK && frame.decoded_size > 0) {
+                            esp_audio_dec_info_t info = {0};
+                            if (esp_audio_dec_get_info(s_shadow_mp3_dec, &info) == ESP_AUDIO_ERR_OK
+                                && info.sample_rate > 0 && (info.channel == 1 || info.channel == 2)) {
+                                s_pcm_tap_fn(pcm, frame.decoded_size, info.sample_rate,
+                                             (uint8_t)info.channel, s_pcm_tap_ctx);
+                            }
+                        }
+                        if (in.consumed > 0) consumed += in.consumed;
+                        else if (res == ESP_AUDIO_ERR_OK) break;
+                        else consumed++;
+                    }
+                    memmove(wav, wav + consumed, shadow_len - consumed);
+                    shadow_len -= consumed;
+                }
                 s_upstream.raw_len = 0;
             } else {
                 vTaskDelay(pdMS_TO_TICKS(15));
@@ -1132,6 +1189,9 @@ static void relay_task(void *pvParameters)
             s_fstats.pace_us += (uint32_t)(esp_timer_get_time() - pace_t0);
             if (!paced_ok) {
                 break;
+            }
+            if (s_pcm_tap_fn && produced > 0) {
+                s_pcm_tap_fn(wav, (size_t)produced, 48000, 2, s_pcm_tap_ctx);
             }
             rock_ring_push(&s_ring, wav, (size_t)produced);
             pushed += (size_t)produced;
@@ -1157,6 +1217,10 @@ static void relay_task(void *pvParameters)
     }
 
 finish:
+    if (s_shadow_mp3_dec) {
+        esp_audio_dec_close(s_shadow_mp3_dec);
+        s_shadow_mp3_dec = NULL;
+    }
     free(scratch);
     free(filtered);
     free(pcm);
@@ -1582,4 +1646,10 @@ uint32_t rock_source_meta_generation(void)
 void rock_source_clear_meta_title(void)
 {
     clear_meta_title();
+}
+
+void rock_source_set_pcm_tap(rock_source_pcm_tap_fn tap_fn, void *ctx)
+{
+    s_pcm_tap_fn = tap_fn;
+    s_pcm_tap_ctx = ctx;
 }

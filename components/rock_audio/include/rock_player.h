@@ -85,6 +85,12 @@ void rock_player_log_stream_metrics(void);
 size_t rock_player_copy_pcm_snapshot(int16_t *out_samples, size_t max_samples,
                                      uint32_t *sample_rate, uint8_t *channels);
 
+/**
+ * Broadcast (Chromecast) output status controls for audio spectrum snapshot routing.
+ */
+void rock_player_set_cast_active(bool active);
+bool rock_player_is_cast_active(void);
+
 #ifdef __cplusplus
 }
 #endif

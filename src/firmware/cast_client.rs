@@ -93,11 +93,17 @@ impl CastClient {
                             if let Some(app) = parse_dmr(&v) {
                                 return Ok(Some(app));
                             }
+                            if v.get("type").and_then(Value::as_str) == Some("LAUNCH_ERROR") {
+                                let reason = v.get("reason").and_then(Value::as_str).unwrap_or("unknown");
+                                platform::cast_log(&format!("Cast launch rejected: {}", reason));
+                                return Err(());
+                            }
                         }
                     }
                 }
             }
         }
+        platform::cast_log("Cast receiver session wait timed out");
         Ok(None)
     }
 

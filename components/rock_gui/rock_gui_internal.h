@@ -59,9 +59,18 @@ typedef struct {
     lv_obj_t *desc_lbl;
     lv_obj_t *codec_lbl;
     lv_obj_t *play_lbl;
+    lv_obj_t *star_btn;
+    lv_obj_t *star_lbl;
     lv_obj_t *eq_box;      // mini equalizer shown in the ACCENT "playing" row
     char station_id[129];
+    bool available;
 } station_row_ui_t;
+
+void gui_icons_start(void);
+void gui_icons_apply(lv_obj_t *image, lv_obj_t *monogram, const char *station_id);
+void gui_icons_refresh(void);
+void gui_icons_prepare_play(const char *station_id);
+void gui_now_playing_icon_refresh(void);
 
 // Build one hidden row (alternating background, whole-row click → play).
 void gui_station_row_setup(station_row_ui_t *row_ui, lv_obj_t *parent, int index);
@@ -70,6 +79,10 @@ void gui_station_row_setup(station_row_ui_t *row_ui, lv_obj_t *parent, int index
 // the rest hidden. log_rows keeps the search-results debug logging.
 void gui_station_rows_fill(station_row_ui_t *rows, const rock_gui_station_item_t *items,
                            size_t limit, bool log_rows);
+bool gui_favourite_contains(const char *id);
+bool gui_favourite_writable(void);
+void gui_favourite_ids_set(const char *const *ids, size_t count, bool writable);
+void gui_favourite_set_writable(bool writable);
 
 // Modal state overlay: the former show_loading/empty/offline/error quartet
 // unified into one entry point. title/desc fall back to per-kind defaults
@@ -124,6 +137,10 @@ void gui_catalog_search_busy(bool busy);
 // search_results=true — search results (keyboard down, list up, row logging).
 void gui_catalog_set_rows(const rock_gui_station_item_t *items, size_t count, bool search_results);
 void gui_catalog_set_search_results(const rock_gui_station_item_t *items, size_t count);
+void gui_catalog_set_favourite_page(const rock_gui_station_item_t *items, size_t count,
+                                     size_t total, size_t page);
+void gui_catalog_set_favourite_total(size_t total);
+bool gui_catalog_favourites_active(void);
 void gui_catalog_exit_search(void);
 bool gui_catalog_is_search_active(void);
 // True while the view holds accumulated pages or an active search, i.e. the

@@ -44,6 +44,9 @@ pub(crate) trait GuiEventSink {
     fn on_cast_browse(&mut self);
     fn on_cast_select(&mut self, receiver_id: String);
     fn on_cast_disconnect(&mut self);
+    fn on_favourites_show(&mut self);
+    fn on_favourites_page(&mut self, page: u16);
+    fn on_favourite_toggle(&mut self, station: String);
 
     fn dispatch_gui_event(&mut self, evt: platform::GuiEvent) {
         use platform::GuiEvent;
@@ -59,6 +62,9 @@ pub(crate) trait GuiEventSink {
             GuiEvent::CastBrowse => self.on_cast_browse(),
             GuiEvent::CastSelect(receiver_id) => self.on_cast_select(receiver_id),
             GuiEvent::CastDisconnect => self.on_cast_disconnect(),
+            GuiEvent::FavouritesShow => self.on_favourites_show(),
+            GuiEvent::FavouritesPage(page) => self.on_favourites_page(page),
+            GuiEvent::FavouriteToggle(station) => self.on_favourite_toggle(station),
         }
     }
 }
@@ -132,6 +138,9 @@ impl GuiEventSink for OfflineHandler {
         platform::gui_show_error(crate::presentation::ui_strings::SERVER_LINK_LOST);
     }
     fn on_cast_disconnect(&mut self) {}
+    fn on_favourites_show(&mut self) { platform::gui_show_offline("Избранное недоступно"); }
+    fn on_favourites_page(&mut self, _page: u16) { platform::gui_show_offline("Избранное недоступно"); }
+    fn on_favourite_toggle(&mut self, _station: String) { platform::gui_show_offline("Избранное недоступно"); }
 }
 
 #[unsafe(no_mangle)]

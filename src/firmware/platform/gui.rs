@@ -22,6 +22,9 @@ pub(crate) enum GuiEvent {
     CastBrowse,
     CastSelect(String),
     CastDisconnect,
+    FavouritesShow,
+    FavouritesPage(u16),
+    FavouriteToggle(String),
 }
 
 pub(crate) fn gui_poll_event(timeout_ms: u32) -> Option<GuiEvent> {
@@ -48,6 +51,9 @@ pub(crate) fn gui_poll_event(timeout_ms: u32) -> Option<GuiEvent> {
             crate::abi::ROCK_UI_EVT_CAST_BROWSE => Some(GuiEvent::CastBrowse),
             crate::abi::ROCK_UI_EVT_CAST_SELECT => Some(GuiEvent::CastSelect(text)),
             crate::abi::ROCK_UI_EVT_CAST_DISCONNECT => Some(GuiEvent::CastDisconnect),
+            crate::abi::ROCK_UI_EVT_FAVOURITES_SHOW => Some(GuiEvent::FavouritesShow),
+            crate::abi::ROCK_UI_EVT_FAVOURITES_PAGE => Some(GuiEvent::FavouritesPage(raw.value.max(0) as u16)),
+            crate::abi::ROCK_UI_EVT_FAVOURITE_TOGGLE => Some(GuiEvent::FavouriteToggle(text)),
             _ => None,
         }
     } else {
@@ -118,6 +124,7 @@ fn convert_stations(
             codec: [0; 16],
             bitrate_kbps: s.bitrate_kbps.unwrap_or(0),
             is_playing: false,
+            is_available: !s.tags.iter().any(|t| t == "Недоступна в каталоге" || t == "Загрузка..." || t == "Нет связи с каталогом"),
         };
         copy_str_to_buf(&s.id, &mut item.id);
         copy_str_to_buf(&s.name, &mut item.name);
@@ -184,6 +191,23 @@ pub(crate) fn gui_set_search_results(
         items.as_ptr()
     };
     unsafe { rock_gui_set_search_results(items_ptr, items.len()) };
+}
+
+pub(crate) fn gui_set_favourite_page(
+    stations: &[crate::device_control::catalog::DeviceStationDto], total: usize, page: usize,
+) {
+    let items = convert_stations(stations);
+    unsafe { rock_gui_set_favourite_page(items.as_ptr(), items.len(), total, page) };
+}
+
+pub(crate) fn gui_set_favourite_ids(ids: &[String], writable: bool) {
+    let strings: Vec<_> = ids.iter().filter_map(|id| cstring(id).ok()).collect();
+    let ptrs: Vec<_> = strings.iter().map(|s| s.as_ptr()).collect();
+    unsafe { rock_gui_set_favourite_ids(ptrs.as_ptr(), ptrs.len(), writable) };
+}
+
+pub(crate) fn gui_favourites_visible() -> bool {
+    unsafe { rock_gui_favourites_visible() }
 }
 
 pub(crate) fn gui_catalog_load_more_error() {

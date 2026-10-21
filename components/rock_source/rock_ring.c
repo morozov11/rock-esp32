@@ -203,6 +203,16 @@ size_t rock_pcm_ring_read(rock_pcm_ring_t *r, uint8_t *out, size_t max_len)
     return to_read;
 }
 
+void rock_pcm_ring_drop_oldest(rock_pcm_ring_t *r, size_t len)
+{
+    if (!r || !r->lock) return;
+    xSemaphoreTake(r->lock, portMAX_DELAY);
+    if (len > r->fill) len = r->fill;
+    r->tail = (r->tail + len) % r->capacity;
+    r->fill -= len;
+    xSemaphoreGive(r->lock);
+}
+
 size_t rock_pcm_ring_fill(rock_pcm_ring_t *r)
 {
     if (!r || !r->lock) return 0;

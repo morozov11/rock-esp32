@@ -20,7 +20,8 @@ static float s_fft[FFT_N * 2] __attribute__((aligned(16)));
 static int16_t s_pcm[FFT_N * 2];
 static uint16_t s_edges[SPECTRUM_BANDS_COUNT + 1];
 static uint64_t s_elapsed_us;
-static uint32_t s_frames, s_active_frames, s_max_us;
+static uint32_t s_frames, s_active_frames, s_held_frames, s_max_us;
+static uint16_t s_pcm_peak_max;
 static int64_t s_started_us;
 
 /* A real mono signal in a complex FFT. No two-real-channel unpacking:
@@ -76,6 +77,7 @@ static void analysis_task(void *arg)
     (void)arg;
     ESP_LOGI(TAG, "Spectrum task Core %d, FFT %d, 25 Hz", xPortGetCoreID(), FFT_N);
     TickType_t wake = xTaskGetTickCount();
+    int64_t last_pcm_us = 0;
     while (1) {
         vTaskDelayUntil(&wake, pdMS_TO_TICKS(INTERVAL_MS));
         int64_t start = esp_timer_get_time();
@@ -83,17 +85,29 @@ static void analysis_task(void *arg)
         uint8_t channels = 0;
         size_t n = rock_player_copy_pcm_snapshot(s_pcm, FFT_N * 2, &rate, &channels);
         bool active = rate > 0 && (channels == 1 || channels == 2) && n >= FFT_N * channels;
+        bool hold = !active && rock_player_is_cast_active() && start - last_pcm_us < 300000;
         float next[SPECTRUM_BANDS_COUNT] = {0};
-        if (active) analyze(n, channels, next);
+        uint16_t pcm_peak = 0;
+        if (active) {
+            analyze(n, channels, next);
+            last_pcm_us = start;
+            for (size_t i = 0; i < n; i++) {
+                int32_t sample = s_pcm[i];
+                if (sample < 0) sample = -sample;
+                if (sample > pcm_peak) pcm_peak = (uint16_t)sample;
+            }
+        }
         xSemaphoreTake(s_mutex, portMAX_DELAY);
         for (int b = 0; b < SPECTRUM_BANDS_COUNT; b++) {
-            s_bands[b] = fmaxf(next[b], s_bands[b] * 0.74f);
+            if (!hold) s_bands[b] = fmaxf(next[b], s_bands[b] * 0.74f);
             if (s_bands[b] < 0.01f) s_bands[b] = 0;
         }
         uint32_t us = (uint32_t)(esp_timer_get_time() - start);
         s_elapsed_us += us;
         s_frames++;
         s_active_frames += active;
+        s_held_frames += hold;
+        if (pcm_peak > s_pcm_peak_max) s_pcm_peak_max = pcm_peak;
         if (us > s_max_us) s_max_us = us;
         xSemaphoreGive(s_mutex);
     }
@@ -144,8 +158,9 @@ void rock_spectrum_log_metrics(void)
     uint64_t wall = esp_timer_get_time() - s_started_us;
     float peak = 0;
     for (int b = 0; b < SPECTRUM_BANDS_COUNT; b++) peak = fmaxf(peak, s_bands[b]);
-    ESP_LOGI(TAG, "metrics frames=%lu active=%lu avg_us=%lu max_us=%lu runtime_us=%lu wall_us=%llu cpu_pct=%.3f stack_free=%u peak=%.3f",
+    ESP_LOGI(TAG, "metrics frames=%lu active=%lu held=%lu pcm_peak=%u avg_us=%lu max_us=%lu runtime_us=%lu wall_us=%llu cpu_pct=%.3f stack_free=%u peak=%.3f",
              (unsigned long)s_frames, (unsigned long)s_active_frames,
+             (unsigned long)s_held_frames, (unsigned)s_pcm_peak_max,
              (unsigned long)(s_frames ? s_elapsed_us / s_frames : 0), (unsigned long)s_max_us,
              (unsigned long)status.ulRunTimeCounter, (unsigned long long)wall,
              wall ? 100.0 * status.ulRunTimeCounter / wall : 0, (unsigned)status.usStackHighWaterMark, peak);

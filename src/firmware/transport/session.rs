@@ -11,6 +11,7 @@ use crate::firmware::update_link_indicator;
 use crate::firmware::GuiEventSink;
 use crate::presentation::ui_strings as tr;
 use core::ffi::c_char;
+use std::collections::HashMap;
 
 pub(super) struct Session {
     pub(super) token: String,
@@ -34,6 +35,13 @@ pub(super) struct Session {
     /// LoadMore re-sending that same cursor is a stale duplicate (no data
     /// update since) and is dropped in `on_catalog_browse`.
     pub(super) catalog_last_cursor: Option<String>,
+    pub(super) favourites: Vec<crate::device_control::favourites::Favourite>,
+    pub(super) favourite_loaded: bool,
+    pub(super) favourite_revision: u64,
+    pub(super) favourite_page: usize,
+    pub(super) next_favourite_sync: u64,
+    pub(super) favourite_meta: HashMap<String, super::favourites::FavouriteMeta>,
+    pub(super) next_favourite_meta: u64,
     pub(super) network_check: u64,
     pub(super) next_heartbeat: u64,
     pub(super) next_token_refresh: u64,
@@ -63,6 +71,13 @@ impl Session {
             pending_cancel: false,
             retry: None,
             catalog_last_cursor: None,
+            favourites: Vec::new(),
+            favourite_loaded: false,
+            favourite_revision: 0,
+            favourite_page: 0,
+            next_favourite_sync: 0,
+            favourite_meta: HashMap::new(),
+            next_favourite_meta: 0,
             network_check: 0,
             next_heartbeat: platform::uptime_ms() + HEARTBEAT_MS,
             next_token_refresh: platform::uptime_ms() + 10 * 60_000,

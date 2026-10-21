@@ -144,6 +144,14 @@ uint32_t rock_source_meta_generation(void);
  */
 void rock_source_clear_meta_title(void);
 
+/**
+ * PCM tap callback to deliver decoded audio samples directly to observers
+ * (e.g. spectrum analyzer during Chromecast transcode playback) without
+ * introducing cyclic component dependencies.
+ */
+typedef void (*rock_source_pcm_tap_fn)(const void *pcm, size_t bytes, uint32_t rate, uint8_t channels, void *ctx);
+void rock_source_set_pcm_tap(rock_source_pcm_tap_fn tap_fn, void *ctx);
+
 #ifdef __cplusplus
 }
 #endif

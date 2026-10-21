@@ -76,6 +76,9 @@ size_t rock_pcm_ring_write(rock_pcm_ring_t *r, const uint8_t *data, size_t len);
 // Drain up to max_len bytes in FIFO order; returns bytes read.
 size_t rock_pcm_ring_read(rock_pcm_ring_t *r, uint8_t *out, size_t max_len);
 
+// Discard oldest bytes before a non-blocking spectrum write; caller keeps frame alignment.
+void rock_pcm_ring_drop_oldest(rock_pcm_ring_t *r, size_t len);
+
 size_t rock_pcm_ring_fill(rock_pcm_ring_t *r);
 
 void rock_pcm_ring_clear(rock_pcm_ring_t *r);

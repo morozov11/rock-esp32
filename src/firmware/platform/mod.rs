@@ -17,6 +17,8 @@ pub(crate) use gui::{
     gui_catalog_append, gui_catalog_begin, gui_catalog_load_more_error, gui_catalog_search_busy,
     gui_dismiss_cast_menu, gui_dismiss_state, gui_flush_events,
     gui_mark_catalog_stale, gui_poll_event, gui_set_cast_devices, gui_set_search_results,
+    gui_set_favourite_ids, gui_set_favourite_page,
+    gui_favourites_visible,
     gui_set_starting_station, gui_show_cast_menu, gui_show_empty, gui_show_error,
     gui_show_loading, gui_show_offline, gui_start, gui_update_cast_status,
     gui_update_connectivity, gui_update_playback, GuiEvent,
@@ -24,7 +26,7 @@ pub(crate) use gui::{
 #[allow(unused_imports)]
 pub(crate) use gui::gui_set_browse_stations;
 pub(crate) use http::{
-    get, log_msg, post, ws_log_heartbeat_timeout, ws_log_rx_frame, ws_receive, ws_send, ws_start,
+    get, log_msg, post, post_sync, ws_log_heartbeat_timeout, ws_log_rx_frame, ws_receive, ws_send, ws_start,
     ws_stop,
 };
 pub(crate) use tls::CastTlsStream;

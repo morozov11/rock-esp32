@@ -30,6 +30,7 @@ typedef struct {
     char codec[16];
     uint32_t bitrate_kbps;
     bool is_playing;
+    bool is_available;
 } rock_gui_station_item_t;
 
 typedef enum {
@@ -45,6 +46,9 @@ typedef enum {
     ROCK_UI_EVT_CAST_BROWSE,
     ROCK_UI_EVT_CAST_SELECT,    // text: receiver_id
     ROCK_UI_EVT_CAST_DISCONNECT,
+    ROCK_UI_EVT_FAVOURITES_SHOW,
+    ROCK_UI_EVT_FAVOURITES_PAGE, // value: page number
+    ROCK_UI_EVT_FAVOURITE_TOGGLE, // text: station_id
 } rock_ui_event_type_t;
 
 #define ROCK_GUI_MAX_CAST_DEVICES 16
@@ -120,6 +124,10 @@ void rock_gui_set_browse_stations(const rock_gui_station_item_t *items, size_t c
  * visible list, hides the keyboard).
  */
 void rock_gui_set_search_results(const rock_gui_station_item_t *items, size_t count);
+void rock_gui_set_favourite_page(const rock_gui_station_item_t *items, size_t count,
+                                 size_t total, size_t page);
+void rock_gui_set_favourite_ids(const char *const *ids, size_t count, bool writable);
+bool rock_gui_favourites_visible(void);
 
 /**
  * Inline load-more error notification (UC-6).

@@ -2,6 +2,7 @@
 #include "audio_bsp.h"
 #include "rock_source.h"
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -22,19 +23,14 @@ static void stream_rx_task(void *arg)
     // Per-generation heap buffers: rock_player_play_stream joins the previous
     // task for only ~600 ms, so two generations can overlap and must never
     // share static buffers here. Freed on every exit path (fail/cleanup).
-    uint8_t *in_buf = malloc(HTTP_CHUNK_SIZE * 2);
-    uint8_t *out_buf = malloc(DECODE_OUT_CAP);
+    uint8_t *in_buf = NULL;
+    uint8_t *out_buf = NULL;
 
     char current_station[130];
     rock_player_get_station(current_station, sizeof(current_station));
 
     rock_player_set_status(ROCK_PLAYER_STATUS_BUFFERING);
     rock_player_notify_ui(current_station, ROCK_PLAYER_UI_BUFFERING);
-
-    if (!in_buf || !out_buf) {
-        ESP_LOGE(TAG, "Failed to allocate stream RX buffers");
-        goto fail;
-    }
 
     if (!rock_source_is_active()) {
         ESP_LOGE(TAG, "Stream source is not running");
@@ -45,6 +41,12 @@ static void stream_rx_task(void *arg)
     // source for Cast); the speaker consumes it directly without a decoder.
     // Compressed mode: decode locally like before, just from the ring.
     bool pcm_mode = rock_source_is_pcm();
+    in_buf = heap_caps_malloc(HTTP_CHUNK_SIZE * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    out_buf = pcm_mode ? NULL : heap_caps_malloc(DECODE_OUT_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!in_buf || (!pcm_mode && !out_buf)) {
+        ESP_LOGE(TAG, "Failed to allocate stream RX buffers");
+        goto fail;
+    }
 
     if (!pcm_mode) {
         const char *content_type = rock_source_content_type();
@@ -76,6 +78,7 @@ static void stream_rx_task(void *arg)
         rock_player_set_audio_format(current_fs, current_channels);
     }
 
+    unsigned work_chunks = 0;
     while (!rock_player_is_stop_signaled() && rock_player_get_generation() == current_gen) {
         // Flow control: wait if PCM ring buffer is getting full (> 85%)
         if (rock_pcm_ring_fill(rock_player_get_pcm_ring()) > (PCM_RING_CAPACITY * 85 / 100)) {
@@ -103,6 +106,7 @@ static void stream_rx_task(void *arg)
             rock_player_stat_add_pcm_bytes((uint32_t)written);
             in_len = 0;
             rock_player_check_preroll(current_station);
+            if (++work_chunks % 8 == 0) vTaskDelay(1);
             continue;
         }
 
@@ -121,6 +125,7 @@ static void stream_rx_task(void *arg)
         } else {
             in_len = 0;
         }
+        if (++work_chunks % 8 == 0) vTaskDelay(1);
     }
 
     goto cleanup;

@@ -10,6 +10,12 @@ use crate::firmware::GuiEventSink;
 use crate::presentation::ui_strings as tr;
 
 impl GuiEventSink for Session {
+    fn on_favourites_show(&mut self) { self.show_favourites(0); }
+
+    fn on_favourites_page(&mut self, page: u16) { self.show_favourites(page as usize); }
+
+    fn on_favourite_toggle(&mut self, station: String) { self.toggle_favourite(&station); }
+
     fn on_play_station(&mut self, station: String) {
         if station.is_empty() || station.len() > 128 {
             return;

@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "rock_gui.c"
         "rock_gui_widgets.c"
+        "rock_gui_icons.c"
         "rock_gui_keyboard.c"
         "rock_gui_views_catalog.c"
         "rock_gui_views_cast.c"
@@ -23,6 +24,7 @@ idf_component_register(
         "rock_display"
         "esp_lvgl_port"
         "lvgl"
+        "rock_webp"
     PRIV_REQUIRES
         "driver"
         "esp_driver_usb_serial_jtag"
@@ -30,6 +32,7 @@ idf_component_register(
         "esp_timer"
         "heap"
         "esp_http_client"
+        "mbedtls"
         "esp_hosted"
     WHOLE_ARCHIVE
 )

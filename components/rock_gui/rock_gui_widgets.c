@@ -8,11 +8,40 @@
 
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
+#include "esp_heap_caps.h"
 
 #include <stdio.h>
 #include <string.h>
 
 static const char *TAG = "rock-gui";
+static char (*s_favourite_ids)[129];
+static size_t s_favourite_count;
+static bool s_favourite_writable;
+
+bool gui_favourite_contains(const char *id)
+{
+    for (size_t i = 0; i < s_favourite_count; i++) {
+        if (!strcmp(s_favourite_ids[i], id)) return true;
+    }
+    return false;
+}
+
+bool gui_favourite_writable(void) { return s_favourite_writable; }
+void gui_favourite_set_writable(bool writable) { s_favourite_writable = writable; }
+
+void gui_favourite_ids_set(const char *const *ids, size_t count, bool writable)
+{
+    if (count > 500) return;
+    char (*next)[129] = count ? heap_caps_malloc(count * 129, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL;
+    if (count && !next) return;
+    for (size_t i = 0; i < count; i++) {
+        strlcpy(next[i], ids[i], 129);
+    }
+    free(s_favourite_ids);
+    s_favourite_ids = next;
+    s_favourite_count = count;
+    s_favourite_writable = writable;
+}
 
 // ---------------------------------------------------------------- button ---
 
@@ -110,6 +139,7 @@ static void on_station_row_click(lv_event_t *e)
 {
     station_row_ui_t *row_data = (station_row_ui_t *)lv_event_get_user_data(e);
     if (!row_data || row_data->station_id[0] == '\0') return;
+    if (!row_data->available) return;
 
     lv_obj_t *ticker = gui_ticker_label();
     if (ticker) {
@@ -120,8 +150,19 @@ static void on_station_row_click(lv_event_t *e)
                                 lv_label_get_text(row_data->desc_lbl),
                                 lv_label_get_text(row_data->codec_lbl));
     rock_gui_flush_events();
-    gui_enqueue_event(ROCK_UI_EVT_PLAY_STATION, row_data->station_id, 0);
     gui_switch_view(VIEW_NOW_PLAYING);
+    gui_enqueue_event(ROCK_UI_EVT_PLAY_STATION, row_data->station_id, 0);
+}
+
+static void on_star_click(lv_event_t *e)
+{
+    station_row_ui_t *row = (station_row_ui_t *)lv_event_get_user_data(e);
+    if (!row || !row->station_id[0]) return;
+    if (!gui_favourite_writable()) {
+        gui_overlay_set(GUI_OVERLAY_OFFLINE, "Избранное недоступно", NULL, true);
+        return;
+    }
+    gui_enqueue_event(ROCK_UI_EVT_FAVOURITE_TOGGLE, row->station_id, 0);
 }
 
 void gui_station_row_setup(station_row_ui_t *row_ui, lv_obj_t *parent, int index)
@@ -156,20 +197,25 @@ void gui_station_row_setup(station_row_ui_t *row_ui, lv_obj_t *parent, int index
     // Text box (name + desc)
     lv_obj_t *text_box = lv_obj_create(row_ui->row);
     lv_obj_remove_style_all(text_box);
-    lv_obj_set_size(text_box, 544, 48);
+    lv_obj_set_size(text_box, 482, 48);
     lv_obj_set_flex_flow(text_box, LV_FLEX_FLOW_COLUMN);
 
     row_ui->name_lbl = lv_label_create(text_box);
     lv_label_set_text(row_ui->name_lbl, "Station Name");
     lv_label_set_long_mode(row_ui->name_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(row_ui->name_lbl, 540);
+    lv_obj_set_width(row_ui->name_lbl, 478);
     lv_obj_set_style_text_font(row_ui->name_lbl, &font_inter_18, 0);
     lv_obj_set_style_text_color(row_ui->name_lbl, ROCK_COLOR_FG, 0);
 
     row_ui->desc_lbl = lv_label_create(text_box);
     lv_label_set_text(row_ui->desc_lbl, "Genre / Tags");
     lv_label_set_long_mode(row_ui->desc_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(row_ui->desc_lbl, 540);
+    lv_obj_set_width(row_ui->desc_lbl, 478);
+
+    row_ui->star_btn = gui_make_button(row_ui->row, 48, 48, "*", &font_inter_24,
+                                        on_star_click, row_ui);
+    lv_obj_set_style_bg_opa(row_ui->star_btn, LV_OPA_TRANSP, 0);
+    row_ui->star_lbl = lv_obj_get_child(row_ui->star_btn, 0);
     lv_obj_set_style_text_font(row_ui->desc_lbl, &font_inter_14, 0);
     lv_obj_set_style_text_color(row_ui->desc_lbl, ROCK_COLOR_MUTED, 0);
 
@@ -214,6 +260,12 @@ void gui_station_rows_fill(station_row_ui_t *rows, const rock_gui_station_item_t
         station_row_ui_t *row_ui = &rows[i];
         if (i < limit && items) {
             strncpy(row_ui->station_id, items[i].id, sizeof(row_ui->station_id) - 1);
+            row_ui->station_id[sizeof(row_ui->station_id) - 1] = '\0';
+            row_ui->available = items[i].is_available;
+            lv_label_set_text(row_ui->star_lbl,
+                gui_favourite_contains(items[i].id) ? "*" : "+");
+            lv_obj_set_style_text_color(row_ui->star_lbl,
+                gui_favourite_contains(items[i].id) ? ROCK_COLOR_GOLD_STAR : ROCK_COLOR_MUTED, 0);
             const char *display_name = items[i].name[0] ? items[i].name : items[i].id;
             lv_label_set_text(row_ui->name_lbl, display_name);
             if (log_rows) {

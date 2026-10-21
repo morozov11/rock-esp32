@@ -43,6 +43,43 @@ static rock_gui_station_item_t s_search_items[ROCK_GUI_MAX_STATIONS];
 static size_t s_search_count = 0;
 static bool s_search_active = false;
 static int32_t s_catalog_saved_scroll_y = 0;
+static bool s_favourites_active = false;
+bool gui_catalog_favourites_active(void) { return s_favourites_active; }
+static rock_gui_station_item_t s_favourite_items[ROCK_GUI_MAX_STATIONS];
+static size_t s_favourite_count, s_favourite_total, s_favourite_page;
+static bool s_favourite_fetching;
+static int32_t s_favourite_saved_scroll_y;
+static lv_obj_t *s_favourite_chip;
+
+static void show_previous_rows(void);
+static void gui_catalog_fold_keyboard(void);
+
+void gui_catalog_set_favourite_total(size_t total)
+{
+    s_favourite_total = total;
+    if (s_favourite_chip) {
+        lv_label_set_text_fmt(lv_obj_get_child(s_favourite_chip, 0),
+                              "* Избранное (%u)", (unsigned)total);
+    }
+}
+
+static void on_favourite_chip_click(lv_event_t *e)
+{
+    (void)e;
+    if (s_favourites_active) {
+        s_favourites_active = false;
+        show_previous_rows();
+    } else {
+        if (s_list_catalog) s_favourite_saved_scroll_y = lv_obj_get_scroll_y(s_list_catalog);
+        gui_catalog_fold_keyboard();
+        s_favourites_active = true;
+        s_favourite_page = 0;
+        s_favourite_count = 0;
+        s_favourite_fetching = false;
+        gui_enqueue_event(ROCK_UI_EVT_FAVOURITES_SHOW, NULL, 0);
+        gui_overlay_set(GUI_OVERLAY_LOADING, "Загрузка избранного...", NULL, false);
+    }
+}
 
 void gui_catalog_search_busy(bool busy)
 {
@@ -65,6 +102,8 @@ static void on_genre_chip_click(lv_event_t *e)
         s_catalog_saved_scroll_y = lv_obj_get_scroll_y(s_list_catalog);
     }
     s_search_active = true;
+    s_favourites_active = false;
+    if (s_favourite_chip) lv_obj_set_style_bg_color(s_favourite_chip, ROCK_COLOR_PANEL_2, 0);
     if (s_ta_query) {
         lv_textarea_set_text(s_ta_query, genre);
     }
@@ -122,6 +161,8 @@ static void on_kb_event(lv_event_t *e)
                 s_catalog_saved_scroll_y = lv_obj_get_scroll_y(s_list_catalog);
             }
             s_search_active = true;
+            s_favourites_active = false;
+            if (s_favourite_chip) lv_obj_set_style_bg_color(s_favourite_chip, ROCK_COLOR_PANEL_2, 0);
             gui_catalog_search_busy(true);
             gui_enqueue_event(ROCK_UI_EVT_CATALOG_SEARCH, txt, 0);
         } else {
@@ -206,6 +247,10 @@ static void update_count_label(size_t count)
 static void update_pill(void)
 {
     if (!s_pill_box || !s_lbl_pill) return;
+    if (s_favourites_active) {
+        lv_obj_add_flag(s_pill_box, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
     if (s_search_active) {
         lv_obj_add_flag(s_pill_box, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -242,6 +287,7 @@ static void update_pill(void)
 static void on_pill_click(lv_event_t *e)
 {
     (void)e;
+    if (s_favourites_active) return;
     if (s_load_more_error) {
         ESP_LOGI(TAG, "Pill clicked in error state, retrying cursor='%s'", s_catalog_cursor);
         s_load_more_error = false;
@@ -259,6 +305,11 @@ static void on_pill_click(lv_event_t *e)
 
 static void update_window_rows(void)
 {
+    if (s_favourites_active) {
+        s_catalog_rows_count = s_favourite_count;
+        gui_station_rows_fill(s_catalog_rows, s_favourite_items, s_favourite_count, false);
+        return;
+    }
     if (!s_catalog || s_catalog_count == 0) {
         gui_catalog_hide_rows();
         s_catalog_rows_count = 0;
@@ -278,6 +329,19 @@ static void on_catalog_list_scrolled(lv_event_t *e)
 {
     (void)e;
     if (s_in_scroll_adjust) return;
+    if (s_favourites_active) {
+        if (s_favourite_fetching) return;
+        if (lv_obj_get_scroll_bottom(s_list_catalog) <= ROCK_GUI_CATALOG_SCROLL_THRESHOLD &&
+            s_favourite_page * 10 + ROCK_GUI_MAX_STATIONS < s_favourite_total) {
+            s_favourite_fetching = true;
+            gui_enqueue_event(ROCK_UI_EVT_FAVOURITES_PAGE, NULL, (int16_t)(s_favourite_page + 1));
+        } else if (lv_obj_get_scroll_top(s_list_catalog) <= ROCK_GUI_CATALOG_SCROLL_THRESHOLD &&
+                   s_favourite_page > 0) {
+            s_favourite_fetching = true;
+            gui_enqueue_event(ROCK_UI_EVT_FAVOURITES_PAGE, NULL, (int16_t)(s_favourite_page - 1));
+        }
+        return;
+    }
     if (s_search_active) return;
     if (!s_catalog || s_catalog_count == 0) return;
 
@@ -423,6 +487,14 @@ void gui_catalog_build(lv_obj_t *parent)
     lv_obj_set_pos(cont_chips, 16, 68);
     lv_obj_set_flex_flow(cont_chips, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(cont_chips, 8, 0);
+    lv_obj_set_scroll_dir(cont_chips, LV_DIR_HOR);
+
+    // shortcut: bundled Inter lacks star glyphs; replace '+'/'*' when fonts are regenerated.
+    s_favourite_chip = gui_make_button(cont_chips, LV_SIZE_CONTENT, 48, "* Избранное",
+                                       &font_inter_14, on_favourite_chip_click, NULL);
+    lv_obj_set_style_radius(s_favourite_chip, 24, 0);
+    lv_obj_set_style_border_color(s_favourite_chip, ROCK_COLOR_GOLD_STAR, 0);
+    lv_obj_set_style_border_width(s_favourite_chip, 1, 0);
 
     static const char *genres[] = {"Rock", "Pop", "Jazz", "Metal", "Classical", "News", "Electronic"};
     for (size_t i = 0; i < sizeof(genres) / sizeof(genres[0]); i++) {
@@ -527,6 +599,9 @@ void gui_catalog_hide(void)
 
 void gui_catalog_clear(void)
 {
+    s_favourites_active = false;
+    if (s_favourite_chip) lv_obj_set_style_bg_color(s_favourite_chip, ROCK_COLOR_PANEL_2, 0);
+    s_favourite_fetching = false;
     gui_catalog_reset_fetching();
     gui_catalog_search_busy(false);
     s_catalog_count = 0;
@@ -566,14 +641,7 @@ void gui_catalog_begin(const rock_gui_station_item_t *items, size_t count, const
 {
     gui_catalog_reset_fetching();
     gui_catalog_search_busy(false);
-    s_search_active = false;
     s_load_more_error = false;
-    if (s_btn_back) {
-        lv_label_set_text(lv_obj_get_child(s_btn_back, 0), ROCK_ICON_ARROW_LEFT " Плеер");
-    }
-    if (s_ta_query) {
-        lv_textarea_set_text(s_ta_query, "");
-    }
 
     if (!ensure_catalog_buf()) return;
 
@@ -589,6 +657,18 @@ void gui_catalog_begin(const rock_gui_station_item_t *items, size_t count, const
         s_catalog_cursor[sizeof(s_catalog_cursor) - 1] = '\0';
     } else {
         s_catalog_cursor[0] = '\0';
+    }
+
+    if (s_favourites_active) {
+        update_pill();
+        return;
+    }
+    s_search_active = false;
+    if (s_btn_back) {
+        lv_label_set_text(lv_obj_get_child(s_btn_back, 0), ROCK_ICON_ARROW_LEFT " Плеер");
+    }
+    if (s_ta_query) {
+        lv_textarea_set_text(s_ta_query, "");
     }
 
     update_window_rows();
@@ -612,11 +692,7 @@ void gui_catalog_append(const rock_gui_station_item_t *items, size_t count, cons
 {
     gui_catalog_reset_fetching();
     gui_catalog_search_busy(false);
-    s_search_active = false;
     s_load_more_error = false;
-    if (s_btn_back) {
-        lv_label_set_text(lv_obj_get_child(s_btn_back, 0), ROCK_ICON_ARROW_LEFT " Плеер");
-    }
 
     if (!ensure_catalog_buf()) return;
 
@@ -647,6 +723,15 @@ void gui_catalog_append(const rock_gui_station_item_t *items, size_t count, cons
              (unsigned)(s_catalog_count - old_count), (unsigned)s_catalog_count,
              s_catalog_cursor);
 
+    if (s_favourites_active) {
+        update_pill();
+        return;
+    }
+    s_search_active = false;
+    if (s_btn_back) {
+        lv_label_set_text(lv_obj_get_child(s_btn_back, 0), ROCK_ICON_ARROW_LEFT " Плеер");
+    }
+
     // If visible window was at or near the tail of the old list, advance to show the new page
     if (s_window_start + ROCK_GUI_MAX_STATIONS >= old_count && s_catalog_count > old_count) {
         s_window_start = old_count;
@@ -673,6 +758,11 @@ void gui_catalog_append(const rock_gui_station_item_t *items, size_t count, cons
 
 void gui_catalog_set_search_results(const rock_gui_station_item_t *items, size_t count)
 {
+    if (s_favourites_active) {
+        s_search_count = count > ROCK_GUI_MAX_STATIONS ? ROCK_GUI_MAX_STATIONS : count;
+        if (s_search_count) memcpy(s_search_items, items, s_search_count * sizeof(*items));
+        return;
+    }
     if (!s_search_active && s_list_catalog) {
         s_catalog_saved_scroll_y = lv_obj_get_scroll_y(s_list_catalog);
     }
@@ -718,6 +808,10 @@ void gui_catalog_set_search_results(const rock_gui_station_item_t *items, size_t
 
 void gui_catalog_exit_search(void)
 {
+    if (s_favourites_active) {
+        s_favourites_active = false;
+        show_previous_rows();
+    }
     gui_catalog_search_busy(false);
     s_load_more_error = false;
     if (s_kb_catalog) lv_obj_add_flag(s_kb_catalog, LV_OBJ_FLAG_HIDDEN);
@@ -763,6 +857,61 @@ void gui_catalog_exit_search(void)
     }
 }
 
+static void show_previous_rows(void)
+{
+    lv_obj_set_style_bg_color(s_favourite_chip, ROCK_COLOR_PANEL_2, 0);
+    s_favourite_fetching = false;
+    gui_overlay_hide();
+    if (s_search_active) {
+        s_catalog_rows_count = s_search_count;
+        gui_station_rows_fill(s_catalog_rows, s_search_items, s_search_count, false);
+        update_count_label(s_search_count);
+    } else {
+        update_window_rows();
+        update_count_label(s_catalog_count);
+    }
+    update_pill();
+    if (s_list_catalog) {
+        s_in_scroll_adjust = true;
+        lv_obj_scroll_to_y(s_list_catalog, s_favourite_saved_scroll_y, LV_ANIM_OFF);
+        s_in_scroll_adjust = false;
+    }
+}
+
+void gui_catalog_set_favourite_page(const rock_gui_station_item_t *items, size_t count,
+                                     size_t total, size_t page)
+{
+    if (!s_favourites_active) return;
+    size_t old_page = s_favourite_page;
+    bool first_window = s_favourite_count == 0;
+    bool shifted = !first_window && old_page != page;
+    int32_t scroll_y = s_list_catalog ? lv_obj_get_scroll_y(s_list_catalog) : 0;
+    s_favourite_count = count > ROCK_GUI_MAX_STATIONS ? ROCK_GUI_MAX_STATIONS : count;
+    s_favourite_total = total;
+    s_favourite_page = page;
+    s_favourite_fetching = false;
+    if (s_favourite_count) memcpy(s_favourite_items, items, s_favourite_count * sizeof(*items));
+    lv_obj_set_style_bg_color(s_favourite_chip, ROCK_COLOR_GOLD_STAR, 0);
+    update_window_rows();
+    update_count_label(total);
+    update_pill();
+    if (s_list_catalog) {
+        s_in_scroll_adjust = true;
+        int32_t new_y = first_window ? 0 : shifted ? scroll_y +
+                        ((int32_t)old_page - (int32_t)page) * 10 * ROCK_GUI_CATALOG_ROW_STRIDE_Y :
+                        scroll_y;
+        if (new_y < 0) new_y = 0;
+        lv_obj_scroll_to_y(s_list_catalog, new_y, LV_ANIM_OFF);
+        s_in_scroll_adjust = false;
+    }
+    if (gui_active_view() == VIEW_CATALOG) gui_overlay_hide();
+    if (first_window || shifted) {
+        ESP_LOGI(TAG, "Favourites page=%u rows=%u total=%u scroll_y=%ld", (unsigned)page,
+                 (unsigned)count, (unsigned)total, (long)lv_obj_get_scroll_y(s_list_catalog));
+    }
+    if (!total) gui_overlay_set(GUI_OVERLAY_EMPTY, "Избранное пусто", "Добавьте станцию звёздочкой", false);
+}
+
 bool gui_catalog_is_search_active(void)
 {
     return s_search_active;
@@ -773,7 +922,7 @@ bool gui_catalog_is_search_active(void)
 // answer also means "a browse refresh is needed on next entry".
 bool gui_catalog_has_content(void)
 {
-    return s_catalog_count > 0 || s_search_active;
+    return s_catalog_count > 0 || s_search_active || s_favourites_active;
 }
 
 void gui_catalog_set_rows(const rock_gui_station_item_t *items, size_t count, bool search_results)
@@ -804,6 +953,23 @@ size_t gui_catalog_rows_count(void)
 
 bool gui_catalog_trigger(const char *action)
 {
+    if (!strcmp(action, "FAVOURITES")) {
+        gui_switch_view(VIEW_CATALOG);
+        on_favourite_chip_click(NULL);
+        return true;
+    }
+    if (!strcmp(action, "FAVOURITES_BOTTOM") && s_favourites_active && s_list_catalog) {
+        lv_obj_scroll_to_y(s_list_catalog,
+                           lv_obj_get_scroll_y(s_list_catalog) + lv_obj_get_scroll_bottom(s_list_catalog),
+                           LV_ANIM_OFF);
+        on_catalog_list_scrolled(NULL);
+        return true;
+    }
+    if (!strcmp(action, "FAVOURITES_TOP") && s_favourites_active && s_list_catalog) {
+        lv_obj_scroll_to_y(s_list_catalog, 0, LV_ANIM_OFF);
+        on_catalog_list_scrolled(NULL);
+        return true;
+    }
     if (!strcmp(action, "CANCEL") || !strcmp(action, "SEARCH_CLEAR")) {
         gui_switch_view(VIEW_CATALOG);
         gui_catalog_exit_search();

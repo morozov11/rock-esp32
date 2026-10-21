@@ -28,10 +28,41 @@ static const char *TAG = "rock-player";
 // Thread-safe PSRAM PCM ring & snapshot tap (read-only for spectrum analysis)
 // ---------------------------------------------------------------------------
 static rock_pcm_ring_t s_pcm_ring;
+static rock_pcm_ring_t s_cast_pcm_ring;
 static rock_pcm_snapshot_t s_pcm_tap;
+static uint8_t *s_cast_pcm_window;
 static atomic_uint s_pcm_rate = 44100;
 static atomic_uint s_pcm_channels = 2;
+static atomic_uint s_cast_rate = 48000;
+static atomic_uint s_cast_channels = 2;
 static atomic_bool s_spectrum_playing = false;
+static atomic_bool s_cast_active = false;
+
+void rock_player_set_cast_active(bool active)
+{
+    if (atomic_exchange(&s_cast_active, active) != active) {
+        rock_pcm_ring_clear(&s_cast_pcm_ring);
+    }
+}
+
+bool rock_player_is_cast_active(void)
+{
+    return atomic_load(&s_cast_active);
+}
+
+static void on_source_pcm_tap(const void *pcm, size_t bytes, uint32_t rate, uint8_t channels, void *ctx)
+{
+    (void)ctx;
+    if (!atomic_load(&s_cast_active) || !s_cast_pcm_ring.lock || !pcm || !bytes
+        || !rate || (channels != 1 && channels != 2)) return;
+    atomic_store(&s_cast_rate, rate);
+    atomic_store(&s_cast_channels, channels);
+    size_t fill = rock_pcm_ring_fill(&s_cast_pcm_ring);
+    if (fill + bytes > s_cast_pcm_ring.capacity) {
+        rock_pcm_ring_drop_oldest(&s_cast_pcm_ring, fill + bytes - s_cast_pcm_ring.capacity);
+    }
+    rock_pcm_ring_write(&s_cast_pcm_ring, pcm, bytes);
+}
 
 rock_pcm_ring_t *rock_player_get_pcm_ring(void)
 {
@@ -58,7 +89,26 @@ void rock_player_get_audio_format(uint32_t *rate, uint8_t *channels)
 size_t rock_player_copy_pcm_snapshot(int16_t *out_samples, size_t max_samples,
                                      uint32_t *sample_rate, uint8_t *channels)
 {
-    if (!out_samples || !sample_rate || !channels || !atomic_load(&s_spectrum_playing)) return 0;
+    if (!out_samples || !sample_rate || !channels) return 0;
+    if (atomic_load(&s_cast_active)) {
+        if (!s_cast_pcm_window) return 0;
+        uint32_t rate = atomic_load(&s_cast_rate);
+        uint8_t ch = (uint8_t)atomic_load(&s_cast_channels);
+        size_t bytes = (size_t)rate * ch * sizeof(int16_t) * 40 / 1000;
+        bytes -= bytes % (ch * sizeof(int16_t));
+        size_t samples = max_samples < ROCK_PCM_SNAPSHOT_SAMPLES ? max_samples : ROCK_PCM_SNAPSHOT_SAMPLES;
+        samples -= samples % ch;
+        if (!samples || bytes < samples * sizeof(int16_t) || bytes > 8192
+            || rock_pcm_ring_fill(&s_cast_pcm_ring) < bytes) return 0;
+        size_t n = rock_pcm_ring_read(&s_cast_pcm_ring, s_cast_pcm_window, bytes);
+        if (n < bytes) return 0;
+        memcpy(out_samples, s_cast_pcm_window + n - samples * sizeof(int16_t),
+               samples * sizeof(int16_t));
+        *sample_rate = rate;
+        *channels = ch;
+        return samples;
+    }
+    if (!atomic_load(&s_spectrum_playing)) return 0;
     return rock_pcm_copy(&s_pcm_tap, out_samples, max_samples, sample_rate, channels);
 }
 
@@ -287,6 +337,11 @@ int rock_player_init(void)
         ESP_LOGE(TAG, "PCM ring buffer initialization failed");
         goto fail;
     }
+    if (rock_pcm_ring_init(&s_cast_pcm_ring, 512 * 1024) != 0
+        || !(s_cast_pcm_window = heap_caps_malloc(8192, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT))) {
+        ESP_LOGE(TAG, "Cast spectrum buffer initialization failed");
+        goto fail;
+    }
 
     // Set initial volume & mute
     esp_codec_dev_handle_t codec = (esp_codec_dev_handle_t)rock_audio_codec_handle();
@@ -300,6 +355,9 @@ int rock_player_init(void)
     if (rock_player_tx_init() != 0) {
         goto fail;
     }
+
+    // Register PCM tap observer with rock_source for Chromecast transcode streaming
+    rock_source_set_pcm_tap(on_source_pcm_tap, NULL);
 
     ESP_LOGI(TAG, "Player initialized: PSRAM ring %u KiB, PA GPIO11, decoders: MP3+AAC",
              PCM_RING_CAPACITY / 1024);

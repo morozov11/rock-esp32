@@ -3,6 +3,7 @@ pub mod cast_proto;
 pub mod catalog;
 pub mod dispatch;
 pub mod display;
+pub(crate) mod favourites;
 pub mod pairing;
 pub mod player;
 pub mod protocol;
