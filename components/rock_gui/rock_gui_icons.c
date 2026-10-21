@@ -26,10 +26,12 @@
 static const char *TAG = "rock-icons";
 static TaskHandle_t s_task;
 static char s_pending_play_id[129]; // Accessed under the LVGL port lock.
+static char s_pending_icon_url[512];
 static atomic_uint s_selection;
 
 static struct {
     char id[129];
+    char url[512];
     uint8_t *pixels;
     lv_image_dsc_t image;
     bool ready;
@@ -85,27 +87,6 @@ static esp_err_t on_http(esp_http_client_event_t *event)
     return ESP_OK;
 }
 
-static bool icon_path(char *out, size_t cap, const char *id)
-{
-    int n = snprintf(out, cap, "%s/api/v1/stations/", CONFIG_ROCKSERVER_BASE_URL);
-    if (n < 0 || (size_t)n >= cap) return false;
-    size_t used = (size_t)n;
-    for (const unsigned char *p = (const unsigned char *)id; *p; p++) {
-        if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
-            (*p >= '0' && *p <= '9') || *p == '-' || *p == '.' || *p == '_' || *p == '~') {
-            if (used + 1 >= cap) return false;
-            out[used++] = (char)*p;
-        } else {
-            if (used + 3 >= cap) return false;
-            n = snprintf(out + used, cap - used, "%%%02X", *p);
-            used += 3;
-        }
-    }
-    if (used + sizeof("/icon") > cap) return false;
-    memcpy(out + used, "/icon", sizeof("/icon"));
-    return true;
-}
-
 static bool decode_icon(icon_response_t *response)
 {
     WebPDecoderConfig decoder;
@@ -125,10 +106,12 @@ static bool decode_icon(icon_response_t *response)
     return WebPDecode(response->bytes, response->len, &decoder) == VP8_STATUS_OK;
 }
 
-static int fetch_icon(const char *id, icon_response_t *response)
+static int fetch_icon(const char *favicon_url, icon_response_t *response)
 {
     char url[768];
-    if (!icon_path(url, sizeof(url), id) || audio_active()) return -1;
+    if (favicon_url[0] != '/' || favicon_url[1] == '/' || audio_active()) return -1;
+    int n = snprintf(url, sizeof(url), "%s%s", CONFIG_ROCKSERVER_BASE_URL, favicon_url);
+    if (n < 0 || (size_t)n >= sizeof(url)) return -1;
     response->started_us = esp_timer_get_time();
     esp_http_client_config_t cfg = {
         .url = url, .event_handler = on_http, .user_data = response,
@@ -161,8 +144,10 @@ static void icon_task(void *arg)
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         char id[129] = {0};
+        char favicon_url[512];
         while (!lvgl_port_lock(100)) vTaskDelay(pdMS_TO_TICKS(10));
         strlcpy(id, s_pending_play_id, sizeof(id));
+        strlcpy(favicon_url, s_pending_icon_url, sizeof(favicon_url));
         unsigned selection = atomic_load(&s_selection);
         lvgl_port_unlock();
         if (!id[0]) continue;
@@ -180,7 +165,7 @@ static void icon_task(void *arg)
             response = heap_caps_calloc(1, sizeof(*response), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
             if (response) {
                 response->selection = selection;
-                status = fetch_icon(id, response);
+                status = fetch_icon(favicon_url, response);
             }
         }
 
@@ -196,6 +181,7 @@ static void icon_task(void *arg)
             gui_icons_refresh(); // detach the old LVGL image before reusing its buffer
             if (had_image) lv_image_cache_drop(&s_icon.image);
             s_icon.id[0] = '\0';
+            s_icon.url[0] = '\0';
             if (status == 200) {
                 for (size_t i = 0; i < ICON_BYTES; i += 2) {
                     s_icon.pixels[i] = response->decoded[i + 1];
@@ -208,7 +194,10 @@ static void icon_task(void *arg)
                 };
                 s_icon.ready = true;
             }
-            if (status == 200 || status == 404) strlcpy(s_icon.id, id, sizeof(s_icon.id));
+            if (status == 200 || status == 404) {
+                strlcpy(s_icon.id, id, sizeof(s_icon.id));
+                strlcpy(s_icon.url, favicon_url, sizeof(s_icon.url));
+            }
             gui_icons_refresh();
             gui_enqueue_event(ROCK_UI_EVT_PLAY_STATION, id, 0);
         }
@@ -219,16 +208,28 @@ static void icon_task(void *arg)
     }
 }
 
-void gui_icons_prepare_play(const char *station_id)
+void gui_icons_prepare_play(const char *station_id, const char *favicon_url)
 {
     if (!station_id || !station_id[0]) return;
     atomic_fetch_add(&s_selection, 1);
     s_pending_play_id[0] = '\0';
-    if (strcmp(s_icon.id, station_id) == 0 || !s_task) {
+    if (!favicon_url || !favicon_url[0]) {
+        if (strcmp(s_icon.id, station_id) == 0) {
+            bool had_image = s_icon.ready;
+            s_icon.ready = false;
+            s_icon.id[0] = '\0';
+            gui_icons_refresh();
+            if (had_image) lv_image_cache_drop(&s_icon.image);
+        }
+        gui_enqueue_event(ROCK_UI_EVT_PLAY_STATION, station_id, 0);
+        return;
+    }
+    if ((strcmp(s_icon.id, station_id) == 0 && strcmp(s_icon.url, favicon_url) == 0) || !s_task) {
         gui_enqueue_event(ROCK_UI_EVT_PLAY_STATION, station_id, 0);
         return;
     }
     strlcpy(s_pending_play_id, station_id, sizeof(s_pending_play_id));
+    strlcpy(s_pending_icon_url, favicon_url, sizeof(s_pending_icon_url));
     if (audio_active()) gui_enqueue_event(ROCK_UI_EVT_PLAYBACK_STOP, NULL, 0);
     xTaskNotifyGive(s_task);
 }

@@ -459,12 +459,14 @@ fn device_station_dto_and_catalog_page_parsing_and_boundaries() {
                 "health": "healthy",
                 "codec": "mp3",
                 "bitrate_kbps": 128,
+                "faviconUrl": "/api/v1/stations/station.rock_classic/icon",
                 "extra_unknown_server_field": "tolerated"
             },
             {
                 "id": "station.metal",
                 "name": "Heavy Metal FM",
                 "tags": ["metal"],
+                "faviconUrl": null,
                 "health": "unknown"
             }
         ],
@@ -481,7 +483,13 @@ fn device_station_dto_and_catalog_page_parsing_and_boundaries() {
     assert_eq!(page.stations[0].health, "healthy");
     assert_eq!(page.stations[0].codec.as_deref(), Some("mp3"));
     assert_eq!(page.stations[0].bitrate_kbps, Some(128));
+    assert_eq!(page.stations[0].favicon_url.as_deref(), Some("/api/v1/stations/station.rock_classic/icon"));
+    assert_eq!(page.stations[1].favicon_url, None);
     assert_eq!(page.next_cursor.as_deref(), Some("station.metal"));
+
+    let mut external_icon = valid_json.clone();
+    external_icon["stations"][0]["faviconUrl"] = json!("https://other.example/icon.webp");
+    assert!(device_control::parse_catalog_page(&serde_json::to_vec(&external_icon).unwrap()).is_err());
 
     // 2. Reject oversized catalog (> 20 stations)
     let mut oversized_stations = Vec::new();

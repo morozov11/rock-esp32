@@ -338,7 +338,7 @@ int rock_gui_start(void)
     s_gui_active = true;
 
     gui_switch_view(VIEW_NOW_PLAYING);
-    // A/B control: icon worker disabled for Jazz FM playback measurement.
+    gui_icons_start();
 
     // Serial diagnostics console (rock_serial.c); started here because its
     // CMD:UI:* actions target widgets that exist only from this point on.

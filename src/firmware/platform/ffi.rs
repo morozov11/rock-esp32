@@ -176,6 +176,7 @@ pub(crate) struct RockGuiCastItemRaw {
 pub(crate) struct RockGuiStationItem {
     pub id: [c_char; 129],
     pub name: [c_char; 129],
+    pub favicon_url: [c_char; 512],
     pub tags: [c_char; 64],
     pub codec: [c_char; 16],
     pub bitrate_kbps: u32,

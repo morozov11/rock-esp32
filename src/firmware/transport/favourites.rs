@@ -24,6 +24,7 @@ fn placeholder(id: &str, status: &str) -> DeviceStationDto {
         id: id.to_string(),
         name: resolve_station_name(id),
         homepage_url: None,
+        favicon_url: None,
         tags: vec![status.to_string()],
         language: None,
         country_code: None,
@@ -194,6 +195,10 @@ impl Session {
                             id: id.to_string(),
                             name: name.to_string(),
                             homepage_url: None,
+                            favicon_url: value["favicon_url"]
+                                .as_str()
+                                .or_else(|| value["faviconUrl"].as_str())
+                                .map(str::to_string),
                             tags: value["tags"]
                                 .as_array()
                                 .map(|tags| {

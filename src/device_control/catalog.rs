@@ -89,6 +89,8 @@ pub struct DeviceStationDto {
     pub name: String,
     #[serde(default)]
     pub homepage_url: Option<String>,
+    #[serde(default, rename = "faviconUrl", alias = "favicon_url")]
+    pub favicon_url: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
@@ -142,6 +144,12 @@ impl DeviceStationDto {
             if !valid_text(hp, 512) {
                 return false;
             }
+        }
+        if self.favicon_url.as_ref().is_some_and(|url| {
+            url.is_empty() || url.len() > 511 || !url.starts_with('/') || url.starts_with("//")
+                || url.chars().any(char::is_control)
+        }) {
+            return false;
         }
         if self.codec.as_ref().is_some_and(|s| !valid_text(s, 32))
             || self.language.as_ref().is_some_and(|s| !valid_text(s, 128))

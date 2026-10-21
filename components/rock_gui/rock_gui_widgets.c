@@ -151,7 +151,7 @@ static void on_station_row_click(lv_event_t *e)
                                 lv_label_get_text(row_data->codec_lbl));
     rock_gui_flush_events();
     gui_switch_view(VIEW_NOW_PLAYING);
-    gui_enqueue_event(ROCK_UI_EVT_PLAY_STATION, row_data->station_id, 0);
+    gui_icons_prepare_play(row_data->station_id, row_data->favicon_url);
 }
 
 static void on_star_click(lv_event_t *e)
@@ -261,6 +261,7 @@ void gui_station_rows_fill(station_row_ui_t *rows, const rock_gui_station_item_t
         if (i < limit && items) {
             strncpy(row_ui->station_id, items[i].id, sizeof(row_ui->station_id) - 1);
             row_ui->station_id[sizeof(row_ui->station_id) - 1] = '\0';
+            strlcpy(row_ui->favicon_url, items[i].favicon_url, sizeof(row_ui->favicon_url));
             row_ui->available = items[i].is_available;
             lv_label_set_text(row_ui->star_lbl,
                 gui_favourite_contains(items[i].id) ? "*" : "+");
@@ -307,6 +308,7 @@ void gui_station_rows_fill(station_row_ui_t *rows, const rock_gui_station_item_t
             lv_obj_remove_flag(row_ui->row, LV_OBJ_FLAG_HIDDEN);
         } else {
             row_ui->station_id[0] = '\0';
+            row_ui->favicon_url[0] = '\0';
             lv_obj_add_flag(row_ui->row, LV_OBJ_FLAG_HIDDEN);
         }
     }

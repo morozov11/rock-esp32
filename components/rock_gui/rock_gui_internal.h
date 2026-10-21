@@ -63,13 +63,14 @@ typedef struct {
     lv_obj_t *star_lbl;
     lv_obj_t *eq_box;      // mini equalizer shown in the ACCENT "playing" row
     char station_id[129];
+    char favicon_url[512];
     bool available;
 } station_row_ui_t;
 
 void gui_icons_start(void);
 void gui_icons_apply(lv_obj_t *image, lv_obj_t *monogram, const char *station_id);
 void gui_icons_refresh(void);
-void gui_icons_prepare_play(const char *station_id);
+void gui_icons_prepare_play(const char *station_id, const char *favicon_url);
 void gui_now_playing_icon_refresh(void);
 
 // Build one hidden row (alternating background, whole-row click → play).

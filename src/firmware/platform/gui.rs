@@ -120,6 +120,7 @@ fn convert_stations(
         let mut item = RockGuiStationItem {
             id: [0; 129],
             name: [0; 129],
+            favicon_url: [0; 512],
             tags: [0; 64],
             codec: [0; 16],
             bitrate_kbps: s.bitrate_kbps.unwrap_or(0),
@@ -128,6 +129,9 @@ fn convert_stations(
         };
         copy_str_to_buf(&s.id, &mut item.id);
         copy_str_to_buf(&s.name, &mut item.name);
+        if let Some(ref url) = s.favicon_url {
+            copy_str_to_buf(url, &mut item.favicon_url);
+        }
         copy_str_to_buf(&s.tags.join(", "), &mut item.tags);
         if let Some(ref c) = s.codec {
             copy_str_to_buf(c, &mut item.codec);

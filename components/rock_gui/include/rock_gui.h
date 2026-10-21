@@ -26,6 +26,7 @@ typedef enum {
 typedef struct {
     char id[129];
     char name[129];
+    char favicon_url[512];
     char tags[64];
     char codec[16];
     uint32_t bitrate_kbps;
