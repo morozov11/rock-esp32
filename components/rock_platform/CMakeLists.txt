@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "control_platform.c"
         "rock_net_ws.c"
+        "rock_voice.c"
         "rock_wifi_sta.c"
         "rock_wifi_storage.c"
         "rock_ota.c"
@@ -10,6 +11,7 @@ idf_component_register(
     PRIV_INCLUDE_DIRS "${PROJECT_DIR}/main"
     PRIV_REQUIRES
         "rock_source"
+        "rock_audio"
         "esp_wifi"
         "esp_netif"
         "nvs_flash"
@@ -25,5 +27,6 @@ idf_component_register(
         "esp_timer"
         "heap"
         "lwip"
+        "espressif__cjson"
     WHOLE_ARCHIVE
 )

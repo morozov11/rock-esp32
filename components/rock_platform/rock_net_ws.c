@@ -9,6 +9,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_websocket_client.h"
@@ -29,7 +30,7 @@ static const char *TAG = "rock-control";
 static EventGroupHandle_t s_ws_events;
 static esp_websocket_client_handle_t s_ws;
 static QueueHandle_t s_ws_queue;
-static char s_ws_frame[ROCK_ABI_MAX_FRAME_BYTES + 1];
+static char *s_ws_frame;
 static size_t s_ws_length;
 static char s_ws_headers[640];
 // The boot health check and subsequent Rust session run on the same task.
@@ -243,6 +244,11 @@ int rock_http_get(const char *path, const char *bearer, char *response, size_t c
 int rock_ws_start(const char *access_token)
 {
     if (!access_token || s_ws) return -1;
+    if (!s_ws_frame) {
+        s_ws_frame = heap_caps_malloc(ROCK_ABI_MAX_FRAME_BYTES + 1,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!s_ws_frame) return -1;
+    }
     char uri[512];
     const char *base = CONFIG_ROCKSERVER_BASE_URL;
     const char *suffix = strstr(base, "://");

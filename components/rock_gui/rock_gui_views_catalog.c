@@ -25,8 +25,21 @@ static lv_obj_t *s_pill_box = NULL;
 static lv_obj_t *s_lbl_pill = NULL;
 static lv_obj_t *s_loupe = NULL;
 static lv_obj_t *s_search_spinner = NULL;
-static station_row_ui_t s_catalog_rows[ROCK_GUI_MAX_STATIONS];
+static lv_obj_t *s_mic = NULL;
+static station_row_ui_t *s_catalog_rows = NULL;
 static size_t s_catalog_rows_count = 0;
+
+static bool ensure_catalog_rows(void)
+{
+    if (s_catalog_rows) return true;
+    s_catalog_rows = heap_caps_calloc(ROCK_GUI_MAX_STATIONS, sizeof(station_row_ui_t),
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_catalog_rows) {
+        ESP_LOGE(TAG, "Failed to allocate s_catalog_rows in PSRAM");
+        return false;
+    }
+    return true;
+}
 
 // UC-4: Accumulated station catalog in PSRAM + 20-row sliding window
 static rock_gui_station_item_t *s_catalog = NULL;
@@ -38,18 +51,42 @@ static bool s_load_more_error = false;
 static lv_timer_t *s_fetch_timer = NULL;
 static bool s_in_scroll_adjust = false;
 
-// UC-5: Search results storage and state
-static rock_gui_station_item_t s_search_items[ROCK_GUI_MAX_STATIONS];
+// UC-5: Search results storage and state (allocated in PSRAM)
+static rock_gui_station_item_t *s_search_items = NULL;
 static size_t s_search_count = 0;
 static bool s_search_active = false;
 static int32_t s_catalog_saved_scroll_y = 0;
 static bool s_favourites_active = false;
 bool gui_catalog_favourites_active(void) { return s_favourites_active; }
-static rock_gui_station_item_t s_favourite_items[ROCK_GUI_MAX_STATIONS];
+static rock_gui_station_item_t *s_favourite_items = NULL;
 static size_t s_favourite_count, s_favourite_total, s_favourite_page;
 static bool s_favourite_fetching;
 static int32_t s_favourite_saved_scroll_y;
 static lv_obj_t *s_favourite_chip;
+
+static bool ensure_search_items(void)
+{
+    if (s_search_items) return true;
+    s_search_items = heap_caps_calloc(ROCK_GUI_MAX_STATIONS, sizeof(rock_gui_station_item_t),
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_search_items) {
+        ESP_LOGE(TAG, "Failed to allocate search items in PSRAM");
+        return false;
+    }
+    return true;
+}
+
+static bool ensure_favourite_items(void)
+{
+    if (s_favourite_items) return true;
+    s_favourite_items = heap_caps_calloc(ROCK_GUI_MAX_STATIONS, sizeof(rock_gui_station_item_t),
+                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_favourite_items) {
+        ESP_LOGE(TAG, "Failed to allocate favourite items in PSRAM");
+        return false;
+    }
+    return true;
+}
 
 static void show_previous_rows(void);
 static void gui_catalog_fold_keyboard(void);
@@ -173,6 +210,23 @@ static void on_kb_event(lv_event_t *e)
         // query and any executed search (same semantics as Back).
         gui_catalog_fold_keyboard();
     }
+}
+
+static void on_search_click(lv_event_t *e)
+{
+    (void)e;
+    if (s_kb_catalog) lv_obj_send_event(s_kb_catalog, LV_EVENT_READY, NULL);
+}
+
+static void on_voice_click(lv_event_t *e)
+{
+    (void)e;
+    gui_enqueue_event(ROCK_UI_EVT_VOICE_TOGGLE, NULL, 0);
+}
+
+void gui_catalog_voice_state(int state)
+{
+    if (s_mic) lv_obj_set_style_bg_color(s_mic, state >= 1 && state <= 3 ? ROCK_COLOR_ERROR : ROCK_COLOR_MIC_AMBER, 0);
 }
 
 static void update_pill(void);
@@ -307,7 +361,9 @@ static void update_window_rows(void)
 {
     if (s_favourites_active) {
         s_catalog_rows_count = s_favourite_count;
-        gui_station_rows_fill(s_catalog_rows, s_favourite_items, s_favourite_count, false);
+        if (s_favourite_items) {
+            gui_station_rows_fill(s_catalog_rows, s_favourite_items, s_favourite_count, false);
+        }
         return;
     }
     if (!s_catalog || s_catalog_count == 0) {
@@ -466,19 +522,16 @@ void gui_catalog_build(lv_obj_t *parent)
     lv_obj_set_style_radius(btn_clear, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_text_color(lv_obj_get_child(btn_clear, 0), ROCK_COLOR_MUTED, 0);
 
-    // Microphone: static phase-4 stub — amber at 45% opacity, deliberately
-    // non-interactive (no event callback; a press is a silent no-op).
-    lv_obj_t *mic = lv_obj_create(bar);
-    lv_obj_remove_style_all(mic);
-    lv_obj_set_size(mic, 36, 36);
-    lv_obj_set_style_radius(mic, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(mic, ROCK_COLOR_MIC_AMBER, 0);
-    lv_obj_set_style_bg_opa(mic, 115, 0);
-    lv_obj_t *mic_lbl = lv_label_create(mic);
-    lv_label_set_text(mic_lbl, ROCK_ICON_MIC);
-    lv_obj_set_style_text_font(mic_lbl, &font_inter_18, 0);
-    lv_obj_set_style_text_color(mic_lbl, ROCK_COLOR_WHITE, 0);
-    lv_obj_center(mic_lbl);
+    lv_obj_t *btn_search = gui_make_button(bar, 70, 36, "Найти",
+                                           &font_inter_14, on_search_click, NULL);
+    lv_obj_set_style_bg_color(btn_search, ROCK_COLOR_ACCENT, 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(btn_search, 0), ROCK_COLOR_WHITE, 0);
+
+    s_mic = gui_make_button(bar, 44, 44, ROCK_ICON_MIC,
+                            &font_inter_18, on_voice_click, NULL);
+    lv_obj_set_style_radius(s_mic, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(s_mic, ROCK_COLOR_MIC_AMBER, 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(s_mic, 0), ROCK_COLOR_WHITE, 0);
 
     // Genre chips (48px pills) + right-aligned row counter
     lv_obj_t *cont_chips = lv_obj_create(s_view_catalog);
@@ -526,8 +579,10 @@ void gui_catalog_build(lv_obj_t *parent)
     lv_obj_set_style_pad_row(s_list_catalog, 4, 0);
     lv_obj_set_scrollbar_mode(s_list_catalog, LV_SCROLLBAR_MODE_AUTO);
 
-    for (int i = 0; i < ROCK_GUI_MAX_STATIONS; i++) {
-        gui_station_row_setup(&s_catalog_rows[i], s_list_catalog, i);
+    if (ensure_catalog_rows()) {
+        for (int i = 0; i < ROCK_GUI_MAX_STATIONS; i++) {
+            gui_station_row_setup(&s_catalog_rows[i], s_list_catalog, i);
+        }
     }
 
     // Bottom pill container for "Подгрузка..." / "Конец списка"
@@ -612,7 +667,9 @@ void gui_catalog_clear(void)
     s_catalog_saved_scroll_y = 0;
     s_load_more_error = false;
     s_catalog_rows_count = 0;
-    memset(s_search_items, 0, sizeof(s_search_items));
+    if (s_search_items) {
+        memset(s_search_items, 0, ROCK_GUI_MAX_STATIONS * sizeof(rock_gui_station_item_t));
+    }
     if (s_catalog) {
         free(s_catalog);
         s_catalog = NULL;
@@ -758,9 +815,10 @@ void gui_catalog_append(const rock_gui_station_item_t *items, size_t count, cons
 
 void gui_catalog_set_search_results(const rock_gui_station_item_t *items, size_t count)
 {
+    if (!ensure_search_items()) return;
     if (s_favourites_active) {
         s_search_count = count > ROCK_GUI_MAX_STATIONS ? ROCK_GUI_MAX_STATIONS : count;
-        if (s_search_count) memcpy(s_search_items, items, s_search_count * sizeof(*items));
+        if (s_search_count && items) memcpy(s_search_items, items, s_search_count * sizeof(*items));
         return;
     }
     if (!s_search_active && s_list_catalog) {
@@ -864,7 +922,9 @@ static void show_previous_rows(void)
     gui_overlay_hide();
     if (s_search_active) {
         s_catalog_rows_count = s_search_count;
-        gui_station_rows_fill(s_catalog_rows, s_search_items, s_search_count, false);
+        if (s_search_items) {
+            gui_station_rows_fill(s_catalog_rows, s_search_items, s_search_count, false);
+        }
         update_count_label(s_search_count);
     } else {
         update_window_rows();
@@ -881,7 +941,7 @@ static void show_previous_rows(void)
 void gui_catalog_set_favourite_page(const rock_gui_station_item_t *items, size_t count,
                                      size_t total, size_t page)
 {
-    if (!s_favourites_active) return;
+    if (!s_favourites_active || !ensure_favourite_items()) return;
     size_t old_page = s_favourite_page;
     bool first_window = s_favourite_count == 0;
     bool shifted = !first_window && old_page != page;
@@ -890,7 +950,7 @@ void gui_catalog_set_favourite_page(const rock_gui_station_item_t *items, size_t
     s_favourite_total = total;
     s_favourite_page = page;
     s_favourite_fetching = false;
-    if (s_favourite_count) memcpy(s_favourite_items, items, s_favourite_count * sizeof(*items));
+    if (s_favourite_count && items) memcpy(s_favourite_items, items, s_favourite_count * sizeof(*items));
     lv_obj_set_style_bg_color(s_favourite_chip, ROCK_COLOR_GOLD_STAR, 0);
     update_window_rows();
     update_count_label(total);
@@ -936,6 +996,7 @@ void gui_catalog_set_rows(const rock_gui_station_item_t *items, size_t count, bo
 
 void gui_catalog_hide_rows(void)
 {
+    if (!s_catalog_rows) return;
     for (size_t i = 0; i < ROCK_GUI_MAX_STATIONS; i++) {
         lv_obj_add_flag(s_catalog_rows[i].row, LV_OBJ_FLAG_HIDDEN);
     }
@@ -943,6 +1004,7 @@ void gui_catalog_hide_rows(void)
 
 station_row_ui_t *gui_catalog_rows(void)
 {
+    ensure_catalog_rows();
     return s_catalog_rows;
 }
 

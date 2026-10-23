@@ -10,6 +10,30 @@ pub const MAX_CATALOG_BYTES: usize = 65_536;
 
 pub const MAX_CATALOG_CURSOR_LEN: usize = 512;
 
+pub fn clean_voice_query(transcript: &str) -> String {
+    let lower = transcript.to_lowercase();
+    let words: Vec<_> = lower
+        .split_whitespace()
+        .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric()))
+        .filter(|word| !word.is_empty() && !matches!(*word,
+            "включи" | "включить" | "поставь" | "поставить" | "запусти" |
+            "найди" | "ищи" | "крути" | "сыграй" | "играй" | "пожалуйста" |
+            "play" | "find" | "please"))
+        .collect();
+    if words.is_empty() { transcript.trim().to_owned() } else { words.join(" ") }
+}
+
+#[cfg(test)]
+mod voice_query_tests {
+    use super::clean_voice_query;
+
+    #[test]
+    fn spoken_command_uses_station_words_for_catalog_search() {
+        assert_eq!(clean_voice_query("Включи блэк метал"), "блэк метал");
+        assert_eq!(clean_voice_query("Найди рок, пожалуйста"), "рок");
+    }
+}
+
 fn percent_encode_into(path: &mut String, value: &str) {
     use std::fmt::Write;
     for b in value.bytes() {

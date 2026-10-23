@@ -35,6 +35,7 @@ pub(crate) fn run(token: &str) -> Result<(), ()> {
     platform::ws_start(token)?;
     let result = session(token);
     platform::ws_stop();
+    platform::voice_cancel();
     platform::relay_stop();
     update_link_indicator(false);
     platform::gui_mark_catalog_stale();
@@ -90,6 +91,7 @@ fn session(token: &str) -> Result<(), ()> {
         s.check_heartbeat_watchdog()?;
         s.tick_heartbeat()?;
         s.drain_gui_events();
+        s.tick_voice();
         if s.fatal {
             return Err(());
         }

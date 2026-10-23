@@ -25,6 +25,7 @@ pub(crate) enum GuiEvent {
     FavouritesShow,
     FavouritesPage(u16),
     FavouriteToggle(String),
+    VoiceToggle,
 }
 
 pub(crate) fn gui_poll_event(timeout_ms: u32) -> Option<GuiEvent> {
@@ -54,11 +55,16 @@ pub(crate) fn gui_poll_event(timeout_ms: u32) -> Option<GuiEvent> {
             crate::abi::ROCK_UI_EVT_FAVOURITES_SHOW => Some(GuiEvent::FavouritesShow),
             crate::abi::ROCK_UI_EVT_FAVOURITES_PAGE => Some(GuiEvent::FavouritesPage(raw.value.max(0) as u16)),
             crate::abi::ROCK_UI_EVT_FAVOURITE_TOGGLE => Some(GuiEvent::FavouriteToggle(text)),
+            crate::abi::ROCK_UI_EVT_VOICE_TOGGLE => Some(GuiEvent::VoiceToggle),
             _ => None,
         }
     } else {
         None
     }
+}
+
+pub(crate) fn gui_voice_state(state: i32) {
+    unsafe { rock_gui_voice_state(state) };
 }
 
 pub(crate) fn gui_flush_events() {

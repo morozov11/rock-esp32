@@ -47,6 +47,7 @@ pub(crate) trait GuiEventSink {
     fn on_favourites_show(&mut self);
     fn on_favourites_page(&mut self, page: u16);
     fn on_favourite_toggle(&mut self, station: String);
+    fn on_voice_toggle(&mut self);
 
     fn dispatch_gui_event(&mut self, evt: platform::GuiEvent) {
         use platform::GuiEvent;
@@ -65,6 +66,7 @@ pub(crate) trait GuiEventSink {
             GuiEvent::FavouritesShow => self.on_favourites_show(),
             GuiEvent::FavouritesPage(page) => self.on_favourites_page(page),
             GuiEvent::FavouriteToggle(station) => self.on_favourite_toggle(station),
+            GuiEvent::VoiceToggle => self.on_voice_toggle(),
         }
     }
 }
@@ -141,6 +143,7 @@ impl GuiEventSink for OfflineHandler {
     fn on_favourites_show(&mut self) { platform::gui_show_offline("Избранное недоступно"); }
     fn on_favourites_page(&mut self, _page: u16) { platform::gui_show_offline("Избранное недоступно"); }
     fn on_favourite_toggle(&mut self, _station: String) { platform::gui_show_offline("Избранное недоступно"); }
+    fn on_voice_toggle(&mut self) { platform::gui_voice_state(9); }
 }
 
 #[unsafe(no_mangle)]

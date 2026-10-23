@@ -67,11 +67,12 @@ pub fn registration(message_id: &str, sent_at: &str, app_version: &str) -> Value
         sent_at,
         json!({
             "device_type": "esp32", "app_version": safe_firmware_version(app_version),
-            "manifest": { "manifest_revision": 2, "roles": ["display_surface", "player", "controller"],
+            "manifest": { "manifest_revision": 3, "roles": ["display_surface", "player", "controller", "voice_endpoint"],
                 "capabilities": {"revision": 1, "items": [
                     { "name": "media.playback", "version": 1, "actions": ["play", "pause", "stop"] },
                     { "name": "media.station", "version": 1, "sources": ["rockserver_catalog"] },
                     { "name": "media.volume", "version": 1, "minimum": 0, "maximum": 100, "step": 1, "mute": true },
+                    { "name": "voice.input", "version": 1, "formats": ["pcm16_mono_16000"] },
                     {
                         "name": "display.presentation", "version": 1,
                         "views": ["text", "now_playing", "sensor_grid"],
@@ -81,6 +82,9 @@ pub fn registration(message_id: &str, sent_at: &str, app_version: &str) -> Value
                     "surface_id": DISPLAY_SURFACE_ID, "kind": "display",
                     "display_name": "Rock display",
                     "views": ["text", "now_playing", "sensor_grid"]
+                }, {
+                    "surface_id": "voice.main", "kind": "voice",
+                    "display_name": "Rock voice", "views": []
                 }] }
         }),
     )

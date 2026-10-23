@@ -1,6 +1,7 @@
 //! Session state and periodic tick orchestrator.
 
 use super::media::{self, refresh_player_with_cast, SourceState};
+use super::catalog::CatalogRequest;
 use super::revision::{current_revision, next_state_revision};
 use super::{message_id, send, HEARTBEAT_ACK_TIMEOUT_MS, HEARTBEAT_MS};
 use crate::device_control::{self, DisplayState, OutputMode, PlayerState};
@@ -52,6 +53,8 @@ pub(super) struct Session {
     pub(super) fatal: bool,
     pub(super) meta_title: String,
     pub(super) meta_generation: u32,
+    voice_last_state: i32,
+    voice_message_until: u64,
 }
 
 impl Session {
@@ -86,6 +89,8 @@ impl Session {
             fatal: false,
             meta_title: String::new(),
             meta_generation: 0,
+            voice_last_state: 0,
+            voice_message_until: 0,
         };
         refresh_player_with_cast(&mut s.player, false, &s.meta_title);
         s.publish_state()?;
@@ -255,6 +260,25 @@ impl Session {
         if platform::uptime_ms() >= self.network_check {
             update_link_indicator(true);
             self.network_check = platform::uptime_ms() + 15000;
+        }
+    }
+
+    pub(super) fn tick_voice(&mut self) {
+        let state = platform::voice_state();
+        if state != self.voice_last_state {
+            platform::gui_voice_state(state);
+            platform::log_msg(&format!("voice state={state}"));
+            self.voice_last_state = state;
+            self.voice_message_until = if state >= 4 { platform::uptime_ms() + 5000 } else { 0 };
+            if state == 4 {
+                if let Some(transcript) = platform::voice_take_transcript() {
+                    let query = device_control::catalog::clean_voice_query(&transcript);
+                    self.load_catalog(CatalogRequest::Search { query });
+                }
+            }
+        } else if self.voice_message_until != 0 && platform::uptime_ms() >= self.voice_message_until {
+            platform::gui_voice_state(0);
+            self.voice_message_until = 0;
         }
     }
 }

@@ -1,4 +1,5 @@
 #include "esp_log.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -76,6 +77,23 @@ void rock_delay_ms(uint32_t milliseconds)
 
 void app_main(void)
 {
+    esp_reset_reason_t rst = esp_reset_reason();
+    const char *rst_name = "UNKNOWN";
+    switch (rst) {
+        case ESP_RST_POWERON:   rst_name = "POWERON"; break;
+        case ESP_RST_EXT:       rst_name = "EXT"; break;
+        case ESP_RST_SW:        rst_name = "SW"; break;
+        case ESP_RST_PANIC:     rst_name = "PANIC"; break;
+        case ESP_RST_INT_WDT:   rst_name = "INT_WDT"; break;
+        case ESP_RST_TASK_WDT:  rst_name = "TASK_WDT"; break;
+        case ESP_RST_WDT:       rst_name = "WDT"; break;
+        case ESP_RST_DEEPSLEEP: rst_name = "DEEPSLEEP"; break;
+        case ESP_RST_BROWNOUT:  rst_name = "BROWNOUT"; break;
+        case ESP_RST_SDIO:      rst_name = "SDIO"; break;
+        default:                rst_name = "OTHER"; break;
+    }
+    ESP_LOGI(TAG, "Boot reset reason: %d (%s)", (int)rst, rst_name);
+
     // Initialize OTA state tracking early (checks if running image is PENDING_VERIFY)
     rock_ota_init();
     rock_ota_set_progress_cb(ota_on_progress);

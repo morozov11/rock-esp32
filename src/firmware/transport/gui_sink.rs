@@ -5,11 +5,27 @@ use super::media::{cast_play_stream, play_local_station};
 use super::session::Session;
 use super::{message_id, send, HEARTBEAT_MS};
 use crate::device_control::{self, OutputMode};
+use crate::firmware::pairing;
 use crate::firmware::platform;
 use crate::firmware::GuiEventSink;
 use crate::presentation::ui_strings as tr;
 
 impl GuiEventSink for Session {
+    fn on_voice_toggle(&mut self) {
+        if (1..=3).contains(&platform::voice_state()) {
+            // Other device requests can rotate the token and revoke the one
+            // held by this long-lived control WSS without closing that WSS.
+            if let Ok(fresh) = pairing::fresh_access_token() {
+                if !platform::source_update_bearer(&fresh) {
+                    platform::log_msg("Source bearer refresh failed before voice");
+                }
+                self.token = fresh;
+            } else {
+                platform::log_msg("Voice token refresh failed; trying current token");
+            }
+            let _ = platform::voice_start(&self.token);
+        }
+    }
     fn on_favourites_show(&mut self) { self.show_favourites(0); }
 
     fn on_favourites_page(&mut self, page: u16) { self.show_favourites(page as usize); }
@@ -17,6 +33,7 @@ impl GuiEventSink for Session {
     fn on_favourite_toggle(&mut self, station: String) { self.toggle_favourite(&station); }
 
     fn on_play_station(&mut self, station: String) {
+        platform::voice_release_pause();
         if station.is_empty() || station.len() > 128 {
             return;
         }
@@ -54,6 +71,7 @@ impl GuiEventSink for Session {
     }
 
     fn on_playback_play(&mut self) {
+        platform::voice_release_pause();
         if self.pending.is_some() || self.pending_cancel {
             platform::log_msg("Playback play ignored: station connecting");
             return;
@@ -88,6 +106,7 @@ impl GuiEventSink for Session {
     }
 
     fn on_playback_pause(&mut self) {
+        platform::voice_release_pause();
         if self.pending.is_some() || self.pending_cancel {
             platform::log_msg("Playback pause ignored: station connecting");
             return;
@@ -107,6 +126,7 @@ impl GuiEventSink for Session {
     }
 
     fn on_playback_stop(&mut self) {
+        platform::voice_release_pause();
         self.meta_title.clear();
         self.meta_generation = 0;
         platform::source_clear_meta_title();

@@ -404,6 +404,8 @@ static bool IRAM_ATTR rx_overflow_cb(i2s_chan_handle_t chan, i2s_event_data_t *e
 }
 
 static bool s_audio_initialized = false;
+static atomic_uint s_capture_rate = ROCK_SAMPLE_RATE;
+static atomic_uint s_capture_channels = 1;
 
 int rock_audio_init(void)
 {
@@ -513,6 +515,8 @@ int rock_audio_init(void)
 
     pa_init();
     s_audio_initialized = true;
+    atomic_store(&s_capture_rate, ROCK_SAMPLE_RATE);
+    atomic_store(&s_capture_channels, 1);
     ESP_LOGI(TAG, "ES8311+I2S up: fs=%d Hz, ch=1, bits=16, vol=%d, in_gain=%.0f dB, MCLK=%d Hz, PA=GPIO%d (off)",
              ROCK_SAMPLE_RATE, ROCK_OUT_VOL, ROCK_IN_GAIN_DB,
              ROCK_SAMPLE_RATE * 256, ROCK_PA_GPIO);
@@ -522,6 +526,18 @@ int rock_audio_init(void)
 void *rock_audio_codec_handle(void)
 {
     return (void *)s_codec;
+}
+
+int rock_audio_capture_read(void *buffer, size_t bytes)
+{
+    if (!s_audio_initialized || !buffer || bytes == 0 || bytes > 3200 || (bytes & 1)) return -1;
+    return esp_codec_dev_read(s_codec, buffer, bytes) == ESP_CODEC_DEV_OK ? (int)bytes : -1;
+}
+
+void rock_audio_capture_format(uint32_t *sample_rate, uint8_t *channels)
+{
+    if (sample_rate) *sample_rate = atomic_load(&s_capture_rate);
+    if (channels) *channels = (uint8_t)atomic_load(&s_capture_channels);
 }
 
 void rock_audio_pa_set(bool on)
@@ -551,6 +567,8 @@ int rock_audio_reconfig(uint32_t sample_rate, uint8_t channels)
         ESP_LOGE(TAG, "esp_codec_dev_open failed during reconfig (%lu Hz, %u ch)", (unsigned long)sample_rate, channels);
         return -1;
     }
+    atomic_store(&s_capture_rate, sample_rate);
+    atomic_store(&s_capture_channels, channels);
     return 0;
 }
 

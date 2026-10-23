@@ -12,6 +12,7 @@
 #include "rock_player.h"
 #include "rock_ui_screens.h"
 #include "rock_serial.h"
+#include "control_platform.h"
 
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
@@ -55,6 +56,7 @@ static lv_obj_t *s_lbl_section = NULL;
 static lv_obj_t *s_lbl_wifi = NULL;
 static lv_obj_t *s_lbl_server = NULL;
 static lv_obj_t *s_lbl_clock = NULL;
+static lv_obj_t *s_lbl_voice = NULL;
 
 static lv_obj_t *s_viewport = NULL;
 
@@ -83,6 +85,14 @@ static const rock_gui_view_reg_t s_view_registry[] = {
 void gui_enqueue_event(rock_ui_event_type_t type, const char *text, int16_t val)
 {
     if (!s_ui_event_queue) return;
+    if (type == ROCK_UI_EVT_VOICE_TOGGLE) {
+        int action = rock_voice_toggle_capture();
+        if (action != 0) {
+            rock_gui_voice_state(action > 0 ? 12 : rock_voice_state());
+            return;
+        }
+        rock_gui_voice_state(2);
+    }
     rock_ui_event_t evt;
     memset(&evt, 0, sizeof(evt));
     evt.type = type;
@@ -94,6 +104,10 @@ void gui_enqueue_event(rock_ui_event_type_t type, const char *text, int16_t val)
         // Zero-timeout send on a full queue drops the event; at least leave
         // a trace of which interaction was lost.
         ESP_LOGW(TAG, "UI event queue full, dropped event type=%d", (int)type);
+        if (type == ROCK_UI_EVT_VOICE_TOGGLE) {
+            rock_voice_cancel();
+            rock_gui_voice_state(12);
+        }
     }
 }
 
@@ -226,6 +240,12 @@ static void make_header(lv_obj_t *parent)
     lv_obj_set_style_text_font(s_lbl_section, &font_inter_14, 0);
     lv_obj_set_style_pad_left(s_lbl_section, 8, 0);
     lv_obj_set_flex_grow(s_lbl_section, 1);
+
+    s_lbl_voice = lv_label_create(s_header);
+    lv_label_set_text(s_lbl_voice, "");
+    lv_obj_set_style_text_font(s_lbl_voice, &font_inter_14, 0);
+    lv_obj_set_style_text_color(s_lbl_voice, ROCK_COLOR_MIC_AMBER, 0);
+    lv_obj_set_style_pad_right(s_lbl_voice, 12, 0);
 
     s_lbl_wifi = lv_label_create(s_header);
     lv_label_set_text(s_lbl_wifi, ROCK_ICON_WIFI " Wi-Fi");
@@ -529,6 +549,24 @@ void rock_gui_catalog_search_busy(bool busy)
     lvgl_port_unlock();
 }
 
+void rock_gui_voice_state(int state)
+{
+    if (!lvgl_port_lock(500)) return;
+    static const char *const labels[] = {
+        "", "Подключаю голос...", "Слушаю · Отмена", "Обрабатываю · Отмена",
+        "Ищу станции", "Речь не распознана", "Уточните команду",
+        "Команда не поддерживается", "Голос: таймаут", "Нет связи для голоса",
+        "Ошибка распознавания", "Команда не выполнена", "Голос отменён",
+        "Недостаточно памяти для голоса",
+        "Не удалось разобрать команду",
+    };
+    if (state < 0 || state >= (int)(sizeof(labels) / sizeof(labels[0]))) state = 0;
+    if (s_lbl_voice) lv_label_set_text(s_lbl_voice, labels[state]);
+    gui_catalog_voice_state(state);
+    np_transport_voice_state(state);
+    lvgl_port_unlock();
+}
+
 void rock_gui_catalog_set_busy(bool busy)
 {
     rock_gui_catalog_search_busy(busy);
@@ -690,7 +728,9 @@ void rock_gui_switch_view(int view_index)
 void rock_gui_trigger(const char *action)
 {
     if (!action || !lvgl_port_lock(500)) return;
-    if (!strcmp(action, "STALE")) {
+    if (!strcmp(action, "VOICE")) {
+        gui_enqueue_event(ROCK_UI_EVT_VOICE_TOGGLE, NULL, 0);
+    } else if (!strcmp(action, "STALE")) {
         rock_gui_mark_catalog_stale();
     } else if (!strcmp(action, "LOADMORE_ERR")) {
         gui_catalog_load_more_error();

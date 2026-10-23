@@ -21,6 +21,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -182,6 +183,23 @@ static void serial_cmd_task(void *arg)
                         rock_player_log_stream_metrics();
                         rock_spectrum_log_metrics();
                         rock_gui_log_debug_state();
+                        ESP_LOGI(TAG, "metrics_ram int_free=%u int_min=%u int_largest=%u dma_largest=%u psram_free=%u psram_min=%u psram_largest=%u",
+                            (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+                            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA),
+                            (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),
+                            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+                    } else if (strcmp(cmd, "CMD:TASKS") == 0) {
+                        char *buf = heap_caps_malloc(2048, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                        if (buf) {
+                            vTaskList(buf);
+                            ESP_LOGI(TAG, "task_list:\nName            State   Prio    Stack   Num\n%s", buf);
+                            heap_caps_free(buf);
+                        } else {
+                            ESP_LOGE(TAG, "task_list alloc failed");
+                        }
                     } else if (strcmp(cmd, "CMD:SCREENSHOT") == 0) {
                         rock_gui_dump_screenshot();
                     } else if (strcmp(cmd, "CMD:VIEW:NP") == 0) {
@@ -209,7 +227,8 @@ int rock_serial_start(void)
     // 16 KiB: the screenshot path renders lv_snapshot on this stack (the
     // former 32 KiB was the single largest internal-RAM consumer after the
     // LVGL draw buffer and pushed MALLOC_CAP_INTERNAL to ~28 KiB free).
-    if (xTaskCreatePinnedToCore(serial_cmd_task, "serial_cmd", 16384, NULL, 3, NULL, 0) != pdPASS) {
+    if (xTaskCreatePinnedToCoreWithCaps(serial_cmd_task, "serial_cmd", 16384, NULL, 3, NULL, 0,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create serial command task");
         return -1;
     }

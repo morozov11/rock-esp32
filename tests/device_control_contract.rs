@@ -32,7 +32,7 @@ fn consumes_canonical_hello_and_welcome() {
 }
 
 #[test]
-fn re05_advertises_truthful_player_and_display_surface() {
+fn re07_advertises_player_display_and_voice_surface() {
     let ours = device_control::registration(
         "10000000-0000-4000-8000-000000000001",
         "2026-09-02T12:00:00Z",
@@ -40,7 +40,7 @@ fn re05_advertises_truthful_player_and_display_surface() {
     );
     assert_eq!(
         ours["payload"]["manifest"]["roles"],
-        json!(["display_surface", "player", "controller"])
+        json!(["display_surface", "player", "controller", "voice_endpoint"])
     );
     let items = &ours["payload"]["manifest"]["capabilities"]["items"];
     assert_eq!(
@@ -56,13 +56,16 @@ fn re05_advertises_truthful_player_and_display_surface() {
         json!({"name":"media.volume","version":1,"minimum":0,"maximum":100,"step":1,"mute":true})
     );
     assert_eq!(
-        items[3],
+        items[4],
         json!({"name":"display.presentation","version":1,"views":["text","now_playing","sensor_grid"],"max_items":8,"max_text_length":128})
     );
+    assert_eq!(items[3], json!({"name":"voice.input","version":1,"formats":["pcm16_mono_16000"]}));
     assert_eq!(
         ours["payload"]["manifest"]["surfaces"][0]["surface_id"],
         "display.main"
     );
+    assert_eq!(ours["payload"]["manifest"]["surfaces"][1],
+        json!({"surface_id":"voice.main","kind":"voice","display_name":"Rock voice","views":[]}));
 }
 
 #[test]

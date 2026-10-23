@@ -47,6 +47,16 @@ void rock_ws_log_heartbeat_timeout(uint64_t age_ms);
 /** Log a received frame's protocol kind (string like "device.command") from
  *  the Rust session loop. Kind only — never frame content. */
 void rock_ws_log_rx_frame(const char *kind);
+// Push-to-talk transport runs on its own task beside the control websocket.
+// States: 0 idle, 1 connecting, 2 listening, 3 processing, 4 success,
+// 5 silence, 6 ambiguous, 7 unsupported, 8 timeout, 9 offline,
+// 10 recognition error, 11 command failed, 12 cancelled, 13 no memory.
+int rock_voice_start(const char *access_token);
+int rock_voice_take_transcript(char *out, size_t cap);
+int rock_voice_toggle_capture(void);
+void rock_voice_cancel(void);
+void rock_voice_release_pause(void);
+int rock_voice_state(void);
 /** Generic session-domain log line from Rust (same pattern as the
  *  rock_ws_log_* helpers above): observability for errors the session
  *  deliberately swallows. Never pass secrets or frame content. */

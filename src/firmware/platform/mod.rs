@@ -21,7 +21,7 @@ pub(crate) use gui::{
     gui_favourites_visible,
     gui_set_starting_station, gui_show_cast_menu, gui_show_empty, gui_show_error,
     gui_show_loading, gui_show_offline, gui_start, gui_update_cast_status,
-    gui_update_connectivity, gui_update_playback, GuiEvent,
+    gui_update_connectivity, gui_update_playback, gui_voice_state, GuiEvent,
 };
 #[allow(unused_imports)]
 pub(crate) use gui::gui_set_browse_stations;
@@ -30,6 +30,21 @@ pub(crate) use http::{
     ws_stop,
 };
 pub(crate) use tls::CastTlsStream;
+
+pub(crate) fn voice_start(token: &str) -> Result<(), ()> {
+    let token = cstring(token)?;
+    if unsafe { ffi::rock_voice_start(token.as_ptr()) } == 0 { Ok(()) } else { Err(()) }
+}
+pub(crate) fn voice_cancel() { unsafe { ffi::rock_voice_cancel() }; }
+pub(crate) fn voice_release_pause() { unsafe { ffi::rock_voice_release_pause() }; }
+pub(crate) fn voice_state() -> i32 { unsafe { ffi::rock_voice_state() } }
+pub(crate) fn voice_take_transcript() -> Option<String> {
+    let mut text = [0 as core::ffi::c_char; 513];
+    if unsafe { ffi::rock_voice_take_transcript(text.as_mut_ptr(), text.len()) } != 0 {
+        return None;
+    }
+    Some(unsafe { CStr::from_ptr(text.as_ptr()) }.to_string_lossy().into_owned())
+}
 
 use ffi::*;
 use std::ffi::{CStr, CString};

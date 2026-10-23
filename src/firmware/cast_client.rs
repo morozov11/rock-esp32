@@ -72,16 +72,16 @@ impl CastClient {
         let _ = Self::send_msg(stream, &msg_pong_to(&msg.source_id));
     }
 
-    /// Wait for a receiver-status message carrying a running DMR session
-    /// (phase-4 dedup of the pre-LAUNCH reuse probe and the post-LAUNCH
-    /// wait, which differ only in budget). Answers PINGs while waiting.
-    fn wait_dmr_session(
+    /// Probe whether a DMR application is already running on the receiver.
+    /// Returns Some(AppSession) if found, or None if status was received without DMR.
+    fn query_dmr(
         stream: &mut CastTlsStream,
         inbox: &mut Vec<u8>,
+        status_req: u32,
         budget_ms: u64,
     ) -> Result<Option<AppSession>, ()> {
         let start_wait = platform::uptime_ms();
-        while platform::uptime_ms() - start_wait < budget_ms {
+        while platform::uptime_ms().saturating_sub(start_wait) < budget_ms {
             if let Some(msg) = Self::read_msg(stream, inbox, 1000)? {
                 if Self::is_ping(&msg) {
                     Self::send_pong(stream, &msg);
@@ -91,12 +91,59 @@ impl CastClient {
                     if let Payload::String(ref s) = msg.payload {
                         if let Ok(v) = serde_json::from_str::<Value>(s) {
                             if let Some(app) = parse_dmr(&v) {
+                                platform::cast_log("Cast DMR already active; reusing session");
+                                return Ok(Some(app));
+                            }
+                            if v.get("type").and_then(Value::as_str) == Some("RECEIVER_STATUS") {
+                                let rid = v.get("requestId").and_then(Value::as_u64).unwrap_or(0) as u32;
+                                if rid == status_req {
+                                    platform::cast_log("Cast DMR not active on receiver");
+                                    return Ok(None);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        platform::cast_log("Cast query DMR status timed out; proceeding to launch");
+        Ok(None)
+    }
+
+    /// Wait for a receiver-status message carrying a newly launched DMR session.
+    fn wait_launch_dmr(
+        stream: &mut CastTlsStream,
+        inbox: &mut Vec<u8>,
+        launch_req: u32,
+        budget_ms: u64,
+    ) -> Result<Option<AppSession>, ()> {
+        let start_wait = platform::uptime_ms();
+        while platform::uptime_ms().saturating_sub(start_wait) < budget_ms {
+            if let Some(msg) = Self::read_msg(stream, inbox, 1000)? {
+                if Self::is_ping(&msg) {
+                    Self::send_pong(stream, &msg);
+                    continue;
+                }
+                if msg.namespace == NS_RECEIVER {
+                    if let Payload::String(ref s) = msg.payload {
+                        if let Ok(v) = serde_json::from_str::<Value>(s) {
+                            if let Some(app) = parse_dmr(&v) {
+                                platform::cast_log("Cast DMR launch session established");
                                 return Ok(Some(app));
                             }
                             if v.get("type").and_then(Value::as_str) == Some("LAUNCH_ERROR") {
-                                let reason = v.get("reason").and_then(Value::as_str).unwrap_or("unknown");
-                                platform::cast_log(&format!("Cast launch rejected: {}", reason));
-                                return Err(());
+                                let rid = v.get("requestId").and_then(Value::as_u64).unwrap_or(0) as u32;
+                                if rid == launch_req {
+                                    let reason = v.get("reason").and_then(Value::as_str).unwrap_or("unknown");
+                                    platform::cast_log(&format!("Cast launch rejected: {}", reason));
+                                    return Err(());
+                                } else {
+                                    let reason = v.get("reason").and_then(Value::as_str).unwrap_or("unknown");
+                                    platform::cast_log(&format!(
+                                        "Cast launch error ignored (rid={} != expected {}): {}",
+                                        rid, launch_req, reason
+                                    ));
+                                }
                             }
                         }
                     }
@@ -214,15 +261,21 @@ impl CastClient {
         // IDLE media session which does not consume a subsequent live LOAD.
         let status_req = self.next_req();
         Self::send_msg(&mut stream, &msg_get_receiver_status(status_req))?;
-        let mut app_session = Self::wait_dmr_session(&mut stream, &mut self.inbox, 500)?;
+        let mut app_session = Self::query_dmr(
+            &mut stream,
+            &mut self.inbox,
+            status_req,
+            CAST_GET_STATUS_TIMEOUT_MS as u64,
+        )?;
 
         // 3. No active DMR: launch it, then wait for its session identifiers.
         if app_session.is_none() {
             let launch_req = self.next_req();
             Self::send_msg(&mut stream, &msg_launch_dmr(launch_req))?;
-            app_session = Self::wait_dmr_session(
+            app_session = Self::wait_launch_dmr(
                 &mut stream,
                 &mut self.inbox,
+                launch_req,
                 CAST_LAUNCH_TIMEOUT_MS as u64,
             )?;
         }

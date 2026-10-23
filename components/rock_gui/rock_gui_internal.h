@@ -133,6 +133,8 @@ void gui_catalog_clear(void);
 void gui_catalog_reset_fetching(void);
 void gui_catalog_load_more_error(void);
 void gui_catalog_search_busy(bool busy);
+void gui_catalog_voice_state(int state);
+void np_transport_voice_state(int state);
 // Fill the rows: catalog pages and search results share the list.
 // search_results=false — catalog page (counter update, "Каталог пуст" on 0);
 // search_results=true — search results (keyboard down, list up, row logging).

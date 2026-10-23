@@ -50,6 +50,7 @@ typedef enum {
     ROCK_UI_EVT_FAVOURITES_SHOW,
     ROCK_UI_EVT_FAVOURITES_PAGE, // value: page number
     ROCK_UI_EVT_FAVOURITE_TOGGLE, // text: station_id
+    ROCK_UI_EVT_VOICE_TOGGLE,
 } rock_ui_event_type_t;
 
 #define ROCK_GUI_MAX_CAST_DEVICES 16
@@ -141,6 +142,7 @@ void rock_gui_catalog_load_more_error(void);
  * Shows inline spinner in search bar without blocking the station list.
  */
 void rock_gui_catalog_search_busy(bool busy);
+void rock_gui_voice_state(int state);
 void rock_gui_catalog_set_busy(bool busy);
 
 /**

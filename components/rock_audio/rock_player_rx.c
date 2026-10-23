@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -146,7 +147,7 @@ cleanup:
     free(out_buf);
     free(in_buf);
     s_rx_task = NULL;
-    vTaskDelete(NULL);
+    vTaskDeleteWithCaps(NULL);
 }
 
 int rock_player_rx_start(const char *station_id)
@@ -170,7 +171,9 @@ int rock_player_rx_start(const char *station_id)
     rock_player_set_stop_signal(false);
 
     // Spawn stream RX worker on Core 1
-    if (xTaskCreatePinnedToCore(stream_rx_task, "rock_st_rx", 8192, NULL, 5, &s_rx_task, 1) != pdPASS) {
+    // Keep internal RAM available for the voice WebSocket while radio plays.
+    if (xTaskCreatePinnedToCoreWithCaps(stream_rx_task, "rock_st_rx", 8192, NULL, 5,
+                                        &s_rx_task, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
         ESP_LOGE(TAG, "Failed to start stream RX task");
         rock_player_set_status(ROCK_PLAYER_STATUS_ERROR);
         return -1;

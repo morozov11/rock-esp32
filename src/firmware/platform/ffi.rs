@@ -69,6 +69,12 @@ unsafe extern "C" {
     pub(crate) fn rock_gui_favourites_visible() -> bool;
     pub(crate) fn rock_gui_catalog_load_more_error();
     pub(crate) fn rock_gui_catalog_search_busy(busy: bool);
+    pub(crate) fn rock_gui_voice_state(state: c_int);
+    pub(crate) fn rock_voice_start(access_token: *const c_char) -> c_int;
+    pub(crate) fn rock_voice_take_transcript(out: *mut c_char, cap: usize) -> c_int;
+    pub(crate) fn rock_voice_cancel();
+    pub(crate) fn rock_voice_release_pause();
+    pub(crate) fn rock_voice_state() -> c_int;
     pub(crate) fn rock_gui_show_loading(message: *const c_char);
     pub(crate) fn rock_gui_show_empty(message: *const c_char);
     #[allow(dead_code)]

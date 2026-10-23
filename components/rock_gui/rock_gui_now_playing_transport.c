@@ -6,6 +6,7 @@
 
 static lv_obj_t *s_container, *s_catalog, *s_play_pause, *s_play_pause_label, *s_spinner;
 static lv_obj_t *s_stop, *s_stop_label, *s_volume_down, *s_volume_label, *s_volume_up, *s_cast, *s_cast_label;
+static lv_obj_t *s_voice;
 
 static void on_catalog(lv_event_t *e)
 {
@@ -23,6 +24,15 @@ static void on_stop(lv_event_t *e) { (void)e; if (!lv_obj_has_flag(s_stop, LV_OB
 static void on_volume_down(lv_event_t *e) { (void)e; gui_enqueue_event(ROCK_UI_EVT_VOLUME_CHANGE, NULL, -5); }
 static void on_volume_up(lv_event_t *e) { (void)e; gui_enqueue_event(ROCK_UI_EVT_VOLUME_CHANGE, NULL, 5); }
 static void on_cast(lv_event_t *e) { (void)e; rock_gui_show_cast_menu(true); gui_enqueue_event(ROCK_UI_EVT_CAST_BROWSE, NULL, 0); }
+static void on_voice(lv_event_t *e) { (void)e; gui_enqueue_event(ROCK_UI_EVT_VOICE_TOGGLE, NULL, 0); }
+
+void np_transport_voice_state(int state)
+{
+    if (!s_voice) return;
+    bool active = state >= 1 && state <= 3;
+    lv_label_set_text(lv_obj_get_child(s_voice, 0), active ? "Отмена" : "Голос");
+    lv_obj_set_style_bg_color(s_voice, active ? ROCK_COLOR_ERROR : ROCK_COLOR_MIC_AMBER, 0);
+}
 
 static void button_style(lv_obj_t *button, lv_color_t background, lv_color_t border, int width)
 {
@@ -43,7 +53,7 @@ void np_transport_build(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_container, 1, 0);
     lv_obj_set_style_radius(s_container, ROCK_RADIUS_PANEL, 0);
     lv_obj_set_style_pad_hor(s_container, 12, 0);
-    lv_obj_set_style_pad_column(s_container, 16, 0);
+    lv_obj_set_style_pad_column(s_container, 10, 0);
     lv_obj_set_flex_flow(s_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     s_catalog = gui_make_button(s_container, 110, 48, "Каталог", &font_inter_14, on_catalog, NULL);
@@ -61,6 +71,10 @@ void np_transport_build(lv_obj_t *parent)
     s_volume_down = gui_make_button(s_container, 56, 56, "-", &font_inter_18, on_volume_down, NULL); lv_obj_set_style_radius(s_volume_down, LV_RADIUS_CIRCLE, 0); button_style(s_volume_down, ROCK_COLOR_PANEL_2, ROCK_COLOR_BORDER, 1);
     s_volume_up = gui_make_button(s_container, 56, 56, "+", &font_inter_18, on_volume_up, NULL); lv_obj_set_style_radius(s_volume_up, LV_RADIUS_CIRCLE, 0); button_style(s_volume_up, ROCK_COLOR_PANEL_2, ROCK_COLOR_BORDER, 1);
     s_cast = gui_make_button(s_container, 110, 48, "Cast", &font_inter_14, on_cast, NULL); lv_obj_set_style_radius(s_cast, 24, 0); button_style(s_cast, ROCK_COLOR_PANEL_2, ROCK_COLOR_BORDER, 1); s_cast_label = lv_obj_get_child(s_cast, 0);
+    s_voice = gui_make_button(s_container, 92, 48, "Голос", &font_inter_14, on_voice, NULL);
+    lv_obj_set_style_radius(s_voice, 24, 0);
+    lv_obj_set_style_bg_color(s_voice, ROCK_COLOR_MIC_AMBER, 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(s_voice, 0), ROCK_COLOR_WHITE, 0);
 }
 void np_transport_show(void) { if (s_container) lv_obj_remove_flag(s_container, LV_OBJ_FLAG_HIDDEN); }
 void np_transport_hide(void) { if (s_container) lv_obj_add_flag(s_container, LV_OBJ_FLAG_HIDDEN); }

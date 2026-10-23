@@ -71,13 +71,17 @@ pub(super) fn cast_play_stream(
     token: &mut String,
     source: &mut SourceState,
 ) -> Result<(), ()> {
+    // Stop any existing Cast media session before switching streams so the
+    // receiver cleanly tears down the old playback and HTTP client.
+    let _ = cast_client.stop_media();
+
     // Detach the speaker tap only: the shared source keeps running. A failed
     // detach would leave local audio playing over the Cast handoff — log it.
     if platform::player_stop().is_err() {
         platform::log_msg("Speaker detach failed before Cast playback");
     }
     ensure_source(station_id, token, source)?;
-    let relay_url = platform::relay_listen().ok_or(())?;
+    let base_relay_url = platform::relay_listen().ok_or(())?;
     let content_type = platform::source_content_type_enum();
     let resolved_station = resolve_station_name(station_id);
     let title = if !meta_title.is_empty() {
@@ -85,6 +89,7 @@ pub(super) fn cast_play_stream(
     } else {
         &resolved_station
     };
+    let relay_url = format!("{}?st={}", base_relay_url, station_id);
     let res = cast_client.load_stream(&relay_url, title, content_type);
     if res.is_err() {
         return Err(());

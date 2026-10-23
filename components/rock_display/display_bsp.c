@@ -185,6 +185,7 @@ int rock_display_init(void)
     port_cfg.task_affinity = 0;
     port_cfg.task_max_sleep_ms = 500;
     port_cfg.timer_period_ms = 5;
+    port_cfg.task_stack_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
     if (lvgl_port_init(&port_cfg) != ESP_OK) {
         ESP_LOGE(TAG, "LVGL port init failed");
         return -1;
