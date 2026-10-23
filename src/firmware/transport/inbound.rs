@@ -5,7 +5,7 @@ use super::media::{cast_play_stream, play_local_station, refresh_player_with_cas
 use super::session::Session;
 use super::{message_id, send};
 use crate::device_control::{
-    self, Envelope, PlaybackAction, PlaybackStatus, PlayerCommand, VolumeAction,
+    self, Envelope, OutputMode, PlaybackAction, PlaybackStatus, PlayerCommand, VolumeAction,
 };
 use crate::firmware::platform;
 use crate::presentation::ui_strings as tr;
@@ -202,6 +202,9 @@ impl Session {
                     self.player.apply_play_stream(&station_id);
                     self.update_gui();
                 }
+                if matches!(self.output_mode, OutputMode::Chromecast { .. }) && !self.cast_client.is_connected() {
+                    let _ = self.cast_client.reconnect();
+                }
                 let res = if self.cast_client.is_connected() {
                     // Best-effort detach: cast_play_stream detaches again and
                     // logs a failure there.
@@ -239,11 +242,14 @@ impl Session {
                 res
             }
             PlayerCommand::Playback { action, .. } => {
-                if self.cast_client.is_connected() {
+                if matches!(self.output_mode, OutputMode::Chromecast { .. }) {
                     match action {
                         PlaybackAction::Play => {
                             if let Some((st_id, _)) = &self.last_stream {
                                 self.last_heartbeat_ack = platform::uptime_ms();
+                                if !self.cast_client.is_connected() {
+                                    let _ = self.cast_client.reconnect();
+                                }
                                 if cast_play_stream(
                                     &mut self.cast_client,
                                     st_id,

@@ -76,9 +76,12 @@ impl GuiEventSink for Session {
             platform::log_msg("Playback play ignored: station connecting");
             return;
         }
-        if self.cast_client.is_connected() {
+        if matches!(self.output_mode, OutputMode::Chromecast { .. }) {
             if let Some((st_id, _)) = &self.last_stream {
                 self.last_heartbeat_ack = platform::uptime_ms();
+                if !self.cast_client.is_connected() {
+                    let _ = self.cast_client.reconnect();
+                }
                 if cast_play_stream(
                     &mut self.cast_client,
                     st_id,

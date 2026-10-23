@@ -4,7 +4,7 @@ use super::media::{self, refresh_player_with_cast, SourceState};
 use super::catalog::CatalogRequest;
 use super::revision::{current_revision, next_state_revision};
 use super::{message_id, send, HEARTBEAT_ACK_TIMEOUT_MS, HEARTBEAT_MS};
-use crate::device_control::{self, DisplayState, OutputMode, PlayerState};
+use crate::device_control::{self, DisplayState, OutputMode, PlaybackStatus, PlayerState};
 use crate::firmware::cast_client::CastClient;
 use crate::firmware::pairing;
 use crate::firmware::platform;
@@ -223,6 +223,15 @@ impl Session {
 
     pub(super) fn tick_cast_pump(&mut self) -> Result<(), ()> {
         if self.cast_client.is_connected() && self.cast_client.pump().is_err() {
+            if self.player.status() != PlaybackStatus::Playing {
+                // If not actively playing (e.g. paused or stopped), the receiver routinely
+                // closes the idle socket. Drop the dead socket cleanly without blocking
+                // the main event loop. A future resume will reconnect on demand.
+                self.cast_client.close_stream();
+                platform::cast_log("Cast stream closed while idle/paused");
+                return Ok(());
+            }
+
             if self.cast_client.reconnect().is_ok() {
                 platform::cast_log("Cast connection restored after idle disconnect");
             } else {
@@ -234,7 +243,7 @@ impl Session {
                 // the speaker re-joins the ring without an upstream reconnect.
                 if let Some((st_id, _)) = &self.last_stream {
                     if media::play_local_station(st_id, &mut self.token, &mut self.source).is_err() {
-                        platform::log_msg("Local playback fallback failed after cast link lost");
+                        platform::log_msg("Local playback fallback failed after cast load failure");
                     }
                 }
             }

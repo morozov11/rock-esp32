@@ -572,6 +572,16 @@ impl CastClient {
         self.inbox.clear();
     }
 
+    /// Close the underlying transport stream without clearing target receiver identity,
+    /// so a later play/resume can reconnect on demand without blocking idle/pause states.
+    pub(crate) fn close_stream(&mut self) {
+        self.stream = None;
+        self.transport_id = None;
+        self.session_id = None;
+        self.media_session_id = None;
+        self.inbox.clear();
+    }
+
     pub(crate) fn reconnect(&mut self) -> Result<(), ()> {
         let receiver_id = self.receiver_id.clone().ok_or(())?;
         let receiver = self.receiver.clone().ok_or(())?;

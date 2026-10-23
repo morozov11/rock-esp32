@@ -209,7 +209,7 @@ static void spectrum_timer_cb(lv_timer_t *timer)
     static float bands[SPECTRUM_BANDS_COUNT];
     rock_spectrum_get_bands(bands);
     gui_now_playing_spectrum_update(bands,
-        s_playback_status == ROCK_GUI_PLAYBACK_PLAYING || rock_player_is_cast_active());
+        s_playback_status == ROCK_GUI_PLAYBACK_PLAYING);
 }
 
 // ---------------------------------------------------------------------------
