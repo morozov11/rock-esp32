@@ -12,6 +12,7 @@ idf_component_register(
         "rock_gui_now_playing_spectrum.c"
         "rock_ui_screens.c"
         "rock_serial.c"
+        "rock_serial_re8.c"
         "rock_screenshot.c"
         "fonts/font_hack_16.c"
         "fonts/font_inter_14.c"

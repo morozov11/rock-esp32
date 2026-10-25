@@ -35,11 +35,13 @@ def main() -> None:
             device.write(b"CMD:RE8:WAKE:ARM\n")
             device.flush()
             time.sleep(2)
-            print(f"ГОВОРИТЕ СЕЙЧАС: {args.phrase}", flush=True)
+            # \a rings the PC terminal bell so the speaker does not have to
+            # watch the console (same cue style as re8_collect_batch.py).
+            print(f"\a\a\aГОВОРИТЕ СЕЙЧАС: {args.phrase}", flush=True)
             deadline = time.monotonic() + 70
             while time.monotonic() < deadline:
                 line = device.readline().decode("utf-8", errors="replace").strip()
-                if "RE8WAKE detected" in line:
+                if "RE8WAKE crossing" in line:
                     detected = True
                     device.write(b"CMD:RE8:WAKE:DISARM\n")
                     device.flush()

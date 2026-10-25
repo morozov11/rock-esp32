@@ -265,6 +265,36 @@ int rock_settings_volume_save(uint8_t volume)
     return err == ESP_OK ? 0 : -1;
 }
 
+int rock_settings_wake_mute_load(uint8_t *out_muted)
+{
+    nvs_handle_t nvs;
+    if (!out_muted || nvs_open("rock_settings", NVS_READONLY, &nvs) != ESP_OK) return 0;
+    uint8_t muted = 0;
+    esp_err_t err = nvs_get_u8(nvs, "re8_mute", &muted);
+    nvs_close(nvs);
+    if (err != ESP_OK || muted > 1) return 0;
+    *out_muted = muted;
+    return 1;
+}
+
+int rock_settings_wake_mute_save(uint8_t muted)
+{
+    if (muted > 1) return -1;
+    nvs_handle_t nvs;
+    if (nvs_open("rock_settings", NVS_READWRITE, &nvs) != ESP_OK) return -1;
+    uint8_t stored = 0;
+    esp_err_t err = nvs_get_u8(nvs, "re8_mute", &stored);
+    if (err != ESP_OK || stored != muted) {
+        err = nvs_set_u8(nvs, "re8_mute", muted);
+        if (err == ESP_OK) err = nvs_commit(nvs);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Wake mute save failed: %s", esp_err_to_name(err));
+        }
+    }
+    nvs_close(nvs);
+    return err == ESP_OK ? 0 : -1;
+}
+
 int rock_now_rfc3339(char *out, size_t cap)
 {
     time_t current; time(&current);

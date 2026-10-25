@@ -54,6 +54,10 @@ static uint8_t s_volume_level = 65;
 static bool s_volume_muted = false;
 static bool s_catalog_stale = false;
 static char s_cast_receiver_name[129] = {0};
+static bool s_wake_muted = false;
+static int s_voice_label_state = 0;
+static void wake_mute_label(bool muted);
+static const char *voice_label_text(int state);
 
 // Metrics
 static uint32_t s_fps = 0;
@@ -379,6 +383,14 @@ int rock_gui_start(void)
     rock_serial_start();
 
     lvgl_port_unlock();
+    uint8_t wake_muted = 0;
+    (void)rock_settings_wake_mute_load(&wake_muted);
+    if (wake_muted == 1) {
+        // No NVS write here: the stored value already says muted.
+        rock_wake_set_muted(true);
+        wake_mute_label(true);
+        ESP_LOGI(TAG, "RE8WAKE restored muted=1 from settings");
+    }
     if (rock_wake_start(on_wake_detected) != 0) {
         ESP_LOGE(TAG, "RE8WAKE task start failed");
     }
@@ -569,6 +581,26 @@ void rock_gui_catalog_search_busy(bool busy)
 void rock_gui_voice_state(int state)
 {
     if (!lvgl_port_lock(500)) return;
+    if (state < 0) state = 0;
+    s_voice_label_state = state;
+    if (s_lbl_voice) {
+        lv_label_set_text(s_lbl_voice, voice_label_text(state));
+    }
+    gui_catalog_voice_state(state);
+    np_transport_voice_state(state);
+    lvgl_port_unlock();
+}
+
+// RE-8 user mute is persistent (NVS) and survives reboots; the header label
+// keeps it visible while idle so a muted device does not look broken.  This
+// facade owns when the setting is written (control_platform only stores
+// bytes).  NVS writes must not run from PSRAM-stack tasks (the flash cache is
+// disabled during the write), so the persistent part is applied by a small
+// internal-stack worker fed from a single-slot queue: latest request wins.
+// Voice session header label; a muted microphone wins over any session text
+// because "not listening" is the dominating user-facing fact.
+static const char *voice_label_text(int state)
+{
     static const char *const labels[] = {
         "", "Подключаю голос...", "Слушаю · Отмена", "Обрабатываю · Отмена",
         "Ищу станции", "Речь не распознана", "Уточните команду",
@@ -578,10 +610,49 @@ void rock_gui_voice_state(int state)
         "Не удалось разобрать команду",
     };
     if (state < 0 || state >= (int)(sizeof(labels) / sizeof(labels[0]))) state = 0;
-    if (s_lbl_voice) lv_label_set_text(s_lbl_voice, labels[state]);
-    gui_catalog_voice_state(state);
-    np_transport_voice_state(state);
+    return s_wake_muted ? "Микрофон выкл" : labels[state];
+}
+
+static void wake_mute_label(bool muted)
+{
+    if (!lvgl_port_lock(500)) return;
+    s_wake_muted = muted;
+    if (s_lbl_voice) {
+        lv_label_set_text(s_lbl_voice, voice_label_text(s_voice_label_state));
+    }
     lvgl_port_unlock();
+}
+
+static void wake_mute_worker(void *arg)
+{
+    QueueHandle_t queue = arg;
+    bool muted = false;
+    while (xQueueReceive(queue, &muted, portMAX_DELAY) == pdTRUE) {
+        if (rock_settings_wake_mute_save(muted ? 1u : 0u) != 0) {
+            ESP_LOGW(TAG, "RE8WAKE mute persist failed (runtime flag still applied)");
+        } else {
+            ESP_LOGI(TAG, "RE8WAKE muted=%d persisted", (int)muted);
+        }
+    }
+    vTaskDelete(NULL);
+}
+
+void rock_gui_set_wake_muted(bool muted)
+{
+    static QueueHandle_t queue;
+    rock_wake_set_muted(muted);
+    wake_mute_label(muted);
+    if (!queue) {
+        queue = xQueueCreate(1, sizeof(bool));
+        if (!queue ||
+            xTaskCreate(wake_mute_worker, "wake_mute", 6144, queue, 4, NULL) != pdPASS) {
+            if (queue) vQueueDelete(queue);
+            queue = NULL;
+            ESP_LOGW(TAG, "RE8WAKE mute worker unavailable (runtime flag only)");
+            return;
+        }
+    }
+    xQueueOverwrite(queue, &muted);
 }
 
 void rock_gui_catalog_set_busy(bool busy)

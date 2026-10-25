@@ -35,6 +35,10 @@ int rock_identity_clear(void);
  *  fills *out_volume when a valid 0..100 value is stored, 0 otherwise. */
 int rock_settings_volume_load(uint8_t *out_volume);
 int rock_settings_volume_save(uint8_t volume);
+/** User-level RE-8 wake microphone mute in "rock_settings": load returns 1 and
+ *  fills *out_muted (0/1) when stored, 0 when unset (mute off by default). */
+int rock_settings_wake_mute_load(uint8_t *out_muted);
+int rock_settings_wake_mute_save(uint8_t muted);
 int rock_http_post(const char *path, const char *bearer, const char *body,
                    char *response, size_t response_cap, int *status);
 int rock_http_get(const char *path, const char *bearer,

@@ -193,6 +193,13 @@ void rock_gui_switch_view(int view_index);
 void rock_gui_trigger(const char *action);
 
 /**
+ * Apply the user-level RE-8 wake microphone mute end to end: wake task flag,
+ * persistent storage ("rock_settings" NVS) and the header status label.
+ * Safe from any task; the NVS write happens outside the LVGL lock.
+ */
+void rock_gui_set_wake_muted(bool muted);
+
+/**
  * Log one diagnostics line with the GUI's internal view/catalog state
  * ("ui view=NP|CATALOG rows=%u stale=%d playback=%d volume=%u").
  * tools/rock_hwtest.py greps the playback= field — keep it verbatim.
