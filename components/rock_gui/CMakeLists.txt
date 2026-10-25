@@ -21,6 +21,8 @@ idf_component_register(
     REQUIRES
         "rock_platform"
         "rock_audio"
+        "rock_source"
+        "rock_wake"
         "rock_display"
         "esp_lvgl_port"
         "lvgl"

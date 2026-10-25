@@ -125,6 +125,10 @@ int rock_source_read(uint8_t *out, size_t cap);
  */
 esp_err_t rock_relay_listen(char *out_relay_url, size_t out_len);
 
+// Cumulative Cast relay counters since boot; safe to read from diagnostics.
+void rock_relay_get_metrics(uint32_t *streamed_bytes, uint32_t *overruns,
+                            uint32_t *send_errors, int *clients);
+
 /**
  * Thread-safe copy of the current ICY stream title (if any).
  *

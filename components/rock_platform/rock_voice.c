@@ -52,6 +52,8 @@ static QueueHandle_t s_events;
 static char *s_frame;
 static char s_token[512];
 static char s_transcript[513];
+static int16_t *s_preroll;
+static size_t s_preroll_count;
 
 static void log_heap(const char *phase)
 {
@@ -151,10 +153,10 @@ static bool capture_utterance(int16_t *recording, size_t *recorded, int *termina
     uint8_t previous_channels = 0;
     uint64_t window_squares = 0, absolute_sum = 0;
     uint32_t window_samples = 0, noise = UINT32_MAX;
-    uint32_t first_speech = 0, last_speech = 0;
+    uint32_t first_speech = *recorded ? 1 : 0;
+    uint32_t last_speech = (uint32_t)(*recorded / 16);
     int peak = 0;
     int64_t started = esp_timer_get_time();
-    *recorded = 0;
     while (*recorded < VOICE_MAX_SAMPLES && !atomic_load(&s_cancel)) {
         if (esp_timer_get_time() - started > 14000000) { *terminal = VOICE_TIMEOUT; return false; }
         uint32_t rate;
@@ -245,6 +247,12 @@ static void voice_task(void *arg)
     if (rock_audio_init() != 0) { terminal = VOICE_RECOGNITION_ERROR; goto done; }
     recording = heap_caps_malloc(VOICE_MAX_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!recording) { terminal = VOICE_RESOURCE_ERROR; goto done; }
+    if (s_preroll && s_preroll_count) {
+        recorded = s_preroll_count;
+        memcpy(recording, s_preroll, recorded * sizeof(int16_t));
+        ESP_LOGI(TAG, "wake pre-roll samples=%u", (unsigned)recorded);
+        rock_voice_clear_preroll();
+    }
     s_frame = heap_caps_malloc(VOICE_FRAME_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_frame) { terminal = VOICE_RESOURCE_ERROR; goto done; }
     atomic_store(&s_state, VOICE_LISTENING);
@@ -299,6 +307,7 @@ static void voice_task(void *arg)
     if (esp_websocket_client_send_text(ws, commit, strlen(commit), pdMS_TO_TICKS(1000)) < 0) goto done;
     wait_event(3, 45000, &terminal);
 done:
+    rock_voice_clear_preroll();
     if (recording) heap_caps_free(recording);
     if (ws) {
         if (atomic_load(&s_cancel) && esp_websocket_client_is_connected(ws)) {
@@ -344,6 +353,27 @@ int rock_voice_toggle_capture(void)
         return -1;
     }
     return 0;
+}
+
+int rock_voice_set_preroll(const int16_t *ring, size_t capacity, size_t used, size_t next)
+{
+    if (!ring || !capacity || used > capacity || used > 32000 || next >= capacity ||
+        atomic_load(&s_running)) return -1;
+    int16_t *copy = heap_caps_malloc(used * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!copy) return -1;
+    size_t start = (next + capacity - used) % capacity;
+    for (size_t i = 0; i < used; ++i) copy[i] = ring[(start + i) % capacity];
+    rock_voice_clear_preroll();
+    s_preroll = copy;
+    s_preroll_count = used;
+    return 0;
+}
+
+void rock_voice_clear_preroll(void)
+{
+    if (s_preroll) heap_caps_free(s_preroll);
+    s_preroll = NULL;
+    s_preroll_count = 0;
 }
 
 int rock_voice_start(const char *access_token)

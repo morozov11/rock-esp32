@@ -23,6 +23,7 @@
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include <math.h>
@@ -404,12 +405,17 @@ static bool IRAM_ATTR rx_overflow_cb(i2s_chan_handle_t chan, i2s_event_data_t *e
 }
 
 static bool s_audio_initialized = false;
+static SemaphoreHandle_t s_capture_lock;
 static atomic_uint s_capture_rate = ROCK_SAMPLE_RATE;
 static atomic_uint s_capture_channels = 1;
 
 int rock_audio_init(void)
 {
     if (s_audio_initialized) return 0;
+    if (!s_capture_lock) {
+        s_capture_lock = xSemaphoreCreateMutex();
+        if (!s_capture_lock) return -1;
+    }
     i2c_master_bus_handle_t bus = rock_i2c1_bus_acquire();
     if (!bus) return -1;
 
@@ -531,7 +537,10 @@ void *rock_audio_codec_handle(void)
 int rock_audio_capture_read(void *buffer, size_t bytes)
 {
     if (!s_audio_initialized || !buffer || bytes == 0 || bytes > 3200 || (bytes & 1)) return -1;
-    return esp_codec_dev_read(s_codec, buffer, bytes) == ESP_CODEC_DEV_OK ? (int)bytes : -1;
+    if (xSemaphoreTake(s_capture_lock, portMAX_DELAY) != pdTRUE) return -1;
+    int result = esp_codec_dev_read(s_codec, buffer, bytes) == ESP_CODEC_DEV_OK ? (int)bytes : -1;
+    xSemaphoreGive(s_capture_lock);
+    return result;
 }
 
 void rock_audio_capture_format(uint32_t *sample_rate, uint8_t *channels)
@@ -548,6 +557,7 @@ void rock_audio_pa_set(bool on)
 int rock_audio_reconfig(uint32_t sample_rate, uint8_t channels)
 {
     if (!s_codec) return -1;
+    if (xSemaphoreTake(s_capture_lock, portMAX_DELAY) != pdTRUE) return -1;
     ESP_LOGI(TAG, "Reconfig audio: DMA free=%u largest=%u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
@@ -565,10 +575,12 @@ int rock_audio_reconfig(uint32_t sample_rate, uint8_t channels)
     esp_codec_dev_close(s_codec);
     if (esp_codec_dev_open(s_codec, &fs) != ESP_CODEC_DEV_OK) {
         ESP_LOGE(TAG, "esp_codec_dev_open failed during reconfig (%lu Hz, %u ch)", (unsigned long)sample_rate, channels);
+        xSemaphoreGive(s_capture_lock);
         return -1;
     }
     atomic_store(&s_capture_rate, sample_rate);
     atomic_store(&s_capture_channels, channels);
+    xSemaphoreGive(s_capture_lock);
     return 0;
 }
 

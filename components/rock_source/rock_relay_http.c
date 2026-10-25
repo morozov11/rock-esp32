@@ -56,6 +56,9 @@ static const char RELAY_FORMAT_PASSTHROUGH_HEADERS[] =
 
 static int s_server_sock = -1;
 static atomic_int s_client_count = 0;
+static atomic_uint s_streamed_bytes = 0;
+static atomic_uint s_overruns = 0;
+static atomic_uint s_send_errors = 0;
 
 static bool relay_read_request(int client_sock, char *req_buf, size_t req_cap, bool *is_head, bool *is_get)
 {
@@ -122,6 +125,7 @@ static void relay_serve_stream(int client_sock, uint8_t *chunk, bool passthrough
         size_t n = 0;
         rock_ring_read_result_t r = rock_ring_read(relay_ring(), pos, chunk, RELAY_CLIENT_READ_BYTES, &n);
         if (r == ROCK_RING_READ_OVERRUN) {
+            atomic_fetch_add(&s_overruns, 1);
             pos = rock_ring_clamp_position(relay_ring(), pos, relay_cushion_bytes());
             continue;
         }
@@ -133,8 +137,10 @@ static void relay_serve_stream(int client_sock, uint8_t *chunk, bool passthrough
             ? relay_write_chunk(client_sock, chunk, n, &total_bytes, &last_log_bytes)
             : relay_send_audio(client_sock, chunk, n, &total_bytes, &last_log_bytes);
         if (!ok) {
+            atomic_fetch_add(&s_send_errors, 1);
             break;
         }
+        atomic_fetch_add(&s_streamed_bytes, n);
         pos += n;
     }
     ESP_LOGI(TAG, "Relay stream session closed (total: %u bytes)", (unsigned)total_bytes);
@@ -278,6 +284,15 @@ void relay_listener_wake(void)
 int relay_client_count(void)
 {
     return atomic_load(&s_client_count);
+}
+
+void rock_relay_get_metrics(uint32_t *streamed_bytes, uint32_t *overruns,
+                            uint32_t *send_errors, int *clients)
+{
+    if (streamed_bytes) *streamed_bytes = atomic_load(&s_streamed_bytes);
+    if (overruns) *overruns = atomic_load(&s_overruns);
+    if (send_errors) *send_errors = atomic_load(&s_send_errors);
+    if (clients) *clients = atomic_load(&s_client_count);
 }
 
 void relay_clients_reset(void)

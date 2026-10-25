@@ -17,5 +17,7 @@ dependencies:
   espressif/esp_codec_dev: "1.6.2"
   espressif/esp_audio_codec: "2.5.0"
   espressif/esp-sr: "2.5.3"
+  # RE-8 local streaming wake-word inference on ESP32-P4.
+  espressif/esp-tflite-micro: "1.4.1"
   espressif/esp-dsp: "1.8.0"
   espressif/mdns: "^1.4"

@@ -411,9 +411,11 @@ idle_listening
 4. If no production-quality stock model recognizes exact `ESP`, obtain or
    train a custom WakeNet model; do not ship a string heuristic as a
    wake-word detector.
-5. While radio is playing, feed both microphone audio and a playback
-   reference into AFE acoustic echo cancellation so the device does not
-   trigger on its own speaker.
+5. In the target Chromecast mode, test wake detection with audio from the
+   external speaker at normal and high volume. The board speaker was used
+   only for audio bring-up, so a local I2S playback reference is not part of
+   the first RE-8 implementation. Revisit echo cancellation only if the
+   external-speaker tests show it is needed and a usable reference is available.
 6. Add a visible microphone mute control and persistent muted/listening/
    uploading indicators.
 7. Play a short acknowledgement only after wake detection and prevent that

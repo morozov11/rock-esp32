@@ -13,6 +13,7 @@
 #include "rock_ui_screens.h"
 #include "rock_serial.h"
 #include "control_platform.h"
+#include "rock_wake_probe.h"
 
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
@@ -29,6 +30,17 @@
 #include <limits.h>
 
 static const char *TAG = "rock-gui";
+
+static void on_wake_detected(const int16_t *ring, size_t capacity, size_t used, size_t next)
+{
+    int voice_state = rock_voice_state();
+    if (voice_state >= 1 && voice_state <= 3) return;
+    if (rock_voice_set_preroll(ring, capacity, used, next) != 0) {
+        ESP_LOGW(TAG, "RE8WAKE pre-roll handoff failed");
+        return;
+    }
+    gui_enqueue_event(ROCK_UI_EVT_VOICE_TOGGLE, NULL, 0);
+}
 static bool s_gui_active = false;
 
 // FreeRTOS queue for UI events
@@ -88,6 +100,7 @@ void gui_enqueue_event(rock_ui_event_type_t type, const char *text, int16_t val)
     if (type == ROCK_UI_EVT_VOICE_TOGGLE) {
         int action = rock_voice_toggle_capture();
         if (action != 0) {
+            rock_voice_clear_preroll();
             rock_gui_voice_state(action > 0 ? 12 : rock_voice_state());
             return;
         }
@@ -106,6 +119,7 @@ void gui_enqueue_event(rock_ui_event_type_t type, const char *text, int16_t val)
         ESP_LOGW(TAG, "UI event queue full, dropped event type=%d", (int)type);
         if (type == ROCK_UI_EVT_VOICE_TOGGLE) {
             rock_voice_cancel();
+            rock_voice_clear_preroll();
             rock_gui_voice_state(12);
         }
     }
@@ -365,6 +379,9 @@ int rock_gui_start(void)
     rock_serial_start();
 
     lvgl_port_unlock();
+    if (rock_wake_start(on_wake_detected) != 0) {
+        ESP_LOGE(TAG, "RE8WAKE task start failed");
+    }
     ESP_LOGI(TAG, "RockCast native station GUI started successfully");
     return 0;
 }
