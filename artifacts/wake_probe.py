@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Reproduce the user's exact path: arm the wake detector, play a recorded
+command WAV through the PC speakers, and capture the wake -> preroll -> voice
+session serial log including any server error code."""
+
+import subprocess
+import sys
+import time
+
+import serial
+
+PORT = "COM6"
+WAV = sys.argv[1] if len(sys.argv) > 1 else r"artifacts\live_probe\segments\20261025T110305Z_re8-live-commands-near_0005_cue02.wav"
+LOG = sys.argv[2] if len(sys.argv) > 2 else r"artifacts\wake_probe_log.txt"
+
+KEEP = ("rock-voice", "RE8WAKE", "rock-gui", "rock-control", "Guru Meditation",
+        "abort()", "rock-serial: metrics", "rock-player: stream metrics")
+
+
+def main() -> None:
+    lines: list[str] = []
+    dev = serial.Serial()
+    dev.port = PORT
+    dev.baudrate = 115200
+    dev.timeout = 0.2
+    dev.dtr = False
+    dev.rts = False
+    dev.open()
+    time.sleep(0.3)
+    dev.reset_input_buffer()
+
+    dev.write(b"CMD:RE8:WAKE:ARM\n")
+    dev.flush()
+    lines.append(">>> sent CMD:RE8:WAKE:ARM")
+    time.sleep(1.5)
+
+    subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         f"(New-Object Media.SoundPlayer '{WAV}').PlaySync()"],
+        check=False,
+    )
+    lines.append(f">>> played {WAV}")
+
+    deadline = time.monotonic() + 75
+    finished = False
+    while time.monotonic() < deadline:
+        raw = dev.readline().decode("utf-8", errors="replace").strip()
+        if not raw:
+            continue
+        if any(marker in raw for marker in KEEP):
+            lines.append(raw)
+            print(raw, flush=True)
+        if "session finished" in raw:
+            finished = True
+            break
+    if not finished:
+        lines.append(">>> no session finished line within 75s")
+
+    dev.write(b"CMD:RE8:WAKE:DISARM\n")
+    dev.flush()
+    dev.write(b"CMD:METRICS\n")
+    dev.flush()
+    deadline = time.monotonic() + 6
+    while time.monotonic() < deadline:
+        raw = dev.readline().decode("utf-8", errors="replace").strip()
+        if "metrics_ram" in raw or "rock-gui: ui " in raw:
+            lines.append(raw)
+            print(raw, flush=True)
+        if "metrics_ram" in raw:
+            break
+
+    dev.close()
+    with open(LOG, "w", encoding="utf-8") as out:
+        out.write("\n".join(lines) + "\n")
+    print(f"saved {LOG}")
+
+
+if __name__ == "__main__":
+    main()

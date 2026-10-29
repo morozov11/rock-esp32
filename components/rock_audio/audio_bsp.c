@@ -65,7 +65,10 @@ static const char *TAG = "rock-audio";
 #define ROCK_FADE_IN_SAMPLES (ROCK_SAMPLE_RATE / 33) // ~30 ms
 #define ROCK_FADE_OUT_SAMPLES (ROCK_SAMPLE_RATE / 3) // ~300 ms
 #define ROCK_OUT_VOL 70
-#define ROCK_IN_GAIN_DB 30.0f
+// +6 dB over the original 30 dB: measured 2026-10-27, live voice at 1-2 m
+// peaked at only 5551/32767 at 30 dB, leaving the Yandex short-audio STT
+// under its recognition threshold; 36 dB keeps close speech below clipping.
+#define ROCK_IN_GAIN_DB 36.0f
 #define ROCK_GT911_PROBE_REG 0x8140
 #define ROCK_GT911_ADDR 0x5D // 7-bit, same address the touch driver uses
 

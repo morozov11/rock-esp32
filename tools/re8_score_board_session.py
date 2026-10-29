@@ -25,14 +25,14 @@ MODEL = ROOT / "artifacts/re8-rockserver-mww-v5-candidate-int8.tflite"
 THRESHOLD = 0.617
 
 
-def score(wav_path: Path) -> dict:
+def score(wav_path: Path, model_path: Path = MODEL) -> dict:
     with wave.open(str(wav_path), "rb") as source:
         if (source.getnchannels(), source.getsampwidth(), source.getframerate()) != (1, 2, 16000):
             raise ValueError("expected mono 16-bit PCM at 16 kHz")
         pcm = np.frombuffer(source.readframes(source.getnframes()), dtype="<i2").copy()
     if len(pcm) < 16000:
         raise ValueError("recording must contain at least one second")
-    model = Model(str(MODEL), stride=3)
+    model = Model(str(model_path), stride=3)
     features = generate_features_for_clip(pcm, step_ms=10)
     # Mirror the held-out evaluation: one second of silence initializes the
     # recurrent state, and consecutive predictions are averaged in threes.
@@ -75,11 +75,12 @@ def extract_detection_clips(wav_path: Path, result: dict, output_dir: Path) -> l
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("wav", type=Path)
+    parser.add_argument("--model", type=Path, default=MODEL)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--extract-detections", type=Path,
                         help="directory for 2.5-second WAV clips around detected events")
     args = parser.parse_args()
-    result = score(args.wav)
+    result = score(args.wav, args.model)
     if args.extract_detections:
         result["detection_clips"] = extract_detection_clips(args.wav, result, args.extract_detections)
     if args.output:

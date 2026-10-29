@@ -20,7 +20,22 @@ from re8_collect_batch import open_serial, read_metrics
 from re8_probe_board import network_ready
 from re8_soak_board import wake
 
-PHRASES = ["Роксервер стоп", "Роксервер старт", "Роксервер громче", "Роксервер тише"]
+# Seven typed commands plus one search phrase: the search exercises the
+# intent=play_radio path where the device auto-plays the first found
+# station (volume is capped by the trial checks), so music at the end is
+# the expected outcome. дальше/назад stay unannounced in the device
+# manifest for now: the server answers capability_not_supported and the
+# loop still verifies the wake handoff and the mapped status.
+PHRASES = [
+    "Роксервер стоп",
+    "Роксервер старт",
+    "Роксервер громче",
+    "Роксервер тише",
+    "Роксервер дальше",
+    "Роксервер назад",
+    "Роксервер лайк",
+    "Роксервер рок",
+]
 FINISHED = re.compile(r"rock-voice: session finished state=(\d+)")
 
 

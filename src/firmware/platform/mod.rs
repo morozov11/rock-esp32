@@ -45,6 +45,18 @@ pub(crate) fn voice_take_transcript() -> Option<String> {
     }
     Some(unsafe { CStr::from_ptr(text.as_ptr()) }.to_string_lossy().into_owned())
 }
+/// Raw JSON of the last voice "result" frame, sized to the received frame.
+pub(crate) fn voice_take_result() -> Option<String> {
+    let required = unsafe { ffi::rock_voice_take_result(core::ptr::null_mut(), 0) };
+    if required <= 0 || required > 65536 {
+        return None;
+    }
+    let mut text = vec![0 as core::ffi::c_char; required as usize];
+    if unsafe { ffi::rock_voice_take_result(text.as_mut_ptr(), text.len()) } != 0 {
+        return None;
+    }
+    Some(unsafe { CStr::from_ptr(text.as_ptr()) }.to_string_lossy().into_owned())
+}
 
 use ffi::*;
 use std::ffi::{CStr, CString};

@@ -33,6 +33,13 @@ static const char *TAG = "rock-gui";
 
 static void on_wake_detected(const int16_t *ring, size_t capacity, size_t used, size_t next)
 {
+    // The board speaker is for diagnostics only. Its own playback can sound
+    // like the wake word to the microphone; leave voice control to Cast mode.
+    if (!rock_player_is_cast_active()) {
+        int playback = rock_player_status_enum();
+        if (playback == ROCK_PLAYER_STATUS_PLAYING ||
+            playback == ROCK_PLAYER_STATUS_BUFFERING) return;
+    }
     int voice_state = rock_voice_state();
     if (voice_state >= 1 && voice_state <= 3) return;
     if (rock_voice_set_preroll(ring, capacity, used, next) != 0) {
@@ -388,6 +395,7 @@ int rock_gui_start(void)
     if (wake_muted == 1) {
         // No NVS write here: the stored value already says muted.
         rock_wake_set_muted(true);
+        rock_voice_set_muted(true);
         wake_mute_label(true);
         ESP_LOGI(TAG, "RE8WAKE restored muted=1 from settings");
     }
@@ -602,7 +610,7 @@ void rock_gui_voice_state(int state)
 static const char *voice_label_text(int state)
 {
     static const char *const labels[] = {
-        "", "Подключаю голос...", "Слушаю · Отмена", "Обрабатываю · Отмена",
+        "", "Подключаю голос...", "Слушаю • Отмена", "Обрабатываю • Отмена",
         "Ищу станции", "Речь не распознана", "Уточните команду",
         "Команда не поддерживается", "Голос: таймаут", "Нет связи для голоса",
         "Ошибка распознавания", "Команда не выполнена", "Голос отменён",
@@ -641,6 +649,7 @@ void rock_gui_set_wake_muted(bool muted)
 {
     static QueueHandle_t queue;
     rock_wake_set_muted(muted);
+    rock_voice_set_muted(muted);
     wake_mute_label(muted);
     if (!queue) {
         queue = xQueueCreate(1, sizeof(bool));

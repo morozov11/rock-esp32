@@ -1,0 +1,10 @@
+I (98917) rock-voice: capture started 1 ms after button
+I (99167) rock-control: REST POST status=200 err=ESP_OK len=101 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=228 total_ms=233
+W (99167) rock-control: Source bearer refresh failed before voice
+I (99177) rock-voice: token attached 256 ms after button
+W (99177) rock-control: voice state=2
+I (103087) rock-control: WSS send result=158
+I (103257) rock-control: WSS receive len=219
+I (103257) rock-control: WSS receive type=device.heartbeat_ack
+I (103437) rock-voice: session finished state=5
+I (105507) rock-gui: ui view=NP rows=0 stale=0 playback=0 volume=15

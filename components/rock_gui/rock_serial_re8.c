@@ -101,6 +101,10 @@ static void re8_capture_task(void *arg)
     uint32_t phase = 0;
     int16_t raw[RE8_CAPTURE_READ_BYTES / sizeof(int16_t)];
     while (written_samples < total_bytes / sizeof(int16_t)) {
+        if (rock_wake_is_muted()) {
+            ESP_LOGW(TAG, "RE8CAP error id=%lu reason=muted", (unsigned long)job->id);
+            goto done;
+        }
         uint32_t current_rate = 0;
         uint8_t current_channels = 0;
         rock_audio_capture_format(&current_rate, &current_channels);
@@ -168,6 +172,10 @@ done:
 
 static void re8_capture_start(const char *label, uint32_t duration_ms)
 {
+    if (rock_wake_is_muted()) {
+        ESP_LOGE(TAG, "RE8CAP rejected reason=muted");
+        return;
+    }
     if (!re8_capture_label_valid(label)) {
         ESP_LOGE(TAG, "RE8CAP rejected reason=label (use 1..32 letters, digits, _ or -)");
         return;

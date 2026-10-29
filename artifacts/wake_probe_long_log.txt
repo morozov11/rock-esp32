@@ -1,0 +1,72 @@
+>>> wake probe with artifacts\live_probe\segments\20261025T110305Z_re8-live-commands-near_0005_cue02.wav
+[19:00:59] I (1785789) rock-control: WSS control opcode=10 handled by clienI (2115469) rock-serial: Serial command received: 'CMD:RE8:WAKE:ARM'
+[19:00:59] I (2115469) rock-serial: RE8WAKE armed by serial command
+>>> WAV played; listening for board events and live attempts
+[19:01:10] I (2126829) rock-control: WSS send result=160
+[19:01:10] I (2126989) rock-control: WSS receive len=221
+[19:01:10] I (2126989) rock-control: WSS receive type=device.heartbeat_ack
+[19:01:15] I (2132099) rock-control: WSS control opcode=10 handled by client
+>>> wake disarmed after probe; continuing to listen
+[19:01:22] I (2138959) rock-serial: Serial command received: 'CMD:RE8:WAKE:DISARM'
+[19:01:22] I (2138969) rock-serial: RE8WAKE disarmed by serial command
+[19:01:30] I (2146909) rock-control: WSS send result=160
+[19:01:30] I (2147089) rock-control: WSS receive len=220
+[19:01:30] I (2147089) rock-control: WSS receive type=device.heartbeat_ack
+[19:01:30] I (2147289) rock-control: WSS send result=160
+[19:01:31] I (2147809) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=298 wait_headers_ms=186 total_ms=486
+[19:01:31] I (2147899) rock-control: WSS receive len=221
+[19:01:31] I (2147899) rock-control: WSS receive type=device.heartbeat_ack
+[19:01:37] I (2154269) rock-control: WSS control opcode=10 handled by client
+[19:01:50] I (2167329) rock-control: WSS send result=160
+[19:01:51] I (2167479) rock-control: WSS receive len=221
+[19:01:51] I (2167479) rock-control: WSS receive type=device.heartbeat_ack
+[19:01:57] I (2173579) rock-control: WSS control opcode=10 handled by client
+[19:02:10] I (2187349) rock-control: WSS send result=160
+[19:02:11] I (2187539) rock-control: WSS receive len=221
+[19:02:11] I (2187539) rock-control: WSS receive type=device.heartbeat_ack
+[19:02:17] I (2193639) rock-control: WSS control opcode=10 handled by client
+[19:02:31] I (2207399) rock-control: WSS send result=160
+[19:02:31] I (2207859) rock-control: WSS send result=160
+[19:02:31] I (2208319) rock-control: REST POST status=200 err=ESP_OK len=122 stale_retry=0 reused_handle=1 connect_ms=261 wait_headers_ms=155 total_ms=418
+[19:02:31] I (2208359) rock-control: WSS receive len=220
+[19:02:31] I (2208359) rock-control: WSS receive type=device.heartbeat_ack
+[19:02:37] I (2214249) rock-control: WSS control opcode=10 handled by client
+[19:02:51] I (2227919) rock-control: WSS send result=160
+[19:02:51] I (2228089) rock-control: WSS receive len=221
+[19:02:51] I (2228089) rock-control: WSS receive type=device.heartbeat_ack
+[19:02:58] I (2235229) rock-control: WSS control opcode=10 handled by client
+[19:03:11] I (2247989) rock-control: WSS send result=160
+[19:03:11] I (2248139) rock-control: WSS receive len=221
+[19:03:11] I (2248139) rock-control: WSS receive type=device.heartbeat_ack
+[19:03:18] I (2254809) rock_relay: ICY StreamTitle updated: "181.fm - 181.FM - THIS STATION WILL CONTINUE AFTER THIS BREAK" (gen=14)
+[19:03:18] I (2255279) rock-control: WSS control opcode=10 handled by client
+[19:03:31] I (2267999) rock-control: WSS send result=160
+[19:03:31] I (2268159) rock-control: WSS receive len=221
+[19:03:31] I (2268189) rock-control: WSS receive type=device.heartbeat_ack
+[19:03:32] I (2268469) rock-control: WSS send result=160
+[19:03:32] I (2269169) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=409 wait_headers_ms=213 total_ms=654
+[19:03:32] I (2269209) rock-control: WSS receive len=221
+[19:03:32] I (2269209) rock-control: WSS receive type=device.heartbeat_ack
+[19:03:39] I (2275769) rock-control: WSS control opcode=10 handled by client
+[19:03:52] I (2288539) rock-control: WSS send result=160
+[19:03:52] I (2288699) rock-control: WSS receive len=219
+[19:03:52] I (2288699) rock-control: WSS receive type=device.heartbeat_ack
+[19:03:59] I (2295829) rock-control: WSS control opcode=10 handled by client
+[19:04:12] I (2308549) rock-control: WSS send result=160
+[19:04:12] I (2308749) rock-control: WSS receive len=221
+[19:04:12] I (2308749) rock-control: WSS receive type=device.heartbeat_ack
+[19:04:19] I (2315859) rock-control: WSS control opcode=10 handled by client
+[19:04:20] I (2316659) rock_relay: ICY StreamTitle updated: "181.fm - Music Promo30" (gen=15)
+[19:04:32] I (2328619) rock-control: WSS send result=160
+[19:04:32] I (2329219) rock-control: WSS send result=160
+[19:04:34] I (2331079) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=932 wait_headers_ms=899 total_ms=1833
+[19:04:37] I (2334059) rock-control: WSS receive len=221
+[19:04:37] I (2334069) rock-control: WSS receive type=device.heartbeat_ack
+[19:04:38] I (2334439) rock-control: WSS receive len=221
+[19:04:38] I (2334439) rock-control: WSS receive type=device.heartbeat_ack
+[19:04:40] I (2336489) rock-control: WSS control opcode=10 handled by client
+[19:04:50] I (2346589) rock_relay: ICY StreamTitle updated: "Listen.FM - Listen.FM" (gen=16)
+[19:04:52] I (2349289) rock-control: WSS send result=160
+[19:04:53] I (2349419) rock-control: WSS receive len=219
+[19:04:53] I (2349419) rock-control: WSS receive type=device.heartbeat_ack
+[19:04:55] I (2351609) rock_relay: ICY StreamTitle updated: "Stone Temple Pilots - Plush (Album Version)" (gen=17)

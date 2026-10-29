@@ -47,9 +47,13 @@ static atomic_bool s_cancel;
 static atomic_bool s_running;
 static atomic_bool s_token_ready;
 static atomic_bool s_paused_for_voice;
+static atomic_bool s_muted;
 static atomic_int_fast64_t s_pressed_at;
 static QueueHandle_t s_events;
 static char *s_frame;
+// Last "result" frame of a finished session, kept in PSRAM for the app layer
+// (station list / intent echo); consumed once via rock_voice_take_result.
+static char *s_result;
 static char s_token[512];
 static char s_transcript[513];
 static int16_t *s_preroll;
@@ -76,7 +80,9 @@ static int error_state(const char *code)
     if (!strcmp(code, "speech_not_recognized")) return VOICE_SILENCE;
     if (!strcmp(code, "intent_resolution_failed")) return VOICE_INTENT_ERROR;
     if (!strcmp(code, "clarification_required")) return VOICE_AMBIGUOUS;
-    if (!strcmp(code, "unsupported_intent") || !strcmp(code, "station_not_found")) return VOICE_UNSUPPORTED;
+    if (!strcmp(code, "unsupported_intent") || !strcmp(code, "station_not_found") ||
+        !strcmp(code, "capability_not_supported")) return VOICE_UNSUPPORTED;
+    if (!strcmp(code, "favourite_limit_exceeded")) return VOICE_COMMAND_FAILED;
     if (strstr(code, "timeout")) return VOICE_TIMEOUT;
     if (!strcmp(code, "target_offline") || !strcmp(code, "search_unavailable")) return VOICE_OFFLINE;
     if (!strcmp(code, "cancelled")) return VOICE_CANCELLED;
@@ -111,15 +117,40 @@ static void voice_ws_event(void *arg, esp_event_base_t base, int32_t id, void *d
     const cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
     if (cJSON_IsString(type)) {
         if (!strcmp(type->valuestring, "ready")) post_event(2, 0);
-        else if (!strcmp(type->valuestring, "error")) {
+        else if (!strcmp(type->valuestring, "transcript")) {
+            // Local diagnostics port only: the server never logs transcripts,
+            // so the final hypothesis is the only way to see what STT heard.
+            const cJSON *text = cJSON_GetObjectItemCaseSensitive(root, "transcript");
+            const cJSON *final = cJSON_GetObjectItemCaseSensitive(root, "is_final");
+            if (cJSON_IsTrue(final) && cJSON_IsString(text))
+                ESP_LOGI(TAG, "final transcript \"%s\"", text->valuestring);
+        } else if (!strcmp(type->valuestring, "error")) {
             const cJSON *code = cJSON_GetObjectItemCaseSensitive(root, "code");
             ESP_LOGW(TAG, "server error code=%s", cJSON_IsString(code) ? code->valuestring : "(missing)");
             post_event(3, error_state(cJSON_IsString(code) ? code->valuestring : NULL));
         } else if (!strcmp(type->valuestring, "result")) {
             const cJSON *transcript = cJSON_GetObjectItemCaseSensitive(root, "transcript");
-            if (cJSON_IsString(transcript) && transcript->valuestring[0] &&
-                strlen(transcript->valuestring) < sizeof(s_transcript)) {
-                strcpy(s_transcript, transcript->valuestring);
+            const cJSON *status = cJSON_GetObjectItemCaseSensitive(root, "status");
+            const bool has_transcript = cJSON_IsString(transcript) && transcript->valuestring[0] &&
+                strlen(transcript->valuestring) < sizeof(s_transcript);
+            if (has_transcript) strcpy(s_transcript, transcript->valuestring);
+            // Keep the raw frame for the app layer: search results carry the
+            // ranked station list, command results the intent echo.
+            if (s_result) { heap_caps_free(s_result); s_result = NULL; }
+            s_result = heap_caps_malloc((size_t)event->payload_len + 1,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!s_result) {
+                post_event(3, VOICE_RESOURCE_ERROR);
+                cJSON_Delete(root);
+                return;
+            }
+            memcpy(s_result, s_frame, (size_t)event->payload_len + 1);
+            if (cJSON_IsString(status)) {
+                // Command result (stop/resume/volume/next/previous/favourite):
+                // executed by the server through the same pipeline as buttons.
+                post_event(3, !strcmp(status->valuestring, "succeeded")
+                             ? VOICE_SUCCESS : VOICE_COMMAND_FAILED);
+            } else if (has_transcript) {
                 post_event(3, VOICE_SUCCESS);
             } else {
                 post_event(3, VOICE_RECOGNITION_ERROR);
@@ -146,8 +177,13 @@ static bool wait_event(int kind, uint32_t timeout_ms, int *terminal)
 
 // Capture starts before the network handshake, so the first spoken words are
 // kept even when TLS takes several seconds. Only bounded PCM lives in PSRAM.
+// With a wake pre-roll the utterance already contains speech (the wake word),
+// so the end-of-utterance silence rule must not fire while the user may still
+// be saying the command: keep listening for a minimum live window first.
 static bool capture_utterance(int16_t *recording, size_t *recorded, int *terminal)
 {
+    const uint32_t preroll_ms = (uint32_t)(*recorded / 16);
+    const uint32_t min_utterance_ms = preroll_ms ? preroll_ms + 3000 : 0;
     int16_t samples[1600];
     uint32_t phase = 0, previous_rate = 0;
     uint8_t previous_channels = 0;
@@ -215,7 +251,8 @@ static bool capture_utterance(int16_t *recording, size_t *recorded, int *termina
                         if (!first_speech) first_speech = elapsed;
                         last_speech = elapsed;
                     }
-                    if (first_speech && (elapsed - last_speech >= 1000 || elapsed - first_speech >= 8000)) {
+                    if (first_speech && (elapsed - last_speech >= 1000 || elapsed - first_speech >= 8000)
+                        && elapsed >= min_utterance_ms) {
                         *recorded += out;
                         ESP_LOGI(TAG, "capture speech samples=%u mean_abs=%u peak=%d", (unsigned)*recorded,
                                  (unsigned)(absolute_sum / *recorded), peak);
@@ -288,7 +325,10 @@ static void voice_task(void *arg)
     esp_websocket_register_events(ws, WEBSOCKET_EVENT_ANY, voice_ws_event, NULL);
     if (esp_websocket_client_start(ws) != ESP_OK) { log_heap("websocket start failed"); terminal = VOICE_RESOURCE_ERROR; goto done; }
     if (!wait_event(1, 10000, &terminal)) goto done;
-    const char *start = "{\"type\":\"start\",\"locale\":\"ru-RU\",\"sample_rate_hz\":16000,\"recognizer_mode\":\"buffered_v1\",\"limit\":10}";
+    // Opt into the device voice branch: surface_id routes the session to
+    // typed intents and ranked search results; the legacy branch stays
+    // byte-identical for RockMobile/RockCast/web clients.
+    const char *start = "{\"type\":\"start\",\"locale\":\"ru-RU\",\"sample_rate_hz\":16000,\"recognizer_mode\":\"buffered_v1\",\"surface_id\":\"voice.main\",\"limit\":10}";
     if (esp_websocket_client_send_text(ws, start, strlen(start), pdMS_TO_TICKS(1000)) < 0 ||
         !wait_event(2, 15000, &terminal)) goto done;
     for (size_t offset = 0; offset < recorded && !atomic_load(&s_cancel); offset += 800) {
@@ -334,10 +374,17 @@ int rock_voice_toggle_capture(void)
         atomic_store(&s_cancel, true);
         return 1;
     }
+    if (atomic_load(&s_muted)) return -1;
     bool expected = false;
     if (!atomic_compare_exchange_strong(&s_running, &expected, true)) return -1;
     atomic_store(&s_cancel, false);
+    if (atomic_load(&s_muted)) {
+        atomic_store(&s_cancel, true);
+        atomic_store(&s_running, false);
+        return -1;
+    }
     s_transcript[0] = 0;
+    if (s_result) { heap_caps_free(s_result); s_result = NULL; }
     atomic_store(&s_token_ready, false);
     atomic_store(&s_state, VOICE_CONNECTING);
     atomic_store(&s_pressed_at, esp_timer_get_time());
@@ -395,6 +442,23 @@ int rock_voice_take_transcript(char *out, size_t cap)
     return 0;
 }
 
+int rock_voice_take_result(char *out, size_t cap)
+{
+    if (!s_result) return -1;
+    size_t len = strlen(s_result);
+    if (!out) return (int)(len + 1);
+    if (len >= cap) return -1;
+    memcpy(out, s_result, len + 1);
+    heap_caps_free(s_result);
+    s_result = NULL;
+    return 0;
+}
+
 void rock_voice_cancel(void) { atomic_store(&s_cancel, true); }
+void rock_voice_set_muted(bool muted)
+{
+    atomic_store(&s_muted, muted);
+    if (muted) rock_voice_cancel();
+}
 void rock_voice_release_pause(void) { atomic_store(&s_paused_for_voice, false); }
 int rock_voice_state(void) { return atomic_load(&s_state); }

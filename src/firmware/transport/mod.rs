@@ -15,6 +15,7 @@ mod inbound;
 mod media;
 mod revision;
 mod session;
+mod voice;
 
 pub(crate) use media::refresh_player;
 

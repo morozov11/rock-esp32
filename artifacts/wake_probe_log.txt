@@ -1,0 +1,27 @@
+>>> sent CMD:RE8:WAKE:ARM
+>>> played artifacts\live_probe\segments\20261025T110305Z_re8-live-commands-near_0005_cue02.wav
+I (1467549) rock-serial: RE8WAKE armed by serial command
+I (1471029) rock-wake: RE8WAKE crossing score=0.761 frame=17313 armed=1 rms_milli=428343
+I (1471039) rock-voice: wake pre-roll samples=32000
+I (1471039) rock-voice: capture started 1 ms after button
+I (1471329) rock-control: REST POST status=200 err=ESP_OK len=101 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=237 total_ms=242
+I (1471329) rock-voice: token attached 295 ms after button
+W (1471339) rock-control: voice state=2
+I (1472039) rock-voice: capture speech samples=48253 mean_abs=26 peak=712
+I (1472039) rock-voice: after capture heap internal=247547 largest=96256 psram=26766676 largest=26214400
+I (1472039) rock-voice: before websocket start heap internal=242451 largest=96256 psram=26766648 largest=26214400
+W (1472069) rock-control: voice state=3
+I (1477599) rock-control: WSS receive len=346
+I (1477599) rock-control: WSS receive type=device.command
+I (1477609) rock-control: WSS send result=234
+I (1477629) rock-control: WSS send result=443
+I (1477629) rock-control: WSS send result=298
+I (1477849) rock-control: WSS receive len=254
+I (1477859) rock-control: WSS receive type=command.accepted
+I (1477869) rock-control: WSS receive len=287
+I (1477869) rock-control: WSS receive type=command.result
+W (1477899) rock-voice: socket event=0 http=0 close=0
+W (1477909) rock-voice: socket event=3 http=0 close=0
+I (1477919) rock-voice: session finished state=4
+I (1477999) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+I (1478009) rock-serial: metrics_ram int_free=247647 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258112 psram_min=26549240 psram_largest=26738688

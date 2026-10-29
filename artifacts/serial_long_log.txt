@@ -1,0 +1,342 @@
+[19:09:33] >>> capture started; wake ARMED; speak commands any time
+[19:09:33] I (2356549) rock-control: WSS control opcode=10 handled by clienI (2629469) rock-serial: Serial command received: 'CMD:RE8:WAKE:ARM'
+[19:09:33] I (2629469) rock-serial: RE8WAKE armed by serial command
+[19:09:37] I (2634269) rock-control: WSS send result=160
+[19:09:38] I (2634429) rock-control: WSS receive len=220
+[19:09:38] I (2634429) rock-control: WSS receive type=device.heartbeat_ack
+[19:09:38] I (2634539) rock-control: WSS send result=160
+[19:09:38] I (2635159) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=189 wait_headers_ms=430 total_ms=621
+[19:09:38] I (2635259) rock-control: WSS receive len=221
+[19:09:38] I (2635269) rock-control: WSS receive type=device.heartbeat_ack
+[19:09:43] I (2639479) rock-serial: Serial command received: 'CMD:METRICS'
+[19:09:43] I (2639489) rock-serial: metrics heap=27332911 internal=202067 underruns=0 decode_errors=0 reconnects=0 tasks=25 timer_hz=21 rssi=-74 ch=11 ps=0 ps_err=0
+[19:09:43] I (2639489) rock-player: stream metrics net=0 pcm=0 ring=0 zero_reads=0 dma_largest=57344
+[19:09:43] I (2639519) rock-serial: metrics_cast active=1
+[19:09:43] I (2639519) rock-serial: metrics_relay clients=0 bytes=15867110 overruns=0 send_errors=0
+[19:09:43] I (2639529) rock-serial: metrics_wake running=1 frames=251198 invokes=83731 detections=23 stage=5 voice=14 armed=1 peak_milli=886 muted=0 last_seq=48
+[19:09:43] I (2639539) rock-spectrum: metrics frames=65926 active=36521 held=558 pcm_peak=32768 avg_us=2493 max_us=353583 runtime_us=28257472 wall_us=2637120456 cpu_pct=1.072 stack_free=3136 peak=0.742
+[19:09:43] I (2639569) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+[19:09:43] I (2639579) rock-serial: metrics_ram int_free=202067 int_min=120168 int_largest=57344 dma_largest=57344 psram_free=27130844 psram_min=26549240 psram_largest=26738688
+[19:09:46] I (2643269) rock-control: WSS control opcode=10 handled by client
+[19:09:58] I (2654549) rock-control: WSS send result=160
+[19:09:58] I (2654709) rock-control: WSS receive len=220
+[19:09:58] I (2654709) rock-control: WSS receive type=device.heartbeat_ack
+[19:10:04] I (2661179) rock_relay: ICY StreamTitle updated: "Geggy Tah - Whoever You Are" (gen=18)
+[19:10:06] I (2662859) rock-control: WSS control opcode=10 handled by client
+[19:10:18] >>> controlled probe: CMD:UI:VOICE + WAV over speakers
+[19:10:18] I (2674509) rock-serial: Serial command received: 'CMD:UI:VOICE'
+[19:10:18] I (2674509) rock-voice: capture started 0 ms after button
+[19:10:18] I (2674609) rock-control: WSS send result=160
+[19:10:18] I (2674789) rock-control: REST POST status=200 err=ESP_OK len=101 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=176 total_ms=180
+[19:10:18] I (2674789) rock-voice: token attached 287 ms after button
+[19:10:18] W (2674799) rock-control: voice state=2
+[19:10:18] I (2675089) rock-control: WSS receive len=221
+[19:10:18] I (2675089) rock-control: WSS receive type=device.heartbeat_ack
+[19:10:21] >>> WAV played
+[19:10:21] I (2678129) rock-voice: capture speech samples=57759 mean_abs=142 peak=2895
+[19:10:21] I (2678129) rock-voice: after capture heap internal=203131 largest=57344 psram=26639192 largest=26214400
+[19:10:21] I (2678129) rock-voice: before websocket start heap internal=198235 largest=57344 psram=26639164 largest=26214400
+[19:10:21] I (2678139) websocket_client: Started
+[19:10:21] W (2678189) rock-control: voice state=3
+[19:10:23] I (2679679) esp-x509-crt-bundle: Certificate validated
+[19:10:26] I (2683229) rock-control: WSS control opcode=10 handled by client
+[19:10:27] I (2683639) rock-control: WSS receive len=344
+[19:10:27] I (2683639) rock-control: WSS receive type=device.command
+[19:10:27] I (2683639) rock-control: WSS send result=234
+[19:10:27] I (2683649) rock_relay: Stopping stream source...
+[19:10:27] I (2684259) rock_relay: Relay task exited
+[19:10:27] I (2684299) rock_relay: Stream source stopped
+[19:10:27] I (2684309) rock-control: WSS send result=443
+[19:10:27] I (2684309) rock-control: WSS send result=298
+[19:10:27] I (2684319) rock-control: WSS receive len=254
+[19:10:27] I (2684319) rock-control: WSS receive type=command.accepted
+[19:10:28] I (2684479) rock-control: WSS receive len=287
+[19:10:28] I (2684479) rock-control: WSS receive type=command.result
+[19:10:28] I (2685069) rock-voice: session finished state=4
+[19:10:28] W (2685119) rock-control: voice state=4
+[19:10:28] W (2685119) rock-control: voice command intent=stop status=succeeded
+[19:10:29] I (2686079) rock-wake: RE8WAKE floor rms_milli=91945
+[19:10:38] I (2694619) rock-control: WSS send result=160
+[19:10:38] I (2694739) rock-control: WSS receive len=221
+[19:10:38] I (2694749) rock-control: WSS receive type=device.heartbeat_ack
+[19:10:38] I (2695259) rock-control: WSS send result=160
+[19:10:39] I (2695499) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=200 total_ms=205
+[19:10:39] I (2695549) rock-control: WSS receive len=220
+[19:10:39] I (2695549) rock-control: WSS receive type=device.heartbeat_ack
+[19:10:47] I (2703569) rock-control: WSS control opcode=10 handled by client
+[19:10:58] I (2715329) rock-control: WSS send result=160
+[19:10:59] I (2715499) rock-control: WSS receive len=221
+[19:10:59] I (2715509) rock-control: WSS receive type=device.heartbeat_ack
+[19:11:07] I (2723639) rock-control: WSS control opcode=10 handled by client
+[19:11:18] I (2735339) rock-control: WSS send result=160
+[19:11:19] I (2735509) rock-control: WSS receive len=221
+[19:11:19] I (2735509) rock-control: WSS receive type=device.heartbeat_ack
+[19:11:27] I (2743659) rock-control: WSS control opcode=10 handled by client
+[19:11:38] I (2755349) rock-control: WSS send result=160
+[19:11:39] I (2755519) rock-control: WSS receive len=220
+[19:11:39] I (2755519) rock-control: WSS receive type=device.heartbeat_ack
+[19:11:39] I (2755529) rock-control: WSS send result=160
+[19:11:39] I (2755909) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=187 wait_headers_ms=178 total_ms=373
+[19:11:39] I (2755959) rock-control: WSS receive len=221
+[19:11:39] I (2755959) rock-control: WSS receive type=device.heartbeat_ack
+[19:11:43] I (2759559) rock-serial: Serial command received: 'CMD:METRICS'
+[19:11:43] I (2759569) rock-serial: metrics heap=27505767 internal=247571 underruns=0 decode_errors=0 reconnects=0 tasks=24 timer_hz=25 rssi=-62 ch=11 ps=0 ps_err=0
+[19:11:43] I (2759569) rock-player: stream metrics net=0 pcm=0 ring=0 zero_reads=0 dma_largest=96256
+[19:11:43] I (2759599) rock-serial: metrics_cast active=1
+[19:11:43] I (2759599) rock-serial: metrics_relay clients=0 bytes=15867110 overruns=0 send_errors=0
+[19:11:43] I (2759599) rock-serial: metrics_wake running=1 frames=261974 invokes=87322 detections=23 stage=5 voice=4 armed=1 peak_milli=886 muted=0 last_seq=48
+[19:11:43] I (2759619) rock-spectrum: metrics frames=68928 active=37680 held=569 pcm_peak=32768 avg_us=2475 max_us=353583 runtime_us=29256995 wall_us=2757194917 cpu_pct=1.061 stack_free=3136 peak=0.000
+[19:11:43] I (2759639) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+[19:11:43] I (2759639) rock-serial: metrics_ram int_free=247571 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258196 psram_min=26549240 psram_largest=26738688
+[19:11:47] I (2763809) rock-control: WSS control opcode=10 handled by client
+[19:11:59] I (2775549) rock-control: WSS send result=160
+[19:11:59] I (2775739) rock-control: WSS receive len=220
+[19:11:59] I (2775749) rock-control: WSS receive type=device.heartbeat_ack
+[19:12:07] I (2783869) rock-control: WSS control opcode=10 handled by client
+[19:12:19] I (2795569) rock-control: WSS send result=160
+[19:12:19] I (2795739) rock-control: WSS receive len=220
+[19:12:19] I (2795739) rock-control: WSS receive type=device.heartbeat_ack
+[19:12:27] I (2803869) rock-control: WSS control opcode=10 handled by client
+[19:12:39] I (2815649) rock-control: WSS send result=160
+[19:12:39] I (2815819) rock-control: WSS receive len=220
+[19:12:39] I (2815829) rock-control: WSS receive type=device.heartbeat_ack
+[19:12:39] I (2815989) rock-control: WSS send result=160
+[19:12:40] I (2816889) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=187 wait_headers_ms=705 total_ms=894
+[19:12:40] I (2816999) rock-control: WSS receive len=221
+[19:12:40] I (2817019) rock-control: WSS receive type=device.heartbeat_ack
+[19:12:47] I (2824309) rock-control: WSS control opcode=10 handled by client
+[19:12:59] I (2836019) rock-control: WSS send result=160
+[19:12:59] I (2836189) rock-control: WSS receive len=221
+[19:12:59] I (2836189) rock-control: WSS receive type=device.heartbeat_ack
+[19:13:07] I (2844319) rock-control: WSS control opcode=10 handled by client
+[19:13:19] I (2856019) rock-control: WSS send result=160
+[19:13:19] I (2856189) rock-control: WSS receive len=221
+[19:13:19] I (2856189) rock-control: WSS receive type=device.heartbeat_ack
+[19:13:27] I (2864329) rock-control: WSS control opcode=10 handled by client
+[19:13:39] I (2876049) rock-control: WSS send result=160
+[19:13:39] I (2876219) rock-control: WSS receive len=221
+[19:13:39] I (2876219) rock-control: WSS receive type=device.heartbeat_ack
+[19:13:40] I (2876939) rock-control: WSS send result=160
+[19:13:40] I (2877369) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=206 wait_headers_ms=213 total_ms=421
+[19:13:41] I (2877929) rock-control: WSS receive len=221
+[19:13:41] I (2877929) rock-control: WSS receive type=device.heartbeat_ack
+[19:13:43] I (2879679) rock-serial: Serial command received: 'CMD:METRICS'
+[19:13:43] I (2879689) rock-serial: metrics heap=27505807 internal=247591 underruns=0 decode_errors=0 reconnects=0 tasks=24 timer_hz=24 rssi=-62 ch=11 ps=0 ps_err=0
+[19:13:43] I (2879689) rock-player: stream metrics net=0 pcm=0 ring=0 zero_reads=0 dma_largest=96256
+[19:13:43] I (2879699) rock-serial: metrics_cast active=1
+[19:13:43] I (2879699) rock-serial: metrics_relay clients=0 bytes=15867110 overruns=0 send_errors=0
+[19:13:43] I (2879729) rock-serial: metrics_wake running=1 frames=273886 invokes=91293 detections=23 stage=5 voice=4 armed=1 peak_milli=886 muted=0 last_seq=48
+[19:13:43] I (2879729) rock-spectrum: metrics frames=71931 active=37680 held=569 pcm_peak=32768 avg_us=2379 max_us=353583 runtime_us=29627539 wall_us=2877312494 cpu_pct=1.030 stack_free=3136 peak=0.000
+[19:13:43] I (2879769) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+[19:13:43] I (2879769) rock-serial: metrics_ram int_free=247591 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258216 psram_min=26549240 psram_largest=26738688
+[19:13:48] I (2885049) rock-control: WSS control opcode=10 handled by client
+[19:14:00] I (2897009) rock-control: WSS send result=160
+[19:14:01] I (2897599) rock-control: WSS receive len=221
+[19:14:01] I (2897599) rock-control: WSS receive type=device.heartbeat_ack
+[19:14:09] I (2905689) rock-control: WSS control opcode=10 handled by client
+[19:14:20] I (2917049) rock-control: WSS send result=160
+[19:14:20] I (2917239) rock-control: WSS receive len=221
+[19:14:20] I (2917239) rock-control: WSS receive type=device.heartbeat_ack
+[19:14:29] I (2926369) rock-control: WSS control opcode=10 handled by client
+[19:14:40] I (2937109) rock-control: WSS send result=160
+[19:14:40] I (2937409) rock-control: WSS send result=160
+[19:14:41] I (2937789) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=186 wait_headers_ms=185 total_ms=373
+[19:14:41] I (2938089) rock-control: WSS receive len=221
+[19:14:41] I (2938119) rock-control: WSS receive type=device.heartbeat_ack
+[19:14:43] I (2940189) rock-control: WSS receive len=221
+[19:14:43] I (2940189) rock-control: WSS receive type=device.heartbeat_ack
+[19:14:50] I (2947309) rock-control: WSS control opcode=10 handled by client
+[19:15:01] I (2957439) rock-control: WSS send result=160
+[19:15:01] I (2957989) rock-control: WSS receive len=221
+[19:15:01] I (2957989) rock-control: WSS receive type=device.heartbeat_ack
+[19:15:11] I (2968149) rock-control: WSS control opcode=10 handled by client
+[19:15:21] I (2977489) rock-control: WSS send result=160
+[19:15:21] I (2977659) rock-control: WSS receive len=221
+[19:15:21] I (2977659) rock-control: WSS receive type=device.heartbeat_ack
+[19:15:32] I (2988919) rock-control: WSS control opcode=10 handled by client
+[19:15:41] I (2997569) rock-control: WSS send result=160
+[19:15:41] I (2997899) rock-control: WSS send result=160
+[19:15:42] I (2998949) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=190 wait_headers_ms=853 total_ms=1045
+[19:15:42] I (2999039) rock-control: WSS receive len=221
+[19:15:42] I (2999049) rock-control: WSS receive type=device.heartbeat_ack
+[19:15:43] I (2999769) rock-serial: Serial command received: 'CMD:METRICS'
+[19:15:43] I (2999779) rock-serial: metrics heap=27505751 internal=247555 underruns=0 decode_errors=0 reconnects=0 tasks=24 timer_hz=25 rssi=-62 ch=11 ps=0 ps_err=0
+[19:15:43] I (2999799) rock-player: stream metrics net=0 pcm=0 ring=0 zero_reads=0 dma_largest=96256
+[19:15:43] I (2999809) rock-serial: metrics_cast active=1
+[19:15:43] I (2999809) rock-serial: metrics_relay clients=0 bytes=15867110 overruns=0 send_errors=0
+[19:15:43] I (2999819) rock-serial: metrics_wake running=1 frames=285811 invokes=95268 detections=23 stage=5 voice=4 armed=1 peak_milli=886 muted=0 last_seq=48
+[19:15:43] I (2999839) rock-spectrum: metrics frames=74933 active=37680 held=569 pcm_peak=32768 avg_us=2292 max_us=353583 runtime_us=29999305 wall_us=2997423850 cpu_pct=1.001 stack_free=3136 peak=0.000
+[19:15:43] I (2999859) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+[19:15:43] I (2999859) rock-serial: metrics_ram int_free=247555 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258196 psram_min=26549240 psram_largest=26738688
+[19:15:53] I (3009749) rock-control: WSS control opcode=10 handled by client
+[19:16:01] I (3017949) rock-control: WSS send result=160
+[19:16:01] I (3018079) rock-control: WSS receive len=221
+[19:16:01] I (3018089) rock-control: WSS receive type=device.heartbeat_ack
+[19:16:12] I (3029259) rock-control: WSS control opcode=10 handled by client
+[19:16:21] I (3037999) rock-control: WSS send result=160
+[19:16:21] I (3038179) rock-control: WSS receive len=221
+[19:16:21] I (3038179) rock-control: WSS receive type=device.heartbeat_ack
+[19:16:33] I (3049919) rock-control: WSS control opcode=10 handled by client
+[19:16:41] I (3058009) rock-control: WSS send result=160
+[19:16:41] I (3058169) rock-control: WSS receive len=221
+[19:16:41] I (3058179) rock-control: WSS receive type=device.heartbeat_ack
+[19:16:42] I (3059019) rock-control: WSS send result=160
+[19:16:43] I (3059699) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=473 wait_headers_ms=192 total_ms=668
+[19:16:43] I (3059749) rock-control: WSS receive len=221
+[19:16:43] I (3059779) rock-control: WSS receive type=device.heartbeat_ack
+[19:16:53] I (3070339) rock-control: WSS control opcode=10 handled by client
+[19:17:02] I (3079089) rock-control: WSS send result=160
+[19:17:03] I (3080009) rock-control: WSS receive len=220
+[19:17:03] I (3080009) rock-control: WSS receive type=device.heartbeat_ack
+[19:17:14] I (3091159) rock-control: WSS control opcode=10 handled by client
+[19:17:22] I (3099099) rock-control: WSS send result=160
+[19:17:22] I (3099269) rock-control: WSS receive len=221
+[19:17:22] I (3099269) rock-control: WSS receive type=device.heartbeat_ack
+[19:17:35] I (3111439) rock-control: WSS control opcode=10 handled by client
+[19:17:42] I (3119159) rock-control: WSS send result=160
+[19:17:43] I (3119759) rock-control: WSS send result=160
+[19:17:43] I (3119889) rock-serial: Serial command received: 'CMD:METRICS'
+[19:17:43] I (3119889) rock-serial: metrics heap=26977695 internal=247419 underruns=0 decode_errors=0 reconnects=0 tasks=24 timer_hz=24 rssi=-62 ch=11 ps=0 ps_err=0
+[19:17:43] I (3119899) rock-player: stream metrics net=0 pcm=0 ring=0 zero_reads=0 dma_largest=96256
+[19:17:43] I (3119909) rock-serial: metrics_cast active=1
+[19:17:43] I (3119929) rock-serial: metrics_relay clients=0 bytes=15867110 overruns=0 send_errors=0
+[19:17:43] I (3119929) rock-serial: metrics_wake running=1 frames=297733 invokes=99242 detections=23 stage=5 voice=4 armed=1 peak_milli=886 muted=0 last_seq=48
+[19:17:43] I (3119939) rock-spectrum: metrics frames=77936 active=37680 held=569 pcm_peak=32768 avg_us=2211 max_us=353583 runtime_us=30369004 wall_us=3117522502 cpu_pct=0.974 stack_free=3136 peak=0.000
+[19:17:43] I (3119969) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+[19:17:43] I (3119979) rock-serial: metrics_ram int_free=247419 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=26731772 psram_min=26549240 psram_largest=26214400
+[19:17:44] I (3120579) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=586 wait_headers_ms=227 total_ms=815
+[19:17:44] I (3120649) rock-control: WSS receive len=221
+[19:17:44] I (3120649) rock-control: WSS receive type=device.heartbeat_ack
+[19:17:44] I (3121319) rock-control: WSS receive len=221
+[19:17:44] I (3121339) rock-control: WSS receive type=device.heartbeat_ack
+[19:17:55] I (3131459) rock-control: WSS control opcode=10 handled by client
+[19:18:03] I (3139819) rock-control: WSS send result=160
+[19:18:03] I (3139989) rock-control: WSS receive len=221
+[19:18:03] I (3139989) rock-control: WSS receive type=device.heartbeat_ack
+[19:18:15] I (3152169) rock-control: WSS control opcode=10 handled by client
+[19:18:23] I (3159829) rock-control: WSS send result=160
+[19:18:23] I (3159999) rock-control: WSS receive len=220
+[19:18:23] I (3160009) rock-control: WSS receive type=device.heartbeat_ack
+[19:18:35] I (3172189) rock-control: WSS control opcode=10 handled by client
+[19:18:43] I (3179879) rock-control: WSS send result=160
+[19:18:43] I (3180049) rock-control: WSS receive len=221
+[19:18:43] I (3180059) rock-control: WSS receive type=device.heartbeat_ack
+[19:18:44] I (3180659) rock-control: WSS send result=160
+[19:18:45] I (3181939) rock-control: REST POST status=200 err=ESP_OK len=123 stale_retry=0 reused_handle=1 connect_ms=1018 wait_headers_ms=250 total_ms=1270
+[19:18:45] I (3182089) rock-control: WSS receive len=221
+[19:18:45] I (3182089) rock-control: WSS receive type=device.heartbeat_ack
+[19:18:55] I (3192279) rock-control: WSS control opcode=10 handled by client
+[19:19:04] I (3200739) rock-control: WSS send result=160
+[19:19:04] I (3201049) rock-control: WSS receive len=221
+[19:19:04] I (3201049) rock-control: WSS receive type=device.heartbeat_ack
+[19:19:16] I (3213209) rock-control: WSS control opcode=10 handled by client
+[19:19:24] I (3220789) rock-control: WSS send result=160
+[19:19:24] I (3220959) rock-control: WSS receive len=221
+[19:19:24] I (3220969) rock-control: WSS receive type=device.heartbeat_ack
+[19:19:38] I (3234609) rock-control: WSS control opcode=10 handled by client
+[19:19:43] I (3239979) rock-serial: Serial command received: 'CMD:METRICS'
+[19:19:43] I (3239999) rock-serial: metrics heap=27505543 internal=247355 underruns=0 decode_errors=0 reconnects=0 tasks=24 timer_hz=25 rssi=-60 ch=11 ps=0 ps_err=0
+[19:19:43] I (3240009) rock-player: stream metrics net=0 pcm=0 ring=0 zero_reads=0 dma_largest=96256
+[19:19:43] I (3240019) rock-serial: metrics_cast active=1
+[19:19:43] I (3240019) rock-serial: metrics_relay clients=0 bytes=15867110 overruns=0 send_errors=0
+[19:19:43] I (3240029) rock-serial: metrics_wake running=1 frames=309657 invokes=103216 detections=23 stage=5 voice=4 armed=1 peak_milli=886 muted=0 last_seq=48
+[19:19:43] I (3240049) rock-spectrum: metrics frames=80938 active=37680 held=569 pcm_peak=32768 avg_us=2136 max_us=353583 runtime_us=30739088 wall_us=3237628532 cpu_pct=0.949 stack_free=3136 peak=0.000
+[19:19:43] I (3240059) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+[19:19:43] I (3240079) rock-serial: metrics_ram int_free=247355 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258188 psram_min=26549240 psram_largest=26738688
+[19:19:44] I (3240839) rock-control: WSS send result=160
+[19:19:45] I (3241449) rock-control: WSS receive len=221
+[19:19:45] I (3241449) rock-control: WSS receive type=device.heartbeat_ack
+[19:19:45] I (3241969) rock-control: WSS send result=160
+[19:19:46] I (3242479) rock-control: REST POST status=200 err=ESP_OK len=123 stale_retry=0 reused_handle=1 connect_ms=265 wait_headers_ms=239 total_ms=507
+[19:19:46] I (3242649) rock-control: WSS receive len=221
+[19:19:46] I (3242659) rock-control: WSS receive type=device.heartbeat_ack
+[19:19:58] I (3254839) rock-control: WSS control opcode=10 handled by client
+[19:20:05] I (3261999) rock-control: WSS send result=160
+[19:20:06] I (3262599) rock-control: WSS receive len=221
+[19:20:06] I (3262609) rock-control: WSS receive type=device.heartbeat_ack
+[19:20:19] I (3276229) rock-control: WSS control opcode=10 handled by client
+[19:20:25] I (3282029) rock-control: WSS send result=160
+[19:20:26] I (3282629) rock-control: WSS receive len=221
+[19:20:26] I (3282629) rock-control: WSS receive type=device.heartbeat_ack
+[19:20:40] I (3296799) rock-control: WSS control opcode=10 handled by client
+[19:20:45] I (3302049) rock-control: WSS send result=160
+[19:20:45] I (3302219) rock-control: WSS receive len=221
+[19:20:45] I (3302219) rock-control: WSS receive type=device.heartbeat_ack
+[19:20:46] I (3302569) rock-control: WSS send result=160
+[19:20:46] I (3302979) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=180 wait_headers_ms=216 total_ms=398
+[19:20:46] I (3303089) rock-control: WSS receive len=221
+[19:20:46] I (3303119) rock-control: WSS receive type=device.heartbeat_ack
+[19:21:01] I (3317889) rock-control: WSS control opcode=10 handled by client
+[19:21:06] I (3322589) rock-control: WSS send result=160
+[19:21:06] I (3322729) rock-control: WSS receive len=220
+[19:21:06] I (3322729) rock-control: WSS receive type=device.heartbeat_ack
+[19:21:21] I (3337919) rock-control: WSS control opcode=10 handled by client
+[19:21:26] I (3342609) rock-control: WSS send result=160
+[19:21:26] I (3342769) rock-control: WSS receive len=221
+[19:21:26] I (3342779) rock-control: WSS receive type=device.heartbeat_ack
+[19:21:41] I (3357979) rock-control: WSS control opcode=10 handled by client
+[19:21:43] I (3360089) rock-serial: Serial command received: 'CMD:METRICS'
+[19:21:43] I (3360109) rock-serial: metrics heap=27505727 internal=247523 underruns=0 decode_errors=0 reconnects=0 tasks=24 timer_hz=25 rssi=-59 ch=11 ps=0 ps_err=0
+[19:21:43] I (3360109) rock-player: stream metrics net=0 pcm=0 ring=0 zero_reads=0 dma_largest=96256
+[19:21:43] I (3360119) rock-serial: metrics_cast active=1
+[19:21:43] I (3360119) rock-serial: metrics_relay clients=0 bytes=15867110 overruns=0 send_errors=0
+[19:21:43] I (3360129) rock-serial: metrics_wake running=1 frames=321583 invokes=107192 detections=23 stage=5 voice=4 armed=1 peak_milli=886 muted=0 last_seq=48
+[19:21:43] I (3360149) rock-spectrum: metrics frames=83941 active=37680 held=569 pcm_peak=32768 avg_us=2068 max_us=353583 runtime_us=31110630 wall_us=3357728390 cpu_pct=0.927 stack_free=3136 peak=0.000
+[19:21:43] I (3360159) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+[19:21:43] I (3360169) rock-serial: metrics_ram int_free=247523 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258204 psram_min=26549240 psram_largest=26738688
+[19:21:46] I (3362629) rock-control: WSS send result=160
+[19:21:46] I (3362769) rock-control: WSS receive len=221
+[19:21:46] I (3362769) rock-control: WSS receive type=device.heartbeat_ack
+[19:21:46] I (3363059) rock-control: WSS send result=160
+[19:21:47] I (3363449) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=175 wait_headers_ms=195 total_ms=372
+[19:21:47] I (3363549) rock-control: WSS receive len=219
+[19:21:47] I (3363579) rock-control: WSS receive type=device.heartbeat_ack
+[19:22:02] I (3378449) rock-control: WSS control opcode=10 handled by client
+[19:22:06] I (3383079) rock-control: WSS send result=160
+[19:22:06] I (3383249) rock-control: WSS receive len=221
+[19:22:06] I (3383249) rock-control: WSS receive type=device.heartbeat_ack
+[19:22:22] I (3398459) rock-control: WSS control opcode=10 handled by client
+[19:22:26] I (3403109) rock-control: WSS send result=160
+[19:22:26] I (3403269) rock-control: WSS receive len=221
+[19:22:26] I (3403279) rock-control: WSS receive type=device.heartbeat_ack
+[19:22:42] I (3418479) rock-control: WSS control opcode=10 handled by client
+[19:22:46] I (3423189) rock-control: WSS send result=160
+[19:22:46] I (3423309) rock-control: WSS receive len=221
+[19:22:46] I (3423309) rock-control: WSS receive type=device.heartbeat_ack
+[19:22:47] I (3423499) rock-control: WSS send result=160
+[19:22:47] I (3424119) rock-control: REST POST status=200 err=ESP_OK len=123 stale_retry=0 reused_handle=1 connect_ms=507 wait_headers_ms=103 total_ms=612
+[19:22:47] I (3424169) rock-control: WSS receive len=221
+[19:22:47] I (3424169) rock-control: WSS receive type=device.heartbeat_ack
+[19:23:03] I (3439939) rock-control: WSS control opcode=10 handled by client
+[19:23:07] I (3443539) rock-control: WSS send result=160
+[19:23:07] I (3443699) rock-control: WSS receive len=221
+[19:23:07] I (3443699) rock-control: WSS receive type=device.heartbeat_ack
+[19:23:23] I (3459919) rock-control: WSS control opcode=10 handled by client
+[19:23:27] I (3463559) rock-control: WSS send result=160
+[19:23:27] I (3463729) rock-control: WSS receive len=220
+[19:23:27] I (3463739) rock-control: WSS receive type=device.heartbeat_ack
+[19:23:43] I (3480189) rock-serial: Serial command received: 'CMD:METRICS'
+[19:23:43] I (3480209) rock-serial: metrics heap=27505703 internal=247503 underruns=0 decode_errors=0 reconnects=0 tasks=24 timer_hz=24 rssi=-59 ch=11 ps=0 ps_err=0
+[19:23:43] I (3480219) rock-player: stream metrics net=0 pcm=0 ring=0 zero_reads=0 dma_largest=96256
+[19:23:43] I (3480229) rock-serial: metrics_cast active=1
+[19:23:43] I (3480229) rock-serial: metrics_relay clients=0 bytes=15867110 overruns=0 send_errors=0
+[19:23:43] I (3480239) rock-serial: metrics_wake running=1 frames=333503 invokes=111165 detections=23 stage=5 voice=4 armed=1 peak_milli=886 muted=0 last_seq=48
+[19:23:43] I (3480259) rock-spectrum: metrics frames=86944 active=37680 held=569 pcm_peak=32768 avg_us=2003 max_us=353583 runtime_us=31481593 wall_us=3477838260 cpu_pct=0.905 stack_free=3136 peak=0.000
+[19:23:43] I (3480269) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+[19:23:43] I (3480299) rock-serial: metrics_ram int_free=247503 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258200 psram_min=26549240 psram_largest=26738688
+[19:23:44] I (3480549) rock-control: WSS control opcode=10 handled by client
+[19:23:47] I (3483589) rock-control: WSS send result=160
+[19:23:47] I (3483729) rock-control: WSS receive len=221
+[19:23:47] I (3483729) rock-control: WSS receive type=device.heartbeat_ack
+[19:23:47] I (3484189) rock-control: WSS send result=160
+[19:23:48] I (3484859) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=446 wait_headers_ms=219 total_ms=666
+[19:23:48] I (3484949) rock-control: WSS receive len=221
+[19:23:48] I (3484959) rock-control: WSS receive type=device.heartbeat_ack
+[19:24:04] I (3501149) rock-control: WSS control opcode=10 handled by client
+[19:24:07] I (3504249) rock-control: WSS send result=160
+[19:24:07] I (3504389) rock-control: WSS receive len=221
+[19:24:07] I (3504399) rock-control: WSS receive type=device.heartbeat_ack
+[19:24:24] I (3520589) rock-control: WSS control opcode=10 handled by client
+[19:24:27] I (3524259) rock-control: WSS send result=160
+[19:24:28] I (3524589) rock-control: WSS receive len=221
+[19:24:28] I (3524589) rock-control: WSS receive type=device.heartbeat_ack

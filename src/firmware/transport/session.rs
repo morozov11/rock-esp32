@@ -1,7 +1,6 @@
 //! Session state and periodic tick orchestrator.
 
 use super::media::{self, refresh_player_with_cast, SourceState};
-use super::catalog::CatalogRequest;
 use super::revision::{current_revision, next_state_revision};
 use super::{message_id, send, HEARTBEAT_ACK_TIMEOUT_MS, HEARTBEAT_MS};
 use crate::device_control::{self, DisplayState, OutputMode, PlaybackStatus, PlayerState};
@@ -280,9 +279,11 @@ impl Session {
             self.voice_last_state = state;
             self.voice_message_until = if state >= 4 { platform::uptime_ms() + 5000 } else { 0 };
             if state == 4 {
-                if let Some(transcript) = platform::voice_take_transcript() {
-                    let query = device_control::catalog::clean_voice_query(&transcript);
-                    self.load_catalog(CatalogRequest::Search { query });
+                // The server's device branch returns typed results: ranked
+                // search list with autoplay or an executed-command echo.
+                // on_voice_result keeps the legacy transcript fallback.
+                if let Some(result) = platform::voice_take_result() {
+                    self.on_voice_result(&result);
                 }
             }
         } else if self.voice_message_until != 0 && platform::uptime_ms() >= self.voice_message_until {

@@ -26,12 +26,16 @@ constexpr size_t kArenaBytes = 64 * 1024;
 constexpr size_t kPreRollSamples = 2 * 16000;
 constexpr size_t kFrameSamples = 160;
 constexpr float kThreshold = 0.617f;
-// Energy gate: the board's noise floor measures RMS 84-91 (mic self-noise,
-// confirmed by the 2026-10-25 false-positive snapshot), while the quietest
-// real corpus speech peaks at RMS 215 (P4 block, quiet voice). 130 separates
-// both with margin and stops the detector from firing on the adapting noise
-// floor right after every (re)start of the task.
-constexpr uint32_t kMinRmsMilli = 130'000;
+// Energy gate: the board's noise floor measures RMS 84-91 at the original
+// 30 dB mic gain (mic self-noise, confirmed by the 2026-10-25 false-positive
+// snapshot), while the quietest real corpus speech peaks at RMS 215 (P4
+// block, quiet voice). 130 separated both with margin and stopped the
+// detector from firing on the adapting noise floor right after every
+// (re)start of the task.  Mic gain rose to 36 dB on 2026-10-27 (live voice
+// was arriving under the cloud STT recognition threshold), so floor and
+// speech both double: the gate doubles with them, preserving the ratios
+// the v5 detector was validated with.
+constexpr uint32_t kMinRmsMilli = 260'000;
 constexpr size_t kEnergyFrames = 100;  // 1 s of 10 ms frames
 // After any detector (re)start the mic path emits a decaying LF transient
 // (window RMS 160-270 vs the 90 steady floor, measured 2026-10-25 from

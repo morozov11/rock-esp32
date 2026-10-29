@@ -1,0 +1,4 @@
+>>> replay 1
+>>> replay 2
+>>> replay 3
+I (362943) rock-serial: metrics_wake running=1 frames=33424 invokes=11141 detections=4 stage=5 voice=14 armed=1 peak_milli=1000 muted=0 last_seq=10

@@ -1,0 +1,226 @@
+﻿path,label,expected,heard,similarity,decision,notes
+segments/20261023T110803Z_p4-batch-02_0012_cue04.wav,p4-batch-02,Роксервер,,0.0,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T111059Z_p4-batch-03_0013_cue03.wav,p4-batch-03,Роксервер,,0.0,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T111510Z_p4-batch-05_0015_cue01.wav,p4-batch-05,Роксервер,,0.0,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T110803Z_p4-batch-02_0012_cue05.wav,p4-batch-02,Роксервер,Я не знаю.,0.111,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T111059Z_p4-batch-03_0013_cue05.wav,p4-batch-03,Роксервер,Я не знаю.,0.111,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T110803Z_p4-batch-02_0012_cue06.wav,p4-batch-02,Роксервер,Счетно.,0.133,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T111059Z_p4-batch-03_0013_cue06.wav,p4-batch-03,Роксервер,Стоять.,0.133,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T134309Z_p7-batch-03_0024_cue06.wav,p7-batch-03,Роксервер,"Ох, ты не уходишь.",0.16,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T105849Z_p3-batch-02_0009_cue06.wav,p3-batch-02,Роксервер,и вот сзади,0.2,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T105849Z_p3-batch-02_0009_cue05.wav,p3-batch-02,Роксервер,"Ох, си, а, да.",0.211,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T110447Z_p4-batch-01_0011_cue06.wav,p4-batch-01,Роксервер,Такие люди.,0.211,reject,human listening review 2026-10-25; incorrect audio
+segments/20261023T105242Z_p2-batch-03_0007_cue05.wav,p2-batch-03,Роксервер,"Ох, сиарго.",0.222,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105849Z_p3-batch-02_0009_cue03.wav,p3-batch-02,Роксервер,Вот здесь.,0.222,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141025Z_confuser-rock-01_0033_cue05.wav,confuser-rock-01,рок,Паралл.,0.222,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104700Z_p2-batch-01_0005_cue01.wav,p2-batch-01,Роксервер,"Ох, сиады.",0.235,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110803Z_p4-batch-02_0012_cue01.wav,p4-batch-02,Роксервер,"Ох, сзади.",0.235,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141248Z_confuser-server-01_0034_cue05.wav,confuser-server-01,сервер,Счастливый.,0.25,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105600Z_p3-batch-01_0008_cue04.wav,p3-batch-01,Роксервер,"Прошусь, сзади.",0.273,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135546Z_cmd-start-01_0027_cue07.wav,cmd-start-01,Роксервер старт,Луктимер Start,0.276,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141248Z_confuser-server-01_0034_cue01.wav,confuser-server-01,сервер,"Смотри, а.",0.286,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141753Z_confuser-roksana-01_0036_cue03.wav,confuser-roksana-01,Роксана,Хэксэмэ,0.286,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105242Z_p2-batch-03_0007_cue04.wav,p2-batch-03,Роксервер,Рот и арест.,0.3,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110803Z_p4-batch-02_0012_cue02.wav,p4-batch-02,Роксервер,"Матрофсияр, ребята.",0.308,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110803Z_p4-batch-02_0012_cue07.wav,p4-batch-02,Роксервер,Счет.,0.308,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104952Z_p2-batch-02_0006_cue05.wav,p2-batch-02,Роксервер,"Ровьи, а я.",0.333,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105600Z_p3-batch-01_0008_cue03.wav,p3-batch-01,Роксервер,Робсиадль.,0.333,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110139Z_p3-batch-03_0010_cue02.wav,p3-batch-03,Роксервер,Рассиария.,0.333,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105242Z_p2-batch-03_0007_cue06.wav,p2-batch-03,Роксервер,"Робси, а ты же.",0.364,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102930Z_p1-batch-02_0003_cue07.wav,p1-batch-02,Роксервер,Руселил.,0.375,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134309Z_p7-batch-03_0024_cue04.wav,p7-batch-03,Роксервер,"Ох, седа!",0.375,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105849Z_p3-batch-02_0009_cue01.wav,p3-batch-02,Роксервер,Робс и Олега.,0.381,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133358Z_p6-batch-03_0021_cue07.wav,p6-batch-03,Роксервер,Рог сьи арыг.,0.381,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110447Z_p4-batch-01_0011_cue01.wav,p4-batch-01,Роксервер,Рогси армия.,0.4,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111059Z_p4-batch-03_0013_cue01.wav,p4-batch-03,Роксервер,Аксиэр...,0.4,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111353Z_p4-batch-04_0014_cue01.wav,p4-batch-04,Роксервер,Рот скидает.,0.4,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140532Z_cmd-quieter-01_0031_cue05.wav,cmd-quieter-01,Роксервер тише,"и оксиэр выртись, что...",0.412,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102617Z_p1-batch-01_0002_cue02.wav,p1-batch-01,Роксервер,Рог с ней рыдер.,0.417,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104952Z_p2-batch-02_0006_cue02.wav,p2-batch-02,Роксервер,Пробсиярия.,0.421,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111059Z_p4-batch-03_0013_cue07.wav,p4-batch-03,Роксервер,Расправить.,0.421,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111934Z_p5-batch-02_0017_cue07.wav,p5-batch-02,Роксервер,Пробсельно.,0.421,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110447Z_p4-batch-01_0011_cue02.wav,p4-batch-01,Роксервер,Серый.,0.429,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135546Z_cmd-start-01_0027_cue04.wav,cmd-start-01,Роксервер старт,Но все раздар.,0.429,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141753Z_confuser-roksana-01_0036_cue04.wav,confuser-roksana-01,Роксана,Аксалов.,0.429,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140022Z_cmd-louder-01_0029_cue02.wav,cmd-louder-01,Роксервер громче,Прокси обмирок больше.,0.432,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105849Z_p3-batch-02_0009_cue04.wav,p3-batch-02,Роксервер,"Робби, а я верю.",0.435,accept,human listening review 2026-10-25; correct audio
+segments/20261023T103222Z_p1-batch-03_0004_cue04.wav,p1-batch-03,Роксервер,"Ну, ксерга.",0.444,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104700Z_p2-batch-01_0005_cue07.wav,p2-batch-01,Роксервер,"Робь, ярер.",0.444,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104952Z_p2-batch-02_0006_cue06.wav,p2-batch-02,Роксервер,Рогсиярга.,0.444,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110139Z_p3-batch-03_0010_cue03.wav,p3-batch-03,Роксервер,Робси реп.,0.444,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102930Z_p1-batch-02_0003_cue04.wav,p1-batch-02,Роксервер,"Прокси, альяра.",0.455,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140328Z_cmd-louder-02_0030_cue01.wav,cmd-louder-02,Роксервер громче,"Ну, в сфере в грунте.",0.457,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135837Z_cmd-start-02_0028_cue01.wav,cmd-start-02,Роксервер старт,"Ну, а ну, к черному старту.",0.462,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141248Z_confuser-server-01_0034_cue04.wav,confuser-server-01,сервер,Счетает.,0.462,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111637Z_p5-batch-01_0016_cue03.wav,p5-batch-01,Роксервер,Роксиэля,0.471,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111637Z_p5-batch-01_0016_cue06.wav,p5-batch-01,Роксервер,Роксиады.,0.471,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111934Z_p5-batch-02_0017_cue01.wav,p5-batch-02,Роксервер,Раукседы.,0.471,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111934Z_p5-batch-02_0017_cue05.wav,p5-batch-02,Роксервер,Ровселья.,0.471,accept,human listening review 2026-10-25; correct audio
+segments/20261023T112225Z_p5-batch-03_0018_cue02.wav,p5-batch-03,Роксервер,Роксияты.,0.471,accept,human listening review 2026-10-25; correct audio
+segments/20261023T132804Z_p6-batch-01_0019_cue03.wav,p6-batch-01,Роксервер,Роксиная.,0.471,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141248Z_confuser-server-01_0034_cue02.wav,confuser-server-01,сервер,Сьет и влез.,0.471,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105600Z_p3-batch-01_0008_cue02.wav,p3-batch-01,Роксервер,"Пробси, альер.",0.476,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111934Z_p5-batch-02_0017_cue06.wav,p5-batch-02,Роксервер,Рауси Альвер.,0.476,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133358Z_p6-batch-03_0021_cue04.wav,p6-batch-03,Роксервер,Прокси Эдвия.,0.476,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133720Z_p7-batch-01_0022_cue06.wav,p7-batch-01,Роксервер,Рокси ареста.,0.476,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105242Z_p2-batch-03_0007_cue02.wav,p2-batch-03,Роксервер,Рокси оревиарами.,0.48,accept,human listening review 2026-10-25; correct audio
+segments/20261023T103222Z_p1-batch-03_0004_cue02.wav,p1-batch-03,Роксервер,Ровси ордер.,0.5,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104700Z_p2-batch-01_0005_cue03.wav,p2-batch-01,Роксервер,Рогси Оргар.,0.5,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111934Z_p5-batch-02_0017_cue04.wav,p5-batch-02,Роксервер,Проседа,0.5,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135546Z_cmd-start-01_0027_cue06.wav,cmd-start-01,Роксервер старт,Проксель варасбар.,0.5,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140532Z_cmd-quieter-01_0031_cue07.wav,cmd-quieter-01,Роксервер тише,Расцель для стишек.,0.5,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142311Z_confuser-pro-server-01_0038_cue02.wav,confuser-pro-server-01,про сервер,Простей армёрт.,0.5,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110139Z_p3-batch-03_0010_cue04.wav,p3-batch-03,Роксервер,Рокси Рыбе,0.526,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111059Z_p4-batch-03_0013_cue02.wav,p4-batch-03,Роксервер,Моих серов.,0.526,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133106Z_p6-batch-02_0020_cue01.wav,p6-batch-02,Роксервер,Проксиолет.,0.526,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134016Z_p7-batch-02_0023_cue03.wav,p7-batch-02,Роксервер,Робсиярияр.,0.526,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135546Z_cmd-start-01_0027_cue05.wav,cmd-start-01,Роксервер старт,Рокси Олья Сард,0.533,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140022Z_cmd-louder-01_0029_cue06.wav,cmd-louder-01,Роксервер громче,"Серый, огромный.",0.533,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135059Z_cmd-stop-01_0025_cue02.wav,cmd-stop-01,Роксервер стоп,Профессионы Верстов.,0.545,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105600Z_p3-batch-01_0008_cue07.wav,p3-batch-01,Роксервер,"Робсер, ребята.",0.545,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105849Z_p3-batch-02_0009_cue07.wav,p3-batch-02,Роксервер,Нароксия вели.,0.545,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140532Z_cmd-quieter-01_0031_cue01.wav,cmd-quieter-01,Роксервер тише,Роксиаре Артиса,0.552,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102617Z_p1-batch-01_0002_cue06.wav,p1-batch-01,Роксервер,Роксиария,0.556,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102930Z_p1-batch-02_0003_cue02.wav,p1-batch-02,Роксервер,Роксиолет.,0.556,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111934Z_p5-batch-02_0017_cue03.wav,p5-batch-02,Роксервер,Роксиолет.,0.556,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133720Z_p7-batch-01_0022_cue05.wav,p7-batch-01,Роксервер,Фроксиаре.,0.556,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105242Z_p2-batch-03_0007_cue07.wav,p2-batch-03,Роксервер,Проксиаремер.,0.571,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133720Z_p7-batch-01_0022_cue03.wav,p7-batch-01,Роксервер,Рокси Реллер,0.571,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141753Z_confuser-roksana-01_0036_cue01.wav,confuser-roksana-01,Роксана,Райцана.,0.571,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141753Z_confuser-roksana-01_0036_cue05.wav,confuser-roksana-01,Роксана,Рексами.,0.571,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102617Z_p1-batch-01_0002_cue05.wav,p1-batch-01,Роксервер,Роксиаря,0.588,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104700Z_p2-batch-01_0005_cue04.wav,p2-batch-01,Роксервер,Проксиар.,0.588,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104700Z_p2-batch-01_0005_cue05.wav,p2-batch-01,Роксервер,Ровсерль.,0.588,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105600Z_p3-batch-01_0008_cue01.wav,p3-batch-01,Роксервер,Робсерия.,0.588,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105849Z_p3-batch-02_0009_cue02.wav,p3-batch-02,Роксервер,Робсерля.,0.588,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133720Z_p7-batch-01_0022_cue04.wav,p7-batch-01,Роксервер,Роксиаре.,0.588,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133720Z_p7-batch-01_0022_cue07.wav,p7-batch-01,Роксервер,Робсерия.,0.588,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102617Z_p1-batch-01_0002_cue07.wav,p1-batch-01,Роксервер,Роксиаридер,0.6,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110447Z_p4-batch-01_0011_cue07.wav,p4-batch-01,Роксервер,Фрог сервия.,0.6,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111934Z_p5-batch-02_0017_cue02.wav,p5-batch-02,Роксервер,Прокси Эдер.,0.6,accept,human listening review 2026-10-25; correct audio
+segments/20261023T112225Z_p5-batch-03_0018_cue06.wav,p5-batch-03,Роксервер,Рокси Эльер.,0.6,accept,human listening review 2026-10-25; correct audio
+segments/20261023T132804Z_p6-batch-01_0019_cue01.wav,p6-batch-01,Роксервер,Рокси Ренар.,0.6,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133720Z_p7-batch-01_0022_cue01.wav,p7-batch-01,Роксервер,Рокси-эллер,0.6,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140022Z_cmd-louder-01_0029_cue01.wav,cmd-louder-01,Роксервер громче,"Робсеры, Робсеры, Рогрончи.",0.6,accept,human listening review 2026-10-25; correct audio
+segments/20261023T132804Z_p6-batch-01_0019_cue06.wav,p6-batch-01,Роксервер,Кроксиады вера.,0.609,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142311Z_confuser-pro-server-01_0038_cue03.wav,confuser-pro-server-01,про сервер,Просиль вверх.,0.609,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140532Z_cmd-quieter-01_0031_cue03.wav,cmd-quieter-01,Роксервер тише,Но все рвертижи.,0.621,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140824Z_cmd-quieter-02_0032_cue02.wav,cmd-quieter-02,Роксервер тише,Робсер и рекише.,0.621,accept,human listening review 2026-10-25; correct audio
+segments/20261023T103222Z_p1-batch-03_0004_cue06.wav,p1-batch-03,Роксервер,Рог сервис.,0.632,accept,human listening review 2026-10-25; correct audio
+segments/20261023T103222Z_p1-batch-03_0004_cue07.wav,p1-batch-03,Роксервер,Проксиерия.,0.632,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104952Z_p2-batch-02_0006_cue03.wav,p2-batch-02,Роксервер,Роксиерлья.,0.632,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110139Z_p3-batch-03_0010_cue07.wav,p3-batch-03,Роксервер,Прокси Рыр.,0.632,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134309Z_p7-batch-03_0024_cue03.wav,p7-batch-03,Роксервер,Рог сервит.,0.632,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134309Z_p7-batch-03_0024_cue07.wav,p7-batch-03,Роксервер,Фроксерный,0.632,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110139Z_p3-batch-03_0010_cue05.wav,p3-batch-03,Роксервер,"Прокси, а верт.",0.636,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104952Z_p2-batch-02_0006_cue07.wav,p2-batch-02,Роксервер,Рокси-Альвер,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111059Z_p4-batch-03_0013_cue04.wav,p4-batch-03,Роксервер,Промсиэровер.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111637Z_p5-batch-01_0016_cue04.wav,p5-batch-01,Роксервер,Роксиар варь.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T112225Z_p5-batch-03_0018_cue05.wav,p5-batch-03,Роксервер,Роксиер и ра.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133358Z_p6-batch-03_0021_cue06.wav,p6-batch-03,Роксервер,Прокси Эдвер.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134016Z_p7-batch-02_0023_cue02.wav,p7-batch-02,Роксервер,Траксерев.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135059Z_cmd-stop-01_0025_cue06.wav,cmd-stop-01,Роксервер стоп,Прокси адвя стоп.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140328Z_cmd-louder-02_0030_cue03.wav,cmd-louder-02,Роксервер громче,Робсиды громче.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141025Z_confuser-rock-01_0033_cue01.wav,confuser-rock-01,рок,Рог.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141025Z_confuser-rock-01_0033_cue02.wav,confuser-rock-01,рок,Рог.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141025Z_confuser-rock-01_0033_cue04.wav,confuser-rock-01,рок,Рог.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141551Z_confuser-rock-station-01_0035_cue01.wav,confuser-rock-station-01,рок станция,Рогстан.,0.667,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135546Z_cmd-start-01_0027_cue03.wav,cmd-start-01,Роксервер старт,Робсер и остат.,0.69,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142029Z_confuser-proxy-server-01_0037_cue02.wav,confuser-proxy-server-01,прокси сервер,Рокси Сиардер,0.692,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142029Z_confuser-proxy-server-01_0037_cue05.wav,confuser-proxy-server-01,прокси сервер,Прокси сьемлю.,0.692,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134016Z_p7-batch-02_0023_cue05.wav,p7-batch-02,Роксервер,"Ну, к сервер.",0.7,accept,human listening review 2026-10-25; correct audio
+segments/20261023T143045Z_confuser-rock-service-01_0040_cue04.wav,confuser-rock-service-01,рок сервис,Рокси Рвес.,0.7,accept,human listening review 2026-10-25; correct audio
+segments/20261023T143045Z_confuser-rock-service-01_0040_cue05.wav,confuser-rock-service-01,рок сервис,Проксерыйс.,0.7,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102930Z_p1-batch-02_0003_cue03.wav,p1-batch-02,Роксервер,Роксер и...,0.706,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102930Z_p1-batch-02_0003_cue05.wav,p1-batch-02,Роксервер,Роксидер,0.706,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133106Z_p6-batch-02_0020_cue05.wav,p6-batch-02,Роксервер,Рокси РВ.,0.706,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133358Z_p6-batch-03_0021_cue03.wav,p6-batch-03,Роксервер,Оксерден.,0.706,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133720Z_p7-batch-01_0022_cue02.wav,p7-batch-01,Роксервер,Робсерва.,0.706,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140328Z_cmd-louder-02_0030_cue02.wav,cmd-louder-02,Роксервер громче,Рокседы и рогромче.,0.706,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135059Z_cmd-stop-01_0025_cue01.wav,cmd-stop-01,Роксервер стоп,Оксердый остоп.,0.714,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135352Z_cmd-stop-02_0026_cue01.wav,cmd-stop-02,Роксервер стоп,в окседе остоп.,0.714,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140532Z_cmd-quieter-01_0031_cue02.wav,cmd-quieter-01,Роксервер тише,Роксерия Ртиша,0.714,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140532Z_cmd-quieter-01_0031_cue06.wav,cmd-quieter-01,Роксервер тише,Роксер мастиша.,0.714,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134016Z_p7-batch-02_0023_cue04.wav,p7-batch-02,Роксервер,"Ох, сзервер!",0.737,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142311Z_confuser-pro-server-01_0038_cue05.wav,confuser-pro-server-01,про сервер,Просервия.,0.737,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104952Z_p2-batch-02_0006_cue04.wav,p2-batch-02,Роксервер,Роксеры.,0.75,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110447Z_p4-batch-01_0011_cue03.wav,p4-batch-01,Роксервер,Сервера,0.75,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111637Z_p5-batch-01_0016_cue02.wav,p5-batch-01,Роксервер,Рокседр.,0.75,accept,human listening review 2026-10-25; correct audio
+segments/20261023T112225Z_p5-batch-03_0018_cue04.wav,p5-batch-03,Роксервер,Роксиер.,0.75,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133358Z_p6-batch-03_0021_cue01.wav,p6-batch-03,Роксервер,Роксиер.,0.75,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133358Z_p6-batch-03_0021_cue02.wav,p6-batch-03,Роксервер,Роксеры,0.75,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134309Z_p7-batch-03_0024_cue01.wav,p7-batch-03,Роксервер,этот рок сервер.,0.75,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135837Z_cmd-start-02_0028_cue02.wav,cmd-start-02,Роксервер старт,"Но, к сервис, старт.",0.75,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141025Z_confuser-rock-01_0033_cue03.wav,confuser-rock-01,рок,Робка.,0.75,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102617Z_p1-batch-01_0002_cue03.wav,p1-batch-01,Роксервер,Рокси РВР.,0.778,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102930Z_p1-batch-02_0003_cue06.wav,p1-batch-02,Роксервер,"Ох, сервер!",0.778,accept,human listening review 2026-10-25; correct audio
+segments/20261023T103222Z_p1-batch-03_0004_cue05.wav,p1-batch-03,Роксервер,"Ох, сервер.",0.778,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104700Z_p2-batch-01_0005_cue02.wav,p2-batch-01,Роксервер,Роксервия,0.778,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110139Z_p3-batch-03_0010_cue06.wav,p3-batch-03,Роксервер,Робсердер.,0.778,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142311Z_confuser-pro-server-01_0038_cue04.wav,confuser-pro-server-01,про сервер,Росермер.,0.778,accept,human listening review 2026-10-25; correct audio
+segments/20261023T103222Z_p1-batch-03_0004_cue03.wav,p1-batch-03,Роксервер,Проксиер вверх.,0.783,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135546Z_cmd-start-01_0027_cue02.wav,cmd-start-01,Роксервер старт,Роксеры остат.,0.786,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140022Z_cmd-louder-01_0029_cue05.wav,cmd-louder-01,Роксервер громче,Роб сервер грунче.,0.788,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102930Z_p1-batch-02_0003_cue01.wav,p1-batch-02,Роксервер,Трог сервер.,0.8,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105242Z_p2-batch-03_0007_cue01.wav,p2-batch-03,Роксервер,Рокси Ревер.,0.8,accept,human listening review 2026-10-25; correct audio
+segments/20261023T110139Z_p3-batch-03_0010_cue01.wav,p3-batch-03,Роксервер,Трак сервер.,0.8,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111637Z_p5-batch-01_0016_cue05.wav,p5-batch-01,Роксервер,Роб сервера.,0.8,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141551Z_confuser-rock-station-01_0035_cue02.wav,confuser-rock-station-01,рок станция,Рокстанца,0.8,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141551Z_confuser-rock-station-01_0035_cue04.wav,confuser-rock-station-01,рок станция,Рокстанцы.,0.8,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141551Z_confuser-rock-station-01_0035_cue05.wav,confuser-rock-station-01,рок станция,Рокстанцы.,0.8,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142029Z_confuser-proxy-server-01_0037_cue01.wav,confuser-proxy-server-01,прокси сервер,Прогси сервя.,0.8,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105600Z_p3-batch-01_0008_cue06.wav,p3-batch-01,Роксервер,Роксиер вверх.,0.818,accept,human listening review 2026-10-25; correct audio
+segments/20261023T132804Z_p6-batch-01_0019_cue04.wav,p6-batch-01,Роксервер,Роксиер вверх.,0.818,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134016Z_p7-batch-02_0023_cue06.wav,p7-batch-02,Роксервер,Роксиер вверх.,0.818,accept,human listening review 2026-10-25; correct audio
+segments/20261023T132804Z_p6-batch-01_0019_cue05.wav,p6-batch-01,Роксервер,Рокседер,0.824,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135546Z_cmd-start-01_0027_cue01.wav,cmd-start-01,Роксервер старт,Роксер в остат.,0.828,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140824Z_cmd-quieter-02_0032_cue01.wav,cmd-quieter-02,Роксервер тише,Роксиар вертише.,0.828,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140532Z_cmd-quieter-01_0031_cue04.wav,cmd-quieter-01,Роксервер тише,Сервертише.,0.833,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141248Z_confuser-server-01_0034_cue03.wav,confuser-server-01,сервер,Сердер.,0.833,accept,human listening review 2026-10-25; correct audio
+segments/20261023T103222Z_p1-batch-03_0004_cue01.wav,p1-batch-03,Роксервер,Роб сервер.,0.842,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142311Z_confuser-pro-server-01_0038_cue01.wav,confuser-pro-server-01,про сервер,Проседвер.,0.842,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142634Z_confuser-rock-star-01_0039_cue04.wav,confuser-rock-star-01,рок звезда,Он звезда.,0.842,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135352Z_cmd-stop-02_0026_cue03.wav,cmd-stop-02,Роксервер стоп,Роксерверсит.,0.846,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140022Z_cmd-louder-01_0029_cue03.wav,cmd-louder-01,Роксервер громче,Рок сервер грошен.,0.848,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133106Z_p6-batch-02_0020_cue06.wav,p6-batch-02,Роксервер,Роксиер-эвер.,0.857,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135352Z_cmd-stop-02_0026_cue02.wav,cmd-stop-02,Роксервер стоп,Роксерверситов.,0.857,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140824Z_cmd-quieter-02_0032_cue03.wav,cmd-quieter-02,Роксервер тише,Роксер Вертиша,0.857,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142634Z_confuser-rock-star-01_0039_cue03.wav,confuser-rock-star-01,рок звезда,Роги звезда.,0.857,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135837Z_cmd-start-02_0028_cue03.wav,cmd-start-02,Роксервер старт,Рокчердер старт.,0.867,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140022Z_cmd-louder-01_0029_cue07.wav,cmd-louder-01,Роксервер громче,Роксеры в громче.,0.875,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111637Z_p5-batch-01_0016_cue07.wav,p5-batch-01,Роксервер,Роксердер.,0.889,accept,human listening review 2026-10-25; correct audio
+segments/20261023T112225Z_p5-batch-03_0018_cue01.wav,p5-batch-03,Роксервер,Ромсервер.,0.889,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133106Z_p6-batch-02_0020_cue02.wav,p6-batch-02,Роксервер,Роксиерер,0.889,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133106Z_p6-batch-02_0020_cue04.wav,p6-batch-02,Роксервер,Роксердер.,0.889,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134016Z_p7-batch-02_0023_cue01.wav,p7-batch-02,Роксервер,Роксердер.,0.889,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134016Z_p7-batch-02_0023_cue07.wav,p7-batch-02,Роксервер,Проксевер.,0.889,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135059Z_cmd-stop-01_0025_cue07.wav,cmd-stop-01,Роксервер стоп,Роксерев стоп.,0.889,accept,human listening review 2026-10-25; correct audio
+segments/20261023T140022Z_cmd-louder-01_0029_cue04.wav,cmd-louder-01,Роксервер громче,Роксеры вверх громче.,0.889,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135059Z_cmd-stop-01_0025_cue05.wav,cmd-stop-01,Роксервер стоп,Роб сервер стоп.,0.897,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134309Z_p7-batch-03_0024_cue02.wav,p7-batch-03,Роксервер,Роксерверки.,0.9,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142634Z_confuser-rock-star-01_0039_cue01.wav,confuser-rock-star-01,рок звезда,Рот звезда.,0.9,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142634Z_confuser-rock-star-01_0039_cue02.wav,confuser-rock-star-01,рок звезда,Род звезда.,0.9,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142634Z_confuser-rock-star-01_0039_cue05.wav,confuser-rock-star-01,рок звезда,Роб звезда.,0.9,accept,human listening review 2026-10-25; correct audio
+segments/20261023T143045Z_confuser-rock-service-01_0040_cue02.wav,confuser-rock-service-01,рок сервис,Роб сервис.,0.9,accept,human listening review 2026-10-25; correct audio
+segments/20261023T143045Z_confuser-rock-service-01_0040_cue03.wav,confuser-rock-service-01,рок сервис,Роксиервис.,0.9,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135059Z_cmd-stop-01_0025_cue03.wav,cmd-stop-01,Роксервер стоп,Роксерверсто,0.923,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141753Z_confuser-roksana-01_0036_cue02.wav,confuser-roksana-01,Роксана,Проксана.,0.933,accept,human listening review 2026-10-25; correct audio
+segments/20261023T112225Z_p5-batch-03_0018_cue03.wav,p5-batch-03,Роксервер,Проксервер,0.947,accept,human listening review 2026-10-25; correct audio
+segments/20261023T141551Z_confuser-rock-station-01_0035_cue03.wav,confuser-rock-station-01,рок станция,Рокстанция,0.952,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142029Z_confuser-proxy-server-01_0037_cue04.wav,confuser-proxy-server-01,прокси сервер,Прокси свервер.,0.963,accept,human listening review 2026-10-25; correct audio
+segments/20261023T135059Z_cmd-stop-01_0025_cue04.wav,cmd-stop-01,Роксервер стоп,Роксервер стоп.,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T102617Z_p1-batch-01_0002_cue04.wav,p1-batch-01,Роксервер,Роксервер,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104700Z_p2-batch-01_0005_cue06.wav,p2-batch-01,Роксервер,Роксервер,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T104952Z_p2-batch-02_0006_cue01.wav,p2-batch-02,Роксервер,Роксервер.,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105242Z_p2-batch-03_0007_cue03.wav,p2-batch-03,Роксервер,Роксервер.,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T105600Z_p3-batch-01_0008_cue05.wav,p3-batch-01,Роксервер,Роксервер,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T111637Z_p5-batch-01_0016_cue01.wav,p5-batch-01,Роксервер,Роксервер,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T112225Z_p5-batch-03_0018_cue07.wav,p5-batch-03,Роксервер,Роксервер,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T132804Z_p6-batch-01_0019_cue02.wav,p6-batch-01,Роксервер,Роксервер,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T132804Z_p6-batch-01_0019_cue07.wav,p6-batch-01,Роксервер,Роксервер.,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133106Z_p6-batch-02_0020_cue03.wav,p6-batch-02,Роксервер,Роксервер,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133106Z_p6-batch-02_0020_cue07.wav,p6-batch-02,Роксервер,Роксервер.,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T133358Z_p6-batch-03_0021_cue05.wav,p6-batch-03,Роксервер,Роксервер.,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T134309Z_p7-batch-03_0024_cue05.wav,p7-batch-03,Роксервер,Роксервер,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T142029Z_confuser-proxy-server-01_0037_cue03.wav,confuser-proxy-server-01,прокси сервер,Прокси сервер.,1.0,accept,human listening review 2026-10-25; correct audio
+segments/20261023T143045Z_confuser-rock-service-01_0040_cue01.wav,confuser-rock-service-01,рок сервис,Рок сервис.,1.0,accept,human listening review 2026-10-25; correct audio

@@ -57,10 +57,15 @@ void rock_ws_log_rx_frame(const char *kind);
 // 10 recognition error, 11 command failed, 12 cancelled, 13 no memory.
 int rock_voice_start(const char *access_token);
 int rock_voice_take_transcript(char *out, size_t cap);
+/** Consume the raw JSON of the last voice "result" frame. With out == NULL,
+ *  return the required capacity including NUL without consuming it; otherwise
+ *  return 0 on success or -1 when absent or larger than cap. */
+int rock_voice_take_result(char *out, size_t cap);
 int rock_voice_toggle_capture(void);
 int rock_voice_set_preroll(const int16_t *ring, size_t capacity, size_t used, size_t next);
 void rock_voice_clear_preroll(void);
 void rock_voice_cancel(void);
+void rock_voice_set_muted(bool muted);
 void rock_voice_release_pause(void);
 int rock_voice_state(void);
 /** Generic session-domain log line from Rust (same pattern as the

@@ -1,0 +1,105 @@
+>>> probe rock
+I (3540809) rock-control: WSS control opcode=10 handled by clienI (3766339) rock-serial: Serial command received: 'CMD:UI:VOICE'
+I (3766339) rock-voice: capture started 0 ms after button
+I (3766569) rock-control: REST POST status=200 err=ESP_OK len=101 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=197 total_ms=201
+I (3766579) rock-voice: token attached 231 ms after button
+W (3766579) rock-control: voice state=2
+I (3769759) rock-voice: capture speech samples=54566 mean_abs=297 peak=6559
+I (3769759) rock-voice: after capture heap internal=247527 largest=96256 psram=26766688 largest=26214400
+I (3769769) rock-voice: before websocket start heap internal=242439 largest=96256 psram=26766656 largest=26214400
+W (3769789) rock-control: voice state=3
+W (3774899) rock-voice: server error code=unsupported_intent
+I (3774899) rock-voice: session finished state=7
+I (3776939) rock-serial: metrics_cast active=1
+I (3776979) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+>>> probe next
+I (3776979) rock-serial: metrics_ram int_free=247627 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258220 psram_min=26549240 psram_largest=26738688
+I (3777019) rock-voice: capture started 0 ms after button
+I (3777169) rock-control: REST POST status=200 err=ESP_OK len=101 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=139 total_ms=149
+I (3777179) rock-voice: token attached 163 ms after button
+W (3777189) rock-control: voice state=2
+I (3778169) rock-control: WSS send result=160
+I (3778359) rock-control: WSS receive len=220
+I (3778369) rock-control: WSS receive type=device.heartbeat_ack
+I (3780639) rock-voice: capture speech samples=57759 mean_abs=338 peak=6797
+I (3780639) rock-voice: after capture heap internal=247543 largest=96256 psram=26766688 largest=26214400
+I (3780649) rock-voice: before websocket start heap internal=242443 largest=96256 psram=26766656 largest=26214400
+W (3780719) rock-control: voice state=3
+W (3786079) rock-voice: server error code=intent_resolution_failed
+W (3786089) rock-voice: socket event=0 http=0 close=0
+W (3786109) rock-voice: socket event=3 http=0 close=0
+I (3786109) rock-voice: session finished state=14
+I (3788129) rock-serial: metrics_cast active=1
+I (3788179) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+>>> probe like
+I (3788179) rock-serial: metrics_ram int_free=247635 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258220 psram_min=26549240 psram_largest=26738688
+I (3788199) rock-voice: capture started 0 ms after button
+I (3788419) rock-control: REST POST status=200 err=ESP_OK len=101 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=177 total_ms=181
+I (3788419) rock-voice: token attached 217 ms after button
+W (3788439) rock-control: voice state=2
+I (3791709) rock-voice: capture speech samples=56018 mean_abs=334 peak=6633
+I (3791709) rock-voice: after capture heap internal=247395 largest=96256 psram=26766688 largest=26214400
+I (3791719) rock-voice: before websocket start heap internal=241815 largest=96256 psram=26766656 largest=26214400
+W (3791739) rock-control: voice state=3
+W (3796939) rock-voice: server error code=unsupported_intent
+I (3796949) rock-voice: session finished state=7
+I (3798979) rock-serial: metrics_cast active=1
+I (3799019) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+>>> probe stop
+I (3799029) rock-serial: metrics_ram int_free=247623 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258220 psram_min=26549240 psram_largest=26738688
+I (3799049) rock-voice: capture started 0 ms after button
+I (3799059) rock-control: WSS receive len=219
+I (3799059) rock-control: WSS receive type=device.heartbeat_ack
+I (3800009) rock-control: REST POST status=200 err=ESP_OK len=101 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=931 total_ms=941
+I (3800009) rock-voice: token attached 955 ms after button
+W (3800019) rock-control: voice state=2
+I (3802469) rock-voice: capture speech samples=54566 mean_abs=272 peak=6780
+I (3802469) rock-voice: after capture heap internal=247543 largest=96256 psram=26766688 largest=26214400
+I (3802479) rock-voice: before websocket start heap internal=242439 largest=96256 psram=26766656 largest=26214400
+W (3802509) rock-control: voice state=3
+W (3807039) rock-voice: server error code=intent_resolution_failed
+W (3807049) rock-voice: socket event=0 http=0 close=0
+W (3807069) rock-voice: socket event=3 http=0 close=0
+I (3807069) rock-voice: session finished state=14
+I (3809109) rock-serial: metrics_cast active=1
+I (3809159) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+>>> probe start
+I (3809159) rock-serial: metrics_ram int_free=247627 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=27258220 psram_min=26549240 psram_largest=26738688
+I (3809199) rock-voice: capture started 0 ms after button
+I (3809819) rock-control: REST POST status=200 err=ESP_OK len=101 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=614 total_ms=619
+I (3809829) rock-voice: token attached 627 ms after button
+W (3809829) rock-control: voice state=2
+I (3812619) rock-voice: capture speech samples=54566 mean_abs=298 peak=6727
+I (3812619) rock-voice: after capture heap internal=247147 largest=96256 psram=26766688 largest=26214400
+I (3812619) rock-voice: before websocket start heap internal=242247 largest=96256 psram=26766656 largest=26214400
+W (3812639) rock-control: voice state=3
+W (3816749) rock-voice: server error code=intent_resolution_failed
+I (3816749) rock-voice: session finished state=14
+I (3818789) rock-serial: metrics_cast active=1
+I (3818849) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15
+>>> probe stop
+I (3818849) rock-serial: metrics_ram int_free=246799 int_min=120168 int_largest=96256 dma_largest=96256 psram_free=26733760 psram_min=26549240 psram_largest=26214400
+I (3818879) rock-voice: capture started 0 ms after button
+I (3819359) rock-control: REST POST status=200 err=ESP_OK len=124 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=678 total_ms=709
+I (3820049) rock-control: REST POST status=200 err=ESP_OK len=101 stale_retry=0 reused_handle=1 connect_ms=-1 wait_headers_ms=660 total_ms=681
+I (3820059) rock-voice: token attached 1183 ms after button
+W (3820079) rock-control: voice state=2
+I (3820089) rock-control: WSS receive len=221
+I (3820089) rock-control: WSS receive type=device.heartbeat_ack
+I (3822199) rock-voice: capture speech samples=52825 mean_abs=279 peak=7002
+I (3822199) rock-voice: after capture heap internal=247307 largest=96256 psram=26766688 largest=25690112
+I (3822209) rock-voice: before websocket start heap internal=242379 largest=96256 psram=26766656 largest=25690112
+W (3822219) rock-control: voice state=3
+I (3827959) rock-control: WSS control opcode=10 handled by client
+I (3828809) rock-control: WSS receive len=346
+I (3828819) rock-control: WSS receive type=device.command
+I (3828819) rock-control: WSS send result=234
+I (3828829) rock-control: WSS send result=443
+I (3828849) rock-control: WSS send result=298
+I (3829109) rock-control: WSS receive len=287
+I (3829109) rock-control: WSS receive type=command.result
+W (3829969) rock-voice: socket event=0 http=0 close=0
+W (3829989) rock-voice: socket event=3 http=0 close=0
+I (3829989) rock-voice: session finished state=4
+I (3832039) rock-serial: metrics_cast active=1
+I (3832079) rock-gui: ui view=NP rows=20 stale=0 playback=4 volume=15

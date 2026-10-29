@@ -134,7 +134,7 @@ def cue_worker(
             if sys.platform == "win32":
                 import winsound
 
-                winsound.Beep(1400, 90)
+                winsound.Beep(1400, 250)
         except RuntimeError:
             pass
         print(f"\aCUE {cue_number}: say once: {transcript}", flush=True)
