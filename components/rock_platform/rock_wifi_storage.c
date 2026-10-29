@@ -90,3 +90,30 @@ bool rock_wifi_storage_clear(void)
     ESP_LOGI(TAG, "Wi-Fi credentials clear result=%s", esp_err_to_name(err));
     return err == ESP_OK;
 }
+
+bool rock_wifi_storage_request_setup(void)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK) return false;
+    err = nvs_set_u8(handle, "setup", 1);
+    if (err == ESP_OK) err = nvs_commit(handle);
+    nvs_close(handle);
+    ESP_LOGI(TAG, "Wi-Fi setup request save result=%s", esp_err_to_name(err));
+    return err == ESP_OK;
+}
+
+bool rock_wifi_storage_take_setup_request(void)
+{
+    nvs_handle_t handle;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return false;
+    uint8_t requested = 0;
+    esp_err_t err = nvs_get_u8(handle, "setup", &requested);
+    if (err == ESP_OK && requested == 1) {
+        err = nvs_erase_key(handle, "setup");
+        if (err == ESP_OK) err = nvs_commit(handle);
+        if (err != ESP_OK) ESP_LOGW(TAG, "Wi-Fi setup request clear failed: %s", esp_err_to_name(err));
+    }
+    nvs_close(handle);
+    return requested == 1;
+}

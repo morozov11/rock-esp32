@@ -27,6 +27,12 @@ bool rock_wifi_storage_save(const char *ssid, const char *password);
  */
 bool rock_wifi_storage_clear(void);
 
+/** Request onboarding on the next boot without changing saved credentials. */
+bool rock_wifi_storage_request_setup(void);
+
+/** Consume a one-shot onboarding request from the BOOT button. */
+bool rock_wifi_storage_take_setup_request(void);
+
 #ifdef __cplusplus
 }
 #endif

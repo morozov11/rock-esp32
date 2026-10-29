@@ -14,6 +14,7 @@
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
 #include "esp_random.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "driver/gpio.h"
@@ -27,10 +28,13 @@
 #include <time.h>
 
 #define ROCK_C6_RESET_GPIO GPIO_NUM_54
+#define ROCK_WIFI_SETUP_BUTTON_GPIO GPIO_NUM_35
+#define ROCK_WIFI_SETUP_HOLD_MS 5000
 
 // UI callbacks registered by the composition root; this module never calls
 // rock_ui_* directly (dependency inversion, phase 3).
 static rock_platform_ui_cbs_t s_ui_cbs;
+static TaskHandle_t s_wifi_setup_button_task;
 
 static const char *TAG = "rock-control";
 
@@ -82,6 +86,49 @@ bool rock_platform_notify_onboarding_show(const char *ssid, const char *pin, con
     return s_ui_cbs.on_onboarding_show ? s_ui_cbs.on_onboarding_show(ssid, pin, url, qr_modules, qr_width) : false;
 }
 
+static void wifi_setup_button_task(void *arg)
+{
+    (void)arg;
+    uint64_t pressed_at = 0;
+    for (;;) {
+        if (gpio_get_level(ROCK_WIFI_SETUP_BUTTON_GPIO) != 0) {
+            pressed_at = 0;
+        } else if (pressed_at == 0) {
+            pressed_at = rock_uptime_ms();
+        } else if (rock_uptime_ms() - pressed_at >= ROCK_WIFI_SETUP_HOLD_MS) {
+            if (!rock_ota_is_in_progress()) {
+                ESP_LOGI(TAG, "BOOT held for 5 seconds; waiting for release to enter Wi-Fi setup");
+                if (s_ui_cbs.on_wifi_setup_status) s_ui_cbs.on_wifi_setup_status(true);
+                do {
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                } while (gpio_get_level(ROCK_WIFI_SETUP_BUTTON_GPIO) == 0);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                if (gpio_get_level(ROCK_WIFI_SETUP_BUTTON_GPIO) != 0 &&
+                    !rock_ota_is_in_progress() && rock_wifi_storage_request_setup()) {
+                    esp_restart();
+                }
+                ESP_LOGE(TAG, "Wi-Fi setup request cancelled or could not be saved");
+                if (s_ui_cbs.on_wifi_setup_status) s_ui_cbs.on_wifi_setup_status(false);
+            }
+            pressed_at = 0;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+static void wifi_setup_button_start(void)
+{
+    gpio_config_t config = {
+        .pin_bit_mask = 1ULL << ROCK_WIFI_SETUP_BUTTON_GPIO,
+        .mode = GPIO_MODE_INPUT,
+    };
+    if (gpio_config(&config) != ESP_OK ||
+        xTaskCreate(wifi_setup_button_task, "wifi_setup_btn", 4096, NULL, 4,
+                    &s_wifi_setup_button_task) != pdPASS) {
+        ESP_LOGE(TAG, "BOOT button monitor unavailable");
+    }
+}
+
 int rock_platform_init(void)
 {
     if (rock_nvs_init() != 0) return -1;
@@ -104,6 +151,12 @@ int rock_platform_init(void)
     }
 
     rock_platform_notify_splash_status("Checking network...");
+
+    if (rock_wifi_storage_take_setup_request()) {
+        ESP_LOGI(TAG, "BOOT button requested Wi-Fi setup; credentials preserved");
+        rock_onboarding_run();
+        return -1;
+    }
 
     // Check credentials hierarchy
     char active_ssid[33] = {0};
@@ -129,6 +182,8 @@ int rock_platform_init(void)
         return -1;
     }
 
+    wifi_setup_button_start();
+
     wifi_config_t wifi = {0};
     strlcpy((char *)wifi.sta.ssid, active_ssid, sizeof(wifi.sta.ssid));
     strlcpy((char *)wifi.sta.password, active_password, sizeof(wifi.sta.password));
@@ -146,6 +201,10 @@ int rock_platform_init(void)
     rock_platform_notify_splash_status("Connecting to Wi-Fi...");
     if (!rock_wifi_connect_with_backoff(rock_uptime_ms() + 600000)) {
         ESP_LOGW(TAG, "STA unavailable for 10 minutes; opening onboarding with credentials preserved");
+        if (s_wifi_setup_button_task) {
+            vTaskDelete(s_wifi_setup_button_task);
+            s_wifi_setup_button_task = NULL;
+        }
         rock_onboarding_run();
         return -1;
     }

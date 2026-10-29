@@ -37,6 +37,12 @@ static void platform_ui_on_wifi_scan(const rock_wifi_scan_item_t *items, uint16_
     rock_ui_wifi_scan_show(items, count);
 }
 
+static void platform_ui_on_wifi_setup_status(bool ready)
+{
+    if (ready) rock_gui_show_loading("Отпустите BOOT для настройки Wi-Fi");
+    else rock_gui_dismiss_state();
+}
+
 // Player → UI adapter: the player only reports abstract states; which text
 // and screen each state renders is decided here, next to the display wiring.
 // When the native station GUI is active, playback status is driven through
@@ -129,6 +135,7 @@ void app_main(void)
         .on_wifi_scan = platform_ui_on_wifi_scan,
         .on_onboarding_status = rock_ui_onboarding_status,
         .on_onboarding_show = rock_ui_onboarding_show,
+        .on_wifi_setup_status = platform_ui_on_wifi_setup_status,
     };
     rock_platform_set_ui_cbs(&platform_ui_cbs);
 #if CONFIG_ROCK_BRINGUP_TESTS

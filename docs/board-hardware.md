@@ -39,6 +39,11 @@ This reference documents the hardware architecture, peripherals, and pin assignm
 - **SDIO D3**: `GPIO 17`
 - **C6 Hardware Reset**: `GPIO 54` (Active LOW)
 
+### Physical Buttons
+- **BOOT (SW1)**: ESP32-P4 `GPIO 35`, active LOW with an external 10 kΩ pull-up. Holding it during reset enters the ROM downloader; after boot the firmware reads it to request Wi-Fi setup.
+- **RESET (SW2)**: ESP32-P4 `CHIP_PU`, hardware reset only.
+- **Power (SW3)**: connected to the IP5306 power-management circuit, not to an ESP32-P4 GPIO.
+
 ### Audio Codec (ES8311 & Power Amplifier)
 - **Control Interface**: I2C (shares `GPIO 7` SDA and `GPIO 8` SCL, I2C address `0x18`)
 - **I2S SCLK (BCLK)**: `GPIO 12`

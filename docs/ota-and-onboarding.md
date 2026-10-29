@@ -68,6 +68,8 @@ At boot time, `rock_platform_init()` determines Wi-Fi configuration in the follo
 3. **Interactive SoftAP Onboarding**:
    If neither source contains credentials, the device starts SoftAP mode (`RockCast-Setup`) and presents the onboarding screen. With saved credentials, STA retries with exponential backoff for 10 minutes of continuous failure before opening the portal. The saved credentials remain in NVS so a reboot can try them again. `POST /connect` replaces them; the portal's PIN-protected “Forget saved network” action clears them explicitly.
 
+To change networks while the current Wi-Fi is still available, hold the physical **BOOT** button for 5 seconds after the device has started, then release it. The device restarts into the same `RockCast-Setup` portal immediately. Scan the QR code, open `http://192.168.4.1`, and enter the setup PIN shown on the display. This request preserves the old Wi-Fi credentials and `rock_auth`; a reboot without saving a new network resumes the old connection. Do not hold BOOT while resetting or powering on the board: that selects the ESP32-P4 ROM downloader instead of the application.
+
 ---
 
 ## 4. OTA Firmware Updates
