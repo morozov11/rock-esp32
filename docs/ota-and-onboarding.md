@@ -44,10 +44,11 @@ This document describes the firmware Over-The-Air (OTA) update mechanism and the
    - The PIN is prominently rendered on the 800x480 LVGL display in a highlighted card (`SETUP PIN: XXX XXX`).
    - The web form requires entering this PIN (`inputmode="numeric"` for mobile numpad). Submissions to `POST /connect` without the exact matching PIN are rejected with HTTP 403 Forbidden.
 3. **Wi-Fi Quick Connect QR Format**:
-   - The QR code on the ST7701 display encodes standard Wi-Fi configuration (`WIFI:S:RockCast-Setup;T:nopass;;`).
-   - Pointing any iOS or Android camera at the screen displays a native 1-tap "Join Network" prompt without searching for the network manually.
+   - The left QR code on the ST7701 display encodes standard Wi-Fi configuration (`WIFI:S:RockCast-Setup;T:nopass;;`).
+   - The right QR contains the portal URL and setup PIN. Join the SoftAP with the left QR first, then scan the right QR to open the form with the PIN filled in.
+   - The DHCP server also advertises the portal URL so supported phones can offer to open the setup page after joining.
 4. **Interactive Network Scanner (`GET /api/scan`)**:
-   - The captive portal page queries `/api/scan` to automatically list nearby Wi-Fi networks in a `<select>` dropdown with RSSI signal bars and encryption status (🔒/🔓). A STA scan runs before SoftAP starts; its results remain available if a later APSTA scan through ESP-Hosted fails or returns no networks.
+   - The captive portal page queries `/api/scan` to automatically list nearby 2.4 GHz Wi-Fi networks in a `<select>` dropdown with RSSI signal bars and encryption status (🔒/🔓). A STA scan runs before SoftAP starts; its results are merged with the live APSTA scan so a partial APSTA scan does not hide networks.
 5. **No Insecure TLS**:
    - OTA updates strictly enforce TLS certificate verification.
    - Production builds use the ESP certificate bundle (`CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y`).
@@ -68,7 +69,7 @@ At boot time, `rock_platform_init()` determines Wi-Fi configuration in the follo
 3. **Interactive SoftAP Onboarding**:
    If neither source contains credentials, the device starts SoftAP mode (`RockCast-Setup`) and presents the onboarding screen. With saved credentials, STA retries with exponential backoff for 10 minutes of continuous failure before opening the portal. The saved credentials remain in NVS so a reboot can try them again. `POST /connect` replaces them; the portal's PIN-protected “Forget saved network” action clears them explicitly.
 
-To change networks while the current Wi-Fi is still available, hold the physical **BOOT** button for 5 seconds after the device has started, then release it. The device restarts into the same `RockCast-Setup` portal immediately. Scan the QR code, open `http://192.168.4.1`, and enter the setup PIN shown on the display. This request preserves the old Wi-Fi credentials and `rock_auth`; a reboot without saving a new network resumes the old connection. Do not hold BOOT while resetting or powering on the board: that selects the ESP32-P4 ROM downloader instead of the application.
+To change networks while the current Wi-Fi is still available, hold the physical **BOOT** button for 5 seconds after the device has started, then release it. The device restarts into the same `RockCast-Setup` portal immediately. Scan the left QR to join the radio's Wi-Fi, then scan the right QR to open the setup page with the PIN filled in. The phone may also offer to open the captive portal automatically; in that case, enter the PIN from the display. This request preserves the old Wi-Fi credentials and `rock_auth`; a reboot without saving a new network resumes the old connection. Do not hold BOOT while resetting or powering on the board: that selects the ESP32-P4 ROM downloader instead of the application.
 
 ---
 

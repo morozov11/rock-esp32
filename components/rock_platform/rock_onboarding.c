@@ -24,8 +24,36 @@ static const char *TAG = "rock-onboard";
 static httpd_handle_t s_httpd = NULL;
 static TaskHandle_t s_dns_task_handle = NULL;
 static char s_onboarding_pin[8] = {0};
-static wifi_ap_record_t s_scan_cache[30];
+#define MAX_SCAN_APS 100
+static wifi_ap_record_t s_scan_cache[MAX_SCAN_APS];
 static uint16_t s_scan_count;
+static const char *PORTAL_URL = "http://192.168.4.1/";
+static uint8_t s_wifi_qr_modules[1024];
+static uint8_t s_url_qr_modules[1024];
+
+static void show_onboarding_qr(void)
+{
+    char payload[128];
+    if (CONFIG_ROCK_AP_PASSWORD[0] != '\0') {
+        snprintf(payload, sizeof(payload), "WIFI:S:%s;T:WPA;P:%s;;", CONFIG_ROCK_AP_SSID, CONFIG_ROCK_AP_PASSWORD);
+    } else {
+        snprintf(payload, sizeof(payload), "WIFI:S:%s;T:nopass;;", CONFIG_ROCK_AP_SSID);
+    }
+
+    uint16_t wifi_width = 0;
+    uint16_t url_width = 0;
+    if (rock_qr_encode(payload, s_wifi_qr_modules, sizeof(s_wifi_qr_modules), &wifi_width) != 0) {
+        ESP_LOGE(TAG, "Failed to encode Wi-Fi QR");
+        return;
+    }
+    snprintf(payload, sizeof(payload), "%s?pin=%s", PORTAL_URL, s_onboarding_pin);
+    if (rock_qr_encode(payload, s_url_qr_modules, sizeof(s_url_qr_modules), &url_width) != 0 ||
+        !rock_platform_notify_onboarding_show(CONFIG_ROCK_AP_SSID, s_onboarding_pin,
+                                              PORTAL_URL, s_wifi_qr_modules, wifi_width,
+                                              s_url_qr_modules, url_width)) {
+        ESP_LOGE(TAG, "Failed to display onboarding QR");
+    }
+}
 
 static wifi_scan_config_t onboarding_scan_config(void)
 {
@@ -43,7 +71,7 @@ static void scan_before_softap(void)
     uint16_t count = 0;
     if (err == ESP_OK) err = esp_wifi_scan_get_ap_num(&count);
     if (err == ESP_OK) {
-        count = count > 30 ? 30 : count;
+        count = count > MAX_SCAN_APS ? MAX_SCAN_APS : count;
         if (count) err = esp_wifi_scan_get_ap_records(&count, s_scan_cache);
     }
     s_scan_count = err == ESP_OK ? count : 0;
@@ -104,6 +132,7 @@ static const char ONBOARDING_HTML[] =
 "<select id=\"net-select\" onchange=\"onNetworkChange(this.value)\">\n"
 "<option value=\"\" disabled selected>🔄 Scanning available networks...</option>\n"
 "</select>\n"
+"<div class=\"hint\">Only 2.4 GHz Wi-Fi networks are supported.</div>\n"
 "<div id=\"custom-ssid-wrap\">\n"
 "<input type=\"text\" id=\"custom-ssid\" placeholder=\"Enter network name (SSID)\" maxlength=\"32\" oninput=\"onCustomInput(this.value)\">\n"
 "</div>\n"
@@ -254,22 +283,23 @@ static esp_err_t scan_handler(httpd_req_t *req)
     if (err == ESP_OK) err = esp_wifi_scan_get_ap_num(&ap_count);
     ESP_LOGI(TAG, "APSTA scan result=%s count=%u elapsed_ms=%lld",
              esp_err_to_name(err), ap_count, (long long)((esp_timer_get_time() - start) / 1000));
-    uint16_t fetch_count = ap_count > 30 ? 30 : ap_count;
-    wifi_ap_record_t *records = calloc(30, sizeof(wifi_ap_record_t));
-    if (records && err == ESP_OK && fetch_count) {
-        err = esp_wifi_scan_get_ap_records(&fetch_count, records);
-        if (err == ESP_OK && fetch_count) {
-            memcpy(s_scan_cache, records, fetch_count * sizeof(*records));
-            s_scan_count = fetch_count;
-        }
+    uint16_t fetch_count = ap_count > MAX_SCAN_APS ? MAX_SCAN_APS : ap_count;
+    wifi_ap_record_t *records = calloc((size_t)MAX_SCAN_APS + s_scan_count, sizeof(*records));
+    if (!records) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
     }
-    if (records && (err != ESP_OK || fetch_count == 0)) {
-        fetch_count = s_scan_count;
-        memcpy(records, s_scan_cache, fetch_count * sizeof(*records));
-        ESP_LOGW(TAG, "Using pre-AP scan results: count=%u", fetch_count);
+    if (err == ESP_OK && fetch_count) {
+        err = esp_wifi_scan_get_ap_records(&fetch_count, records);
+    }
+    if (err != ESP_OK) fetch_count = 0;
+    if (s_scan_count) {
+        memcpy(records + fetch_count, s_scan_cache, s_scan_count * sizeof(*records));
+        fetch_count += s_scan_count;
+        ESP_LOGI(TAG, "Merged pre-AP scan results: total records=%u", fetch_count);
     }
 
-    size_t json_cap = 2048;
+    size_t json_cap = (size_t)fetch_count * 128 + 3;
     char *json = malloc(json_cap);
     if (!json) {
         if (records) free(records);
@@ -285,9 +315,6 @@ static esp_err_t scan_handler(httpd_req_t *req)
             qsort(records, fetch_count, sizeof(wifi_ap_record_t), compare_ap_rssi);
         }
 
-        char seen_ssids[30][33];
-        int seen_count = 0;
-
         for (uint16_t i = 0; i < fetch_count; i++) {
             if (records[i].ssid[0] == '\0') {
                 continue;
@@ -295,8 +322,8 @@ static esp_err_t scan_handler(httpd_req_t *req)
 
             const char *curr_ssid = (const char *)records[i].ssid;
             bool duplicate = false;
-            for (int s = 0; s < seen_count; s++) {
-                if (strcmp(seen_ssids[s], curr_ssid) == 0) {
+            for (uint16_t s = 0; s < i; s++) {
+                if (strcmp((const char *)records[s].ssid, curr_ssid) == 0) {
                     duplicate = true;
                     break;
                 }
@@ -304,10 +331,6 @@ static esp_err_t scan_handler(httpd_req_t *req)
             if (duplicate) {
                 continue;
             }
-            if (seen_count < 30) {
-                strlcpy(seen_ssids[seen_count++], curr_ssid, sizeof(seen_ssids[0]));
-            }
-
             char esc_ssid[65] = {0};
             size_t e = 0;
             for (size_t k = 0; curr_ssid[k] != '\0' && e + 2 < sizeof(esc_ssid); k++) {
@@ -357,8 +380,14 @@ static esp_err_t captive_redirect_handler(httpd_req_t *req)
 {
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
-    httpd_resp_send(req, NULL, 0);
+    httpd_resp_sendstr(req, "Open RockCast Wi-Fi setup");
     return ESP_OK;
+}
+
+static esp_err_t captive_not_found_handler(httpd_req_t *req, httpd_err_code_t error)
+{
+    (void)error;
+    return captive_redirect_handler(req);
 }
 
 static esp_err_t connect_handler(httpd_req_t *req)
@@ -522,7 +551,13 @@ esp_err_t rock_onboarding_run(void)
 
     // Configure and start SoftAP
     esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
-    (void)ap_netif;
+    if (!ap_netif) return ESP_FAIL;
+    esp_err_t portal_err = esp_netif_dhcps_option(ap_netif, ESP_NETIF_OP_SET,
+                                                   ESP_NETIF_CAPTIVEPORTAL_URI,
+                                                   (void *)PORTAL_URL, strlen(PORTAL_URL));
+    if (portal_err != ESP_OK) {
+        ESP_LOGW(TAG, "Captive portal DHCP option unavailable: %s", esp_err_to_name(portal_err));
+    }
 
     wifi_config_t ap_config = {
         .ap = {
@@ -573,6 +608,7 @@ esp_err_t rock_onboarding_run(void)
     http_cfg.lru_purge_enable = true;
 
     if (httpd_start(&s_httpd, &http_cfg) == ESP_OK) {
+        httpd_register_err_handler(s_httpd, HTTPD_404_NOT_FOUND, captive_not_found_handler);
         httpd_uri_t uri_get = { .uri = "/", .method = HTTP_GET, .handler = index_handler, .user_ctx = NULL };
         httpd_register_uri_handler(s_httpd, &uri_get);
 
@@ -598,23 +634,7 @@ esp_err_t rock_onboarding_run(void)
         ESP_LOGE(TAG, "Failed to start HTTP server");
     }
 
-    // Generate Wi-Fi Quick Connect QR code: WIFI:S:<SSID>;T:nopass;; (or T:WPA;P:<pwd>;;)
-    char qr_payload[128];
-    if (CONFIG_ROCK_AP_PASSWORD[0] != '\0') {
-        snprintf(qr_payload, sizeof(qr_payload), "WIFI:S:%s;T:WPA;P:%s;;", CONFIG_ROCK_AP_SSID, CONFIG_ROCK_AP_PASSWORD);
-    } else {
-        snprintf(qr_payload, sizeof(qr_payload), "WIFI:S:%s;T:nopass;;", CONFIG_ROCK_AP_SSID);
-    }
-    ESP_LOGI(TAG, "Wi-Fi Quick Connect QR payload: %s", qr_payload);
-
-    static uint8_t qr_modules[1024];
-    uint16_t qr_width = 0;
-    if (rock_qr_encode(qr_payload, qr_modules, sizeof(qr_modules), &qr_width) == 0) {
-        rock_platform_notify_onboarding_show(CONFIG_ROCK_AP_SSID, s_onboarding_pin, "http://192.168.4.1", qr_modules, qr_width);
-    } else {
-        ESP_LOGW(TAG, "QR code generation failed for Wi-Fi Quick Connect");
-        rock_platform_notify_onboarding_show(CONFIG_ROCK_AP_SSID, s_onboarding_pin, "http://192.168.4.1", NULL, 0);
-    }
+    show_onboarding_qr();
 
     // Block here while user completes onboarding (reboot task handles exit)
     while (1) {

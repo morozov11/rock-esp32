@@ -81,9 +81,13 @@ bool rock_platform_notify_onboarding_status(const char *text)
     return s_ui_cbs.on_onboarding_status ? s_ui_cbs.on_onboarding_status(text) : false;
 }
 
-bool rock_platform_notify_onboarding_show(const char *ssid, const char *pin, const char *url, const uint8_t *qr_modules, uint16_t qr_width)
+bool rock_platform_notify_onboarding_show(const char *ssid, const char *pin, const char *url,
+                                          const uint8_t *wifi_modules, uint16_t wifi_width,
+                                          const uint8_t *url_modules, uint16_t url_width)
 {
-    return s_ui_cbs.on_onboarding_show ? s_ui_cbs.on_onboarding_show(ssid, pin, url, qr_modules, qr_width) : false;
+    return s_ui_cbs.on_onboarding_show ? s_ui_cbs.on_onboarding_show(ssid, pin, url,
+                                                                    wifi_modules, wifi_width,
+                                                                    url_modules, url_width) : false;
 }
 
 static void wifi_setup_button_task(void *arg)

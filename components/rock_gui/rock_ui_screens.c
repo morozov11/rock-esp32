@@ -20,34 +20,37 @@ static lv_obj_t *s_onboarding_status_lbl = NULL;
 static lv_obj_t *s_ota_bar = NULL;
 static lv_obj_t *s_ota_pct_lbl = NULL;
 static void *s_qr_buffer;
+static void *s_wifi_qr_buffer;
+static void *s_url_qr_buffer;
 
 // QR canvas geometry, shared by the pairing and onboarding screens (the
 // render loop below used to be duplicated ~30 lines in each).
 #define QR_CANVAS_SIZE 320
+#define ONBOARD_QR_SIZE 220
 #define QR_QUIET_MODULES 4
 #define QR_MAX_MODULES 177
 
 static bool qr_canvas_render(lv_obj_t *parent, const uint8_t *modules, uint16_t width,
-                             int align_offset_x)
+                             int size, void **buffer, lv_align_t align, int x_offset, int y_offset)
 {
-    const int scale = QR_CANVAS_SIZE / (width + QR_QUIET_MODULES * 2);
+    const int scale = size / (width + QR_QUIET_MODULES * 2);
     const int used = scale * (width + QR_QUIET_MODULES * 2);
     if (scale < 1) return false;
-    if (!s_qr_buffer) {
-        s_qr_buffer = heap_caps_calloc((size_t)QR_CANVAS_SIZE * QR_CANVAS_SIZE,
-                                       sizeof(lv_color16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!*buffer) {
+        *buffer = heap_caps_calloc((size_t)size * size, sizeof(lv_color16_t),
+                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
-    if (!s_qr_buffer) return false;
+    if (!*buffer) return false;
     lv_obj_t *canvas = lv_canvas_create(parent);
-    lv_canvas_set_buffer(canvas, s_qr_buffer, QR_CANVAS_SIZE, QR_CANVAS_SIZE, LV_COLOR_FORMAT_RGB565);
+    lv_canvas_set_buffer(canvas, *buffer, size, size, LV_COLOR_FORMAT_RGB565);
     lv_canvas_fill_bg(canvas, lv_color_white(), LV_OPA_COVER);
-    int origin = (QR_CANVAS_SIZE - used) / 2 + QR_QUIET_MODULES * scale;
+    int origin = (size - used) / 2 + QR_QUIET_MODULES * scale;
     for (uint16_t y = 0; y < width; ++y) for (uint16_t x = 0; x < width; ++x) {
         if (!modules[(size_t)y * width + x]) continue;
         for (int py = 0; py < scale; ++py) for (int px = 0; px < scale; ++px)
             lv_canvas_set_px(canvas, origin + x * scale + px, origin + y * scale + py, lv_color_black(), LV_OPA_COVER);
     }
-    lv_obj_align(canvas, LV_ALIGN_RIGHT_MID, align_offset_x, 0);
+    lv_obj_align(canvas, align, x_offset, y_offset);
     return true;
 }
 
@@ -245,7 +248,8 @@ bool rock_ui_pairing_show(const char *short_code, const char *phrase,
     lv_obj_set_style_text_color(verification, lv_color_hex(0x7C8598), 0);
     lv_obj_set_style_text_font(verification, &lv_font_montserrat_16, 0);
     lv_obj_align(verification, LV_ALIGN_LEFT_MID, 45, 25);
-    if (!qr_canvas_render(screen, modules, width, -35)) {
+    if (!qr_canvas_render(screen, modules, width, QR_CANVAS_SIZE, &s_qr_buffer,
+                          LV_ALIGN_RIGHT_MID, -35, 0)) {
         lvgl_port_unlock();
         return false;
     }
@@ -359,9 +363,12 @@ bool rock_ui_wifi_scan_show(const rock_wifi_scan_item_t *items, uint16_t count)
 }
 
 bool rock_ui_onboarding_show(const char *ap_ssid, const char *pin, const char *url,
-                             const uint8_t *modules, uint16_t width)
+                             const uint8_t *wifi_modules, uint16_t wifi_width,
+                             const uint8_t *url_modules, uint16_t url_width)
 {
-    if (!ap_ssid || !url || !modules || width == 0 || width > QR_MAX_MODULES) return false;
+    if (!ap_ssid || !url || !wifi_modules || !url_modules ||
+        wifi_width == 0 || wifi_width > QR_MAX_MODULES ||
+        url_width == 0 || url_width > QR_MAX_MODULES) return false;
     if (!lvgl_port_lock(1000)) return false;
     lv_obj_t *screen = legacy_screen();
     lv_obj_clean(screen);
@@ -377,21 +384,21 @@ bool rock_ui_onboarding_show(const char *ap_ssid, const char *pin, const char *u
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 45, 25);
 
     lv_obj_t *step1 = lv_label_create(screen);
-    lv_label_set_text_fmt(step1, "1. Scan QR code to connect phone\n   Wi-Fi: %s", ap_ssid);
+    lv_label_set_text_fmt(step1, "1. JOIN WI-FI\n%s", ap_ssid);
     lv_obj_set_style_text_color(step1, lv_color_hex(0xC45C26), 0);
     lv_obj_set_style_text_font(step1, &lv_font_montserrat_16, 0);
-    lv_obj_align(step1, LV_ALIGN_TOP_LEFT, 45, 95);
+    lv_obj_align(step1, LV_ALIGN_TOP_LEFT, 80, 105);
 
     lv_obj_t *step2 = lv_label_create(screen);
-    lv_label_set_text_fmt(step2, "2. Select your home Wi-Fi in portal\n   or open: %s", url);
+    lv_label_set_text_fmt(step2, "2. OPEN SETUP\n%s", url);
     lv_obj_set_style_text_color(step2, lv_color_hex(0x9A8B78), 0);
     lv_obj_set_style_text_font(step2, &lv_font_montserrat_16, 0);
-    lv_obj_align(step2, LV_ALIGN_TOP_LEFT, 45, 155);
+    lv_obj_align(step2, LV_ALIGN_TOP_LEFT, 470, 105);
 
     if (pin && pin[0] != '\0') {
         lv_obj_t *pin_card = lv_obj_create(screen);
         lv_obj_set_size(pin_card, 350, 50);
-        lv_obj_align(pin_card, LV_ALIGN_TOP_LEFT, 45, 220);
+        lv_obj_align(pin_card, LV_ALIGN_TOP_LEFT, 45, 390);
         lv_obj_set_style_bg_color(pin_card, lv_color_hex(0x241C16), 0);
         lv_obj_set_style_border_color(pin_card, lv_color_hex(0xC45C26), 0);
         lv_obj_set_style_border_width(pin_card, 2, 0);
@@ -409,9 +416,12 @@ bool rock_ui_onboarding_show(const char *ap_ssid, const char *pin, const char *u
     lv_label_set_text(s_onboarding_status_lbl, "Waiting for phone connection...");
     lv_obj_set_style_text_color(s_onboarding_status_lbl, lv_color_hex(0x9A8B78), 0);
     lv_obj_set_style_text_font(s_onboarding_status_lbl, &lv_font_montserrat_16, 0);
-    lv_obj_align(s_onboarding_status_lbl, LV_ALIGN_TOP_LEFT, 45, 290);
+    lv_obj_align(s_onboarding_status_lbl, LV_ALIGN_TOP_LEFT, 45, 450);
 
-    if (!qr_canvas_render(screen, modules, width, -45)) {
+    if (!qr_canvas_render(screen, wifi_modules, wifi_width, ONBOARD_QR_SIZE,
+                          &s_wifi_qr_buffer, LV_ALIGN_TOP_LEFT, 80, 165) ||
+        !qr_canvas_render(screen, url_modules, url_width, ONBOARD_QR_SIZE,
+                          &s_url_qr_buffer, LV_ALIGN_TOP_LEFT, 470, 165)) {
         lvgl_port_unlock();
         return false;
     }

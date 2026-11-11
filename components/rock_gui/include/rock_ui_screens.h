@@ -41,7 +41,8 @@ bool rock_ui_wifi_scan_show(const rock_wifi_scan_item_t *items, uint16_t count);
 
 /** Render Wi-Fi onboarding instructions, PIN, and QR code. */
 bool rock_ui_onboarding_show(const char *ap_ssid, const char *pin, const char *url,
-                             const uint8_t *modules, uint16_t width);
+                             const uint8_t *wifi_modules, uint16_t wifi_width,
+                             const uint8_t *url_modules, uint16_t url_width);
 
 /** Update status line on the onboarding screen. */
 bool rock_ui_onboarding_status(const char *status_text);

@@ -13,7 +13,7 @@
 ## Wi-Fi and onboarding changes
 
 - Saved `rock_wifi` credentials survive STA failures. Startup retries use 1–30 s backoff; after 10 minutes of continuous failure, onboarding opens while the saved values remain in NVS. A PIN-protected portal action can explicitly forget the network. `POST /connect` still replaces credentials and reboots into STA.
-- Onboarding scans in STA mode before starting SoftAP and caches up to 30 records. `/api/scan` first tries APSTA, then uses that cached list if APSTA scan fails or returns empty. Logs report scan return codes, counts, and elapsed time without SSIDs or passwords.
+- Onboarding scans in STA mode before starting SoftAP and caches up to 100 records. `/api/scan` merges the live APSTA scan with the cached list so a short APSTA scan cannot hide networks found before SoftAP started. Logs report scan return codes, counts, and elapsed time without SSIDs or passwords.
 
 ## Verification
 
