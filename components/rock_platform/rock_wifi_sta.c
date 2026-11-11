@@ -182,7 +182,6 @@ static void wifi_rf_survey(void)
 bool rock_wifi_connect_with_backoff(uint64_t deadline_ms)
 {
     uint32_t backoff_ms = 0;
-    int fail_count = 0;
     do {
         xEventGroupClearBits(s_wifi_events, WIFI_FAILED);
         esp_err_t err = esp_wifi_connect();
@@ -195,12 +194,6 @@ bool rock_wifi_connect_with_backoff(uint64_t deadline_ms)
             }
         } else {
             ESP_LOGW(TAG, "STA connect request failed: %s", esp_err_to_name(err));
-        }
-        fail_count++;
-        if (fail_count >= 5) {
-            ESP_LOGW(TAG, "STA failed %d times; resetting ESP32-C6 co-processor...", fail_count);
-            rock_hosted_recover();
-            fail_count = 0;
         }
         if (rock_uptime_ms() >= deadline_ms) break;
         wifi_rf_survey();

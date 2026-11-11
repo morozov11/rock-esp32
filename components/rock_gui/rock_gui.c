@@ -31,23 +31,6 @@
 
 static const char *TAG = "rock-gui";
 
-static void on_wake_detected(const int16_t *ring, size_t capacity, size_t used, size_t next)
-{
-    // The board speaker is for diagnostics only. Its own playback can sound
-    // like the wake word to the microphone; leave voice control to Cast mode.
-    if (!rock_player_is_cast_active()) {
-        int playback = rock_player_status_enum();
-        if (playback == ROCK_PLAYER_STATUS_PLAYING ||
-            playback == ROCK_PLAYER_STATUS_BUFFERING) return;
-    }
-    int voice_state = rock_voice_state();
-    if (voice_state >= 1 && voice_state <= 3) return;
-    if (rock_voice_set_preroll(ring, capacity, used, next) != 0) {
-        ESP_LOGW(TAG, "RE8WAKE pre-roll handoff failed");
-        return;
-    }
-    gui_enqueue_event(ROCK_UI_EVT_VOICE_TOGGLE, NULL, 0);
-}
 static bool s_gui_active = false;
 
 // FreeRTOS queue for UI events
@@ -390,18 +373,7 @@ int rock_gui_start(void)
     rock_serial_start();
 
     lvgl_port_unlock();
-    uint8_t wake_muted = 0;
-    (void)rock_settings_wake_mute_load(&wake_muted);
-    if (wake_muted == 1) {
-        // No NVS write here: the stored value already says muted.
-        rock_wake_set_muted(true);
-        rock_voice_set_muted(true);
-        wake_mute_label(true);
-        ESP_LOGI(TAG, "RE8WAKE restored muted=1 from settings");
-    }
-    if (rock_wake_start(on_wake_detected) != 0) {
-        ESP_LOGE(TAG, "RE8WAKE task start failed");
-    }
+    ESP_LOGI(TAG, "RE8WAKE auto-detection disabled; voice search remains manual");
     ESP_LOGI(TAG, "RockCast native station GUI started successfully");
     return 0;
 }
