@@ -16,9 +16,11 @@ pub(crate) enum SessionError {
 struct SessionCache {
     token: String,
     expires_at: String,
+    fetched_uptime_ms: u64,
 }
 
 static SESSION_CACHE: Mutex<Option<SessionCache>> = Mutex::new(None);
+const MAX_CACHE_AGE_WITHOUT_SNTP_MS: u64 = 10 * 60_000;
 
 pub(crate) fn invalidate_session_cache() {
     let mut cache = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
@@ -30,6 +32,7 @@ fn update_session_cache(token: &str, expires_at: &str) {
     *cache = Some(SessionCache {
         token: token.to_string(),
         expires_at: expires_at.to_string(),
+        fetched_uptime_ms: platform::uptime_ms(),
     });
 }
 
@@ -56,20 +59,37 @@ pub(crate) fn fresh_access_token() -> Result<String, ()> {
 }
 
 pub(crate) fn cached_access_token(min_remaining: u64) -> Result<String, ()> {
-    {
-        let cache = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(entry) = cache.as_ref() {
-            if let Ok(now) = platform::now() {
-                if !should_fetch(Some(&entry.expires_at), &now, min_remaining) {
-                    return Ok(entry.token.clone());
-                }
-            }
-        }
+    if let Some(token) = valid_cached_token(min_remaining) {
+        return Ok(token);
     }
 
     let (id, secret) = platform::identity_load().ok_or(())?;
     let creds = session(&id, &secret).map_err(|_| ())?;
     Ok(creds.access_token)
+}
+
+fn valid_cached_token(min_remaining: u64) -> Option<String> {
+    let cache = SESSION_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let entry = cache.as_ref()?;
+    if platform::uptime_ms().saturating_sub(entry.fetched_uptime_ms) >= MAX_CACHE_AGE_WITHOUT_SNTP_MS {
+        return None;
+    }
+    let now = platform::now().ok()?;
+    if should_fetch(Some(&entry.expires_at), &now, min_remaining) {
+        return None;
+    }
+    Some(entry.token.clone())
+}
+
+/// Returns an existing non-expired access token from RAM cache when paired,
+/// avoiding a blocking HTTPS `device-session` round-trip on every reconnect.
+pub(crate) fn session_access_token() -> Result<String, ()> {
+    if platform::identity_load().is_some() {
+        if let Some(token) = valid_cached_token(60_000) {
+            return Ok(token);
+        }
+    }
+    credentials().map(|c| c.access_token)
 }
 
 fn provision() -> Result<Credentials, ()> {

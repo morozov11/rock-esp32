@@ -172,15 +172,30 @@ pub extern "C" fn rust_main() -> ! {
 
     let mut failures = 0u32;
     loop {
+        let mut quick_retry = false;
         if platform::wifi_ready() && !platform::server_base_url().is_empty() {
-            if let Ok(credentials) = pairing::credentials() {
-                failures = 0;
-                // A dropped session is the normal reconnect cycle here, not a
-                // swallowed failure: the loop backs off and retries below.
-                let _ = transport::run(&credentials.access_token);
+            if let Ok(token) = pairing::session_access_token() {
+                let started_ms = platform::uptime_ms();
+                let established = transport::run(&token).unwrap_or(false);
+                let elapsed_ms = platform::uptime_ms().saturating_sub(started_ms);
+                if established || elapsed_ms >= 5_000 {
+                    failures = 0;
+                    quick_retry = platform::wifi_ready();
+                } else {
+                    failures = failures.saturating_add(1).min(5);
+                }
             } else {
                 failures = failures.saturating_add(1).min(5);
             }
+        }
+        if quick_retry {
+            let mut handler = OfflineHandler { exit_backoff: false };
+            while let Some(evt) = platform::gui_poll_event(0) {
+                handler.dispatch_gui_event(evt);
+            }
+            transport::refresh_player(&mut local_player);
+            platform::delay(200);
+            continue;
         }
         let ceiling = (1u32 << failures).min(30) * 1_000;
         let mut random = [0u8; 4];

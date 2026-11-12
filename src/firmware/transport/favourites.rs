@@ -4,14 +4,39 @@ use super::catalog::{cache_station_name, resolve_station_name};
 use super::session::Session;
 use super::{message_id, send, HEARTBEAT_MS};
 use crate::device_control::catalog::DeviceStationDto;
-use crate::device_control::favourites::{apply_response, display_name};
+use crate::device_control::favourites::{apply_response, display_name, Favourite};
 use crate::firmware::{pairing, platform};
 use serde_json::{json, Value};
+use std::sync::Mutex;
 
 const SYNC_INTERVAL_MS: u64 = 60_000;
 const RETRY_INTERVAL_MS: u64 = 30_000;
 const PAGE_SIZE: usize = 20;
 const WINDOW_STEP: usize = 10;
+
+struct FavouritesCache {
+    favourites: Vec<Favourite>,
+    revision: u64,
+    synced_at_ms: u64,
+}
+
+static FAVOURITES_CACHE: Mutex<Option<FavouritesCache>> = Mutex::new(None);
+
+pub(super) fn restore_cache() -> Option<(Vec<Favourite>, u64, u64)> {
+    let cache = FAVOURITES_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    cache
+        .as_ref()
+        .map(|c| (c.favourites.clone(), c.revision, c.synced_at_ms + SYNC_INTERVAL_MS))
+}
+
+fn save_cache(favourites: &[Favourite], revision: u64, synced_at_ms: u64) {
+    let mut cache = FAVOURITES_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    *cache = Some(FavouritesCache {
+        favourites: favourites.to_vec(),
+        revision,
+        synced_at_ms,
+    });
+}
 
 pub(super) enum FavouriteMeta {
     Found(DeviceStationDto),
@@ -63,15 +88,17 @@ impl Session {
         let (revision, records) =
             apply_response(&self.favourites, self.favourite_revision, &response.1)
                 .map_err(|_| 0u16)?;
+        let now_ms = platform::uptime_ms();
         self.favourites = records;
         self.favourite_revision = revision;
         self.favourite_loaded = true;
-        self.next_favourite_sync = platform::uptime_ms() + SYNC_INTERVAL_MS;
+        self.next_favourite_sync = now_ms + SYNC_INTERVAL_MS;
+        save_cache(&self.favourites, self.favourite_revision, now_ms);
         self.publish_favourite_ids(true);
         Ok(())
     }
 
-    fn publish_favourite_ids(&self, writable: bool) {
+    pub(super) fn publish_favourite_ids(&self, writable: bool) {
         let ids: Vec<String> = self
             .favourites
             .iter()

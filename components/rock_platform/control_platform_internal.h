@@ -38,6 +38,10 @@ bool rock_wifi_connect_with_backoff(uint64_t deadline_ms);
 // Spawn the background reconnect task (returns 0 on success).
 int rock_wifi_start_reconnect_task(void);
 
+// Monotonic counter incremented on Wi-Fi link transitions (disconnect / got IP)
+// so persistent HTTP clients can drop dead sockets before reusing handles.
+uint32_t rock_wifi_link_epoch(void);
+
 // --- rock_net_ws.c: pieces sequenced by rock_platform_init ---
 
 // Create the WSS frame queue + event group (false on OOM). Must precede the

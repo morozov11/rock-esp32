@@ -91,6 +91,13 @@ impl Session {
             voice_last_state: 0,
             voice_message_until: 0,
         };
+        if let Some((favourites, revision, next_sync)) = super::favourites::restore_cache() {
+            s.favourites = favourites;
+            s.favourite_revision = revision;
+            s.favourite_loaded = true;
+            s.next_favourite_sync = next_sync;
+            s.publish_favourite_ids(true);
+        }
         refresh_player_with_cast(&mut s.player, false, &s.meta_title);
         s.publish_state()?;
         platform::gui_start()?;

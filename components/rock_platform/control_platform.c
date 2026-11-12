@@ -145,6 +145,14 @@ int rock_platform_init(void)
     rock_wifi_register_event_handlers();
     if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK || esp_wifi_start() != ESP_OK) return -1;
     esp_wifi_set_ps(WIFI_PS_NONE);
+    esp_err_t bw_err = esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
+    if (bw_err != ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi HT20 bandwidth set failed: %s", esp_err_to_name(bw_err));
+    }
+    esp_err_t inact_err = esp_wifi_set_inactive_time(WIFI_IF_STA, 12);
+    if (inact_err != ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi inactive_time set failed: %s", esp_err_to_name(inact_err));
+    }
     // Allow scanning/operating on channels 12-13 (EU/RU 2.4 GHz band) so the
     // default 1-11 country cannot hide the target AP after a router channel change.
     esp_err_t country_err = esp_wifi_set_country_code("RU", true);

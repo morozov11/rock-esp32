@@ -37,6 +37,7 @@ static char s_ws_headers[640];
 static esp_http_client_handle_t s_rest_client;
 static char s_rest_base[512];
 static int64_t s_rest_last_us;
+static uint32_t s_rest_link_epoch;
 
 typedef struct {
     char *data;
@@ -79,6 +80,7 @@ static void rest_client_discard(void)
     s_rest_client = NULL;
     s_rest_base[0] = '\0';
     s_rest_last_us = 0;
+    s_rest_link_epoch = 0;
 }
 
 int rock_http_request(const char *method, const char *path, const char *bearer,
@@ -92,6 +94,10 @@ int rock_http_request(const char *method, const char *path, const char *bearer,
     response[0] = '\0';
     *status = 0;
     if (s_rest_client && strcmp(s_rest_base, CONFIG_ROCKSERVER_BASE_URL) != 0) rest_client_discard();
+    uint32_t link_epoch = rock_wifi_link_epoch();
+    // Drop a dead TCP socket across a Wi-Fi link transition while keeping the TLS ticket.
+    if (s_rest_client && s_rest_link_epoch != link_epoch
+        && esp_http_client_close(s_rest_client) != ESP_OK) rest_client_discard();
     // Close an old socket before the server's keep-alive expires; retain its TLS ticket.
     if (s_rest_client && s_rest_last_us
         && sink.started_us - s_rest_last_us > ROCK_REST_IDLE_CLOSE_US
@@ -145,9 +151,9 @@ int rock_http_request(const char *method, const char *path, const char *bearer,
     }
     esp_err_t err = esp_http_client_perform(client);
     bool stale_retry = false;
-    // A server may close idle keep-alive without the socket noticing until read.
-    // Retry only an idempotent GET that received no response bytes or headers.
-    if (strcmp(method, "GET") == 0 && !sink.connected_us && !sink.headers_us && !sink.len
+    // A server (or link flap) may close idle keep-alive without the socket noticing until write/read.
+    // Retry once when no fresh TCP connection or response headers/bytes happened yet.
+    if (!sink.connected_us && !sink.headers_us && !sink.len
         && (err == ESP_ERR_HTTP_FETCH_HEADER || err == ESP_ERR_HTTP_CONNECTION_CLOSED
             || err == ESP_ERR_HTTP_WRITE_DATA)) {
         stale_retry = true;
@@ -173,7 +179,10 @@ int rock_http_request(const char *method, const char *path, const char *bearer,
         esp_err_t post_clear = esp_http_client_set_post_field(client, NULL, 0);
         if (esp_http_client_set_user_data(client, NULL) != ESP_OK
             || (post_clear != ESP_OK && post_clear != ESP_ERR_NOT_FOUND)) rest_client_discard();
-        else s_rest_last_us = finished_us;
+        else {
+            s_rest_last_us = finished_us;
+            s_rest_link_epoch = link_epoch;
+        }
     }
     return ret;
 }

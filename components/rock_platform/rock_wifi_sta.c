@@ -28,10 +28,16 @@ static const char *TAG = "rock-control";
 static EventGroupHandle_t s_wifi_events;
 static atomic_int s_last_wifi_rssi = ATOMIC_VAR_INIT(-128);
 static atomic_int s_last_wifi_channel = ATOMIC_VAR_INIT(0);
+static atomic_uint_fast32_t s_wifi_link_epoch = ATOMIC_VAR_INIT(1);
 static uint64_t s_last_wifi_query_ms = 0;
 static uint32_t s_wifi_query_backoff_ms = 10000;
 
 static char s_sta_ip[32] = {0};
+
+uint32_t rock_wifi_link_epoch(void)
+{
+    return (uint32_t)atomic_load(&s_wifi_link_epoch);
+}
 
 bool rock_wifi_events_create(void)
 {
@@ -75,6 +81,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         s_sta_ip[0] = '\0';
         atomic_store(&s_last_wifi_rssi, -128);
+        atomic_fetch_add(&s_wifi_link_epoch, 1);
         const wifi_event_sta_disconnected_t *event = data;
         unsigned reason = event ? event->reason : 0;
         if (s_sta_associated) {
@@ -89,6 +96,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         xEventGroupClearBits(s_wifi_events, WIFI_READY);
         xEventGroupSetBits(s_wifi_events, WIFI_FAILED);
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        atomic_fetch_add(&s_wifi_link_epoch, 1);
         xEventGroupClearBits(s_wifi_events, WIFI_FAILED);
         xEventGroupSetBits(s_wifi_events, WIFI_READY);
         s_sta_associated = true;
@@ -127,8 +135,8 @@ static void wifi_rf_survey(void)
         .show_hidden = false,
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
         .scan_time = {
-            .active = { .min = 120, .max = 350 },
-            .passive = 350,
+            .active = { .min = 80, .max = 180 },
+            .passive = 200,
         },
     };
     if (esp_wifi_scan_start(&scan_cfg, true) != ESP_OK) return;
@@ -182,6 +190,7 @@ static void wifi_rf_survey(void)
 bool rock_wifi_connect_with_backoff(uint64_t deadline_ms)
 {
     uint32_t backoff_ms = 0;
+    unsigned attempt = 0;
     do {
         xEventGroupClearBits(s_wifi_events, WIFI_FAILED);
         esp_err_t err = esp_wifi_connect();
@@ -195,13 +204,16 @@ bool rock_wifi_connect_with_backoff(uint64_t deadline_ms)
         } else {
             ESP_LOGW(TAG, "STA connect request failed: %s", esp_err_to_name(err));
         }
+        attempt++;
         if (rock_uptime_ms() >= deadline_ms) break;
-        wifi_rf_survey();
+        if (attempt >= 4) {
+            wifi_rf_survey();
+        }
         if (backoff_ms > 0) {
             ESP_LOGW(TAG, "STA retry in %lu ms", (unsigned long)backoff_ms);
             vTaskDelay(pdMS_TO_TICKS(backoff_ms));
         }
-        backoff_ms = backoff_ms == 0 ? 250 : (backoff_ms * 2 > 2000 ? 2000 : backoff_ms * 2);
+        backoff_ms = backoff_ms == 0 ? 250 : 500;
     } while (rock_uptime_ms() < deadline_ms);
     return false;
 }

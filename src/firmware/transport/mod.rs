@@ -32,15 +32,22 @@ const HEARTBEAT_ACK_TIMEOUT_MS: u64 = crate::abi::ROCK_ABI_HEARTBEAT_ACK_TIMEOUT
 
 const FRAME_CAPACITY: usize = device_control::MAX_JSON_FRAME_BYTES + 1;
 
-pub(crate) fn run(token: &str) -> Result<(), ()> {
-    platform::ws_start(token)?;
-    let result = session(token);
+pub(crate) fn run(token: &str) -> Result<bool, ()> {
+    if platform::ws_start(token).is_err() {
+        crate::firmware::pairing::invalidate_session_cache();
+        return Err(());
+    }
+    let mut established = false;
+    let _ = session(token, &mut established);
+    if !established {
+        crate::firmware::pairing::invalidate_session_cache();
+    }
     platform::ws_stop();
     platform::voice_cancel();
     platform::relay_stop();
     update_link_indicator(false);
     platform::gui_mark_catalog_stale();
-    result
+    Ok(established)
 }
 
 fn send(value: &Value) -> Result<(), ()> {
@@ -63,7 +70,7 @@ fn message_id() -> String {
     )
 }
 
-fn session(token: &str) -> Result<(), ()> {
+fn session(token: &str, established: &mut bool) -> Result<(), ()> {
     let token = token.to_string();
     send(&device_control::hello(&message_id(), &platform::now()?))?;
     let mut frame = vec![0 as c_char; FRAME_CAPACITY];
@@ -85,6 +92,7 @@ fn session(token: &str) -> Result<(), ()> {
     ))?;
 
     let mut s = Session::new(token, frame)?;
+    *established = true;
     loop {
         s.tick_token_refresh();
         s.tick_favourites();
